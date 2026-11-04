@@ -7,12 +7,11 @@
  * movimiento reducido. Lo que dice también está en la sección de ubicación,
  * así que nadie depende de leerla en marcha.
  *
- * El teléfono no se repite acá: vive en el botón de la cabecera.
+ * El teléfono y la acción urgente viven en el botón de la cabecera: acá no
+ * se repiten.
  */
 import { clinica } from '../data/clinica';
 import Icono from './Icono.astro';
-
-const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
 
 const avisos = [
   clinica.horariosTexto ?? 'Horario de atención: por confirmar',
@@ -37,33 +36,20 @@ const avisos = [
       </div>
     </div>
 
-    <a class="tira__urgente" href={`tel:${tel.e164}`}>
-      <span class="tira__pulso" aria-hidden="true"></span>
-      Emergencia
-    </a>
   </div>
 </div>
 
 <style>
-  /* En celular la tira no entra: la cinta queda cortada y la pastilla roja
-     compite con la barra fija de abajo. Fuera. Lo que dice (horario,
-     dirección, formas de pago) está completo en la sección de ubicación. */
-  .tira { display: none; }
-
-  @media (min-width: 860px) {
-    .tira {
-      display: block;
-      background: var(--azul-profundo);
-      color: rgba(255, 255, 255, 0.82);
-      font-size: var(--t-xs);
-    }
+  .tira {
+    background: var(--azul-profundo);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: var(--t-xs);
   }
 
   .tira__fila {
     display: flex;
     align-items: center;
-    gap: 16px;
-    min-height: 48px;
+    min-height: 40px;
   }
 
   /* ----- cinta ----- */
@@ -111,36 +97,5 @@ const avisos = [
     .tira__cinta { mask-image: none; overflow-x: auto; }
   }
 
-  /* ----- acción urgente ----- */
-  .tira__urgente {
-    flex: none;
-    display: inline-flex;
-    align-items: center;
-    gap: 8px;
-    background: var(--rojo);
-    color: #fff;
-    text-decoration: none;
-    font-family: var(--titulares);
-    font-weight: 700;
-    font-size: var(--t-xs);
-    letter-spacing: 0.015em;
-    min-height: 44px;
-    padding: 6px 16px;
-    border-radius: 999px;
-    transition: background-color 180ms ease;
-  }
-  .tira__urgente:hover { background: var(--rojo-hondo); }
 
-  .tira__pulso {
-    width: 7px;
-    height: 7px;
-    border-radius: 50%;
-    background: #fff;
-    animation: latir 2.6s ease-out infinite;
-  }
-  @keyframes latir {
-    0%   { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.75); }
-    70%  { box-shadow: 0 0 0 8px rgba(255, 255, 255, 0); }
-    100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
-  }
 </style>

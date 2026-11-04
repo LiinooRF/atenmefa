@@ -5,46 +5,38 @@
  * Cuando el dato se llena en src/data/clinica.ts, el bloque desaparece solo.
  */
 interface Props {
+  /** Qué dato falta, en pocas palabras. Lo lee el cliente. */
   que: string;
-  porque?: string;
 }
-const { que, porque } = Astro.props;
+const { que } = Astro.props;
 ---
 
-<div class="falta">
-  <span class="falta__sello">Falta el dato</span>
-  <strong>{que}</strong>
-  {porque && <span class="falta__porque">{porque}</span>}
-</div>
+<p class="falta">Falta el dato de {que}</p>
 
 <style>
   .falta {
-    display: flex;
-    flex-direction: column;
-    gap: 6px;
+    display: inline-flex;
+    align-items: center;
+    gap: 9px;
     border: 1.5px dashed var(--linea);
     border-radius: var(--radio-sm);
     background: var(--bruma);
-    padding: 16px 18px;
-    max-width: min(58ch, 100%);
+    padding: 13px 17px;
+    font-family: var(--titulares);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--tinta-suave);
+  }
+  .falta::before {
+    content: '';
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: var(--rojo);
+    flex: none;
   }
 
-  .falta__sello {
-    font-family: var(--titulares);
-    font-size: var(--t-xs);
-    letter-spacing: 0.15em;
-    text-transform: uppercase;
-    font-weight: 700;
-    color: var(--rojo);
-  }
 
-  .falta strong {
-    font-family: var(--titulares);
-    font-size: 1.02rem;
-    font-weight: 700;
-    letter-spacing: -0.015em;
-    color: var(--azul);
-  }
 
   .falta__porque { font-size: var(--t-sm); line-height: 1.5; color: var(--tinta-suave); }
 </style>

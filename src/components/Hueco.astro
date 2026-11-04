@@ -7,6 +7,7 @@
 interface Props {
   ancho: number;
   alto: number;
+  /** Qué foto va acá. No se muestra: alimenta el texto alternativo. */
   nota: string;
 }
 const { ancho, alto, nota } = Astro.props;
@@ -14,9 +15,8 @@ const { ancho, alto, nota } = Astro.props;
 
 <div class="hueco" style={`aspect-ratio: ${ancho} / ${alto};`} role="img" aria-label={`Espacio reservado para imagen: ${nota}`}>
   <div class="hueco__cuerpo">
-    <span class="hueco__medida cifra">{ancho} × {alto}</span>
-    <span class="hueco__unidad">píxeles</span>
-    <span class="hueco__nota">{nota}</span>
+    <span class="hueco__sello">Falta imagen</span>
+    <span class="hueco__medida cifra">{ancho} × {alto} px</span>
   </div>
 </div>
 
@@ -42,13 +42,11 @@ const { ancho, alto, nota } = Astro.props;
     color: var(--azul);
   }
 
-  .hueco__unidad {
-    font-size: var(--t-xs);
-    letter-spacing: 0.17em;
-    text-transform: uppercase;
-    font-weight: 700;
-    color: var(--rojo);
-    margin-bottom: 8px;
+  .hueco__sello {
+    font-family: var(--titulares);
+    font-size: var(--t-sm);
+    font-weight: 600;
+    color: var(--tinta-suave);
   }
 
   .hueco__nota { font-size: var(--t-sm); line-height: 1.5; color: var(--tinta-suave); }
