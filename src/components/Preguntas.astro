@@ -1,0 +1,78 @@
+---
+/**
+ * Núcleo del AEO. Cada respuesta arranca contestando y se sostiene sola
+ * al recortarla: así es como Gemini y las respuestas de IA la pueden citar.
+ * Solo se muestran las que tienen dato confirmado (ver src/data/clinica.ts).
+ */
+import { preguntasPublicables, wa } from '../data/clinica';
+import Icono from './Icono.astro';
+---
+
+<section class="seccion seccion--bruma" id="preguntas">
+  <div class="contenedor preguntas__caja">
+    <div class="titulo-seccion">
+      <h2>Lo que más nos preguntan</h2>
+    </div>
+
+    <ul class="preguntas">
+      {preguntasPublicables.map((p, i) => (
+        <li>
+          <details open={i === 0}>
+            <summary>
+              <span>{p.pregunta}</span>
+              <span class="preguntas__signo" aria-hidden="true"><Icono nombre="mas" tam={19} /></span>
+            </summary>
+            <div class="preguntas__respuesta"><p>{p.respuesta}</p></div>
+          </details>
+        </li>
+      ))}
+    </ul>
+
+    <p class="preguntas__cierre">
+      ¿No está acá lo que necesita?
+      <a href={wa('Hola, tengo una pregunta sobre sus servicios.')} target="_blank" rel="noopener">
+        Pregúntenos por WhatsApp
+      </a>
+    </p>
+  </div>
+</section>
+
+<style>
+  .preguntas__caja { max-width: 840px; }
+
+  .preguntas { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--linea); }
+  .preguntas li { border-bottom: 1px solid var(--linea); }
+
+  summary {
+    list-style: none;
+    cursor: pointer;
+    padding: 20px 2px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 20px;
+    font-family: var(--titulares);
+    font-size: clamp(1.02rem, 2.3vw, 1.15rem);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    color: var(--azul);
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary:hover { color: var(--rojo); }
+
+  .preguntas__signo {
+    flex: none;
+    color: var(--rojo);
+    transition: transform 220ms cubic-bezier(0.22, 1, 0.36, 1);
+  }
+  details[open] .preguntas__signo { transform: rotate(135deg); }
+
+  .preguntas__respuesta {
+    padding: 0 2px 22px;
+    color: var(--tinta-suave);
+    max-width: min(66ch, 100%);
+  }
+
+  .preguntas__cierre { margin-top: 28px; color: var(--tinta-suave); }
+  .preguntas__cierre a { display: inline-flex; align-items: center; min-height: 44px; font-weight: 700; }
+</style>

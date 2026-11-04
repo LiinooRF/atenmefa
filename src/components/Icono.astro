@@ -1,0 +1,53 @@
+---
+/**
+ * Juego de iconos propio. Rejilla de 24, trazo 1.75, currentColor.
+ * Todos comparten peso y terminaciones: no se mezclan librerías ni se usan
+ * glifos de texto haciendo de icono.
+ */
+interface Props {
+  nombre:
+    | 'telefono' | 'whatsapp' | 'ubicacion' | 'reloj' | 'ambulancia'
+    | 'latido' | 'laboratorio' | 'estetoscopio' | 'pulmon' | 'bisturi'
+    | 'silla' | 'flecha' | 'mas' | 'instagram' | 'correo' | 'escudo';
+  tam?: number;
+  relleno?: boolean;
+}
+const { nombre, tam = 22, relleno = false } = Astro.props;
+
+const trazos: Record<string, string> = {
+  telefono: '<path d="M6.3 10.6a14.5 14.5 0 0 0 6.5 6.5l2-2a1.1 1.1 0 0 1 1.1-.26 12.3 12.3 0 0 0 3.5.56c.56 0 1 .45 1 1V19.6c0 .55-.44 1-1 1A16.6 16.6 0 0 1 3 4c0-.55.45-1 1-1h3.2c.55 0 1 .44 1 1 0 1.2.2 2.4.56 3.5a1 1 0 0 1-.25 1.02l-2.2 2.1Z"/>',
+  whatsapp: '<path d="M3.5 20.5 4.8 16A8.5 8.5 0 1 1 8 19.3l-4.5 1.2Z"/><path d="M9 9.2c.2-.5.4-.5.7-.5h.5l.9 2-.6.8c-.1.2-.2.3 0 .5.5.9 1.6 1.9 2.6 2.3.2.1.4.1.5 0l.8-.9 2 .9c.1.3.1.7-.1 1"/>',
+  ubicacion: '<path d="M12 21s7-5.4 7-10.6A7 7 0 0 0 5 10.4C5 15.6 12 21 12 21Z"/><circle cx="12" cy="10.4" r="2.6"/>',
+  reloj: '<circle cx="12" cy="12" r="8.6"/><path d="M12 7.3V12l3.1 1.9"/>',
+  ambulancia: '<path d="M2.6 16.4V8.1c0-.6.5-1 1-1h9.1c.6 0 1 .4 1 1v8.3"/><path d="M13.7 10.3h3.5l3.4 3v3.1"/><circle cx="7" cy="17.6" r="1.9"/><circle cx="17.3" cy="17.6" r="1.9"/><path d="M8.9 16.4h6.5M7.2 9.9v3.4M5.5 11.6h3.4"/>',
+  latido: '<path d="M2.8 12.4h3.6l1.8-4.2 3 9.3 2.3-6.4 1.4 3.1 1.5-1.8h4.8"/>',
+  laboratorio: '<path d="M9.5 3.2v5.5L5 16.8a2.2 2.2 0 0 0 1.9 3.3h10.2a2.2 2.2 0 0 0 1.9-3.3l-4.5-8.1V3.2"/><path d="M8.3 3.2h7.4M7.6 13.8h8.8"/>',
+  estetoscopio: '<path d="M6.3 3.3v4.9a4 4 0 0 0 8 0V3.3"/><path d="M4.6 3.3h3.4M12.6 3.3H16M10.3 12.2v2.9a4.6 4.6 0 0 0 9.2 0v-1.5"/><circle cx="19.5" cy="11.5" r="2"/>',
+  pulmon: '<path d="M12 3.4v8.9"/><path d="M12 12.3c-1.4-.9-2.4-2-2.6-3.6-2 .5-4.6 2.6-4.6 6.3 0 1.8.3 3.4.8 4.6.4.9 1.5 1.2 2.3.7l3-1.9a2 2 0 0 0 .9-1.7v-4.4Z"/><path d="M12 12.3c1.4-.9 2.4-2 2.6-3.6 2 .5 4.6 2.6 4.6 6.3 0 1.8-.3 3.4-.8 4.6-.4.9-1.5 1.2-2.3.7l-3-1.9a2 2 0 0 1-.9-1.7v-4.4Z"/>',
+  bisturi: '<path d="m13.6 10.4 6.3-6.3a1.4 1.4 0 0 0-1-2.4h-.1c-.4 0-.7.1-1 .4L9.5 10.4"/><path d="m13.6 10.4-9 9a2.3 2.3 0 0 1-3.2-3.3l8.1-5.7"/>',
+  silla: '<circle cx="9.6" cy="3.9" r="1.7"/><path d="M8 7.6v6.2h6.1l3 5.9"/><circle cx="10.6" cy="15.3" r="5.1"/><path d="M15.4 10.9h3.9"/>',
+  flecha: '<path d="M4.6 12h14.2M13.3 6.4 18.9 12l-5.6 5.6"/>',
+  mas: '<path d="M12 5.3v13.4M5.3 12h13.4"/>',
+  instagram: '<rect x="3.4" y="3.4" width="17.2" height="17.2" rx="4.8"/><circle cx="12" cy="12" r="3.9"/><path d="M17.1 6.9h.01"/>',
+  correo: '<rect x="2.8" y="5.2" width="18.4" height="13.6" rx="2.1"/><path d="m3.4 6.6 7.4 5.3c.7.5 1.7.5 2.4 0l7.4-5.3"/>',
+  escudo: '<path d="M12 2.9 4.9 5.6v5.6c0 4.4 3 8.5 7.1 9.9 4.1-1.4 7.1-5.5 7.1-9.9V5.6L12 2.9Z"/><path d="m9.1 11.8 2 2 3.8-3.8"/>',
+};
+---
+
+<svg
+  width={tam}
+  height={tam}
+  viewBox="0 0 24 24"
+  fill={relleno ? 'currentColor' : 'none'}
+  stroke="currentColor"
+  stroke-width="1.75"
+  stroke-linecap="round"
+  stroke-linejoin="round"
+  aria-hidden="true"
+  focusable="false"
+  set:html={trazos[nombre]}
+/>
+
+<style>
+  svg { flex: none; display: block; }
+</style>

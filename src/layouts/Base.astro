@@ -1,0 +1,190 @@
+---
+import '../styles/fuentes.css';
+import '@fontsource/noto-sans/latin-400.css';
+import '@fontsource/noto-sans/latin-600.css';
+import '../styles/global.css';
+import Nav from '../components/Nav.astro';
+import Pie from '../components/Pie.astro';
+import BarraFija from '../components/BarraFija.astro';
+import { clinica, equipo, servicios, preguntasPublicables } from '../data/clinica';
+import { ruta } from '../lib/rutas';
+
+interface Props {
+  titulo: string;
+  descripcion: string;
+  ruta?: string;
+  /** Las preguntas solo se marcan como FAQPage en la página que las muestra. */
+  conPreguntas?: boolean;
+}
+
+const { titulo, descripcion, ruta: rutaPagina = '/', conPreguntas = false } = Astro.props;
+
+const previa = import.meta.env.PREVIA === '1';
+
+/* Raíz real del despliegue: dominio + base. En producción la base es "/" y
+   esto equivale al dominio; en la vista previa incluye el subdirectorio. */
+const base = new URL(import.meta.env.BASE_URL, Astro.site ?? clinica.dominio).href;
+const canonical = new URL(rutaPagina.replace(/^\//, ''), base).href;
+const ogImagen = new URL('og-provisional.png', base).href;
+
+const idClinica = `${base}/#clinica`;
+const idSitio = `${base}/#sitio`;
+
+const direccion = {
+  '@type': 'PostalAddress',
+  streetAddress: clinica.direccion.calle,
+  addressLocality: clinica.direccion.ciudad,
+  addressRegion: clinica.direccion.estado,
+  addressCountry: clinica.direccion.pais,
+};
+
+const telefonos = [
+  clinica.contacto.whatsapp.e164,
+  ...(clinica.contacto.fijo ? [clinica.contacto.fijo.e164] : []),
+];
+
+const fichaClinica: Record<string, unknown> = {
+  '@type': 'MedicalClinic',
+  '@id': idClinica,
+  name: clinica.nombre,
+  alternateName: clinica.nombreLargo,
+  description: clinica.descripcionCorta,
+  url: base,
+  logo: new URL('logo.png', base).href,
+  image: ogImagen,
+  telephone: telefonos,
+  email: clinica.contacto.correo,
+  address: direccion,
+  areaServed: [
+    { '@type': 'City', name: 'Ciudad Bolívar' },
+    { '@type': 'State', name: 'Bolívar' },
+    { '@type': 'Country', name: 'Venezuela' },
+  ],
+  medicalSpecialty: ['Emergency', 'PrimaryCare', 'Pathology'],
+  paymentAccepted: clinica.pagos.join(', '),
+  currenciesAccepted: 'VES, USD',
+  sameAs: [...clinica.perfiles],
+  availableService: servicios.map((s) => ({
+    '@type': 'MedicalProcedure',
+    name: s.nombre,
+    description: s.resumen,
+  })),
+  employee: equipo.map((m) => ({ '@id': `${base}/#${m.nombre.replace(/\W+/g, '-').toLowerCase()}` })),
+};
+
+// Solo publicamos lo confirmado. Un horario inventado en los datos
+// estructurados es peor que no tener horario.
+if (clinica.direccion.lat !== null && clinica.direccion.lng !== null) {
+  fichaClinica.geo = {
+    '@type': 'GeoCoordinates',
+    latitude: clinica.direccion.lat,
+    longitude: clinica.direccion.lng,
+  };
+}
+if (clinica.horarios !== null) {
+  fichaClinica.openingHours = clinica.horarios;
+}
+if (clinica.direccion.fichaGoogle !== null) {
+  (fichaClinica.sameAs as string[]).push(clinica.direccion.fichaGoogle);
+}
+
+const fichasMedicos = equipo.map((m) => {
+  const ficha: Record<string, unknown> = {
+    '@type': 'Physician',
+    '@id': `${base}/#${m.nombre.replace(/\W+/g, '-').toLowerCase()}`,
+    name: m.nombre,
+    jobTitle: m.titulo,
+    worksFor: { '@id': idClinica },
+    address: direccion,
+  };
+  if (m.especialidad) ficha.medicalSpecialty = m.especialidad;
+  const ids = [];
+  if (m.cm) ids.push({ '@type': 'PropertyValue', name: 'Colegio de Médicos', value: m.cm });
+  if (m.msds && m.msdsConfirmado) {
+    ids.push({ '@type': 'PropertyValue', name: 'MSDS', value: m.msds });
+  }
+  if (ids.length) ficha.identifier = ids;
+  return ficha;
+});
+
+const grafo: Record<string, unknown>[] = [
+  fichaClinica,
+  ...fichasMedicos,
+  {
+    '@type': 'WebSite',
+    '@id': idSitio,
+    url: base,
+    name: clinica.nombreLargo,
+    inLanguage: 'es-VE',
+    publisher: { '@id': idClinica },
+  },
+  {
+    '@type': 'WebPage',
+    '@id': `${canonical}#pagina`,
+    url: canonical,
+    name: titulo,
+    description: descripcion,
+    isPartOf: { '@id': idSitio },
+    about: { '@id': idClinica },
+    inLanguage: 'es-VE',
+  },
+];
+
+if (conPreguntas && preguntasPublicables.length > 0) {
+  grafo.push({
+    '@type': 'FAQPage',
+    '@id': `${canonical}#preguntas`,
+    isPartOf: { '@id': idSitio },
+    mainEntity: preguntasPublicables.map((p) => ({
+      '@type': 'Question',
+      name: p.pregunta,
+      acceptedAnswer: { '@type': 'Answer', text: p.respuesta },
+    })),
+  });
+}
+
+const jsonLd = JSON.stringify({ '@context': 'https://schema.org', '@graph': grafo });
+---
+
+<!doctype html>
+<html lang="es-VE">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+
+    <title>{titulo}</title>
+    <meta name="description" content={descripcion} />
+    <link rel="canonical" href={canonical} />
+    <meta name="robots" content={previa ? "noindex, nofollow" : "index, follow, max-image-preview:large, max-snippet:-1"} />
+    <meta name="theme-color" content="#111663" />
+
+    <meta property="og:type" content="website" />
+    <meta property="og:site_name" content={clinica.nombre} />
+    <meta property="og:locale" content="es_VE" />
+    <meta property="og:title" content={titulo} />
+    <meta property="og:description" content={descripcion} />
+    <meta property="og:url" content={canonical} />
+    <meta property="og:image" content={ogImagen} />
+    <meta property="og:image:width" content="1200" />
+    <meta property="og:image:height" content="1200" />
+    <meta name="twitter:card" content="summary_large_image" />
+    <meta name="twitter:title" content={titulo} />
+    <meta name="twitter:description" content={descripcion} />
+    <meta name="twitter:image" content={ogImagen} />
+
+    <link rel="icon" href={ruta("/favicon.png")} type="image/png" sizes="64x64" />
+    <link rel="apple-touch-icon" href={ruta("/apple-touch-icon.png")} />
+
+    <script type="application/ld+json" set:html={jsonLd} />
+  </head>
+
+  <body>
+    <a class="saltar" href="#contenido">Saltar al contenido</a>
+    <Nav />
+    <main id="contenido">
+      <slot />
+    </main>
+    <Pie />
+    <BarraFija />
+  </body>
+</html>

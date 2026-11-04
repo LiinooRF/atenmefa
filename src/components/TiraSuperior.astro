@@ -1,0 +1,138 @@
+---
+/**
+ * Tira superior: horarios y datos de servicio en cinta, más la acción urgente.
+ *
+ * La cinta es el único momento de movimiento propio de la página: avanza
+ * despacio y se detiene al pasar el puntero, al enfocar con teclado y con
+ * movimiento reducido. Lo que dice también está en la sección de ubicación,
+ * así que nadie depende de leerla en marcha.
+ *
+ * El teléfono no se repite acá: vive en el botón de la cabecera.
+ */
+import { clinica } from '../data/clinica';
+import Icono from './Icono.astro';
+
+const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
+
+const avisos = [
+  clinica.horariosTexto ?? 'Horario de atención: por confirmar',
+  'C.C. Santa Catalina, local 04 · La Sabanita',
+  'Traslados en ambulancia a todo el país',
+  'Pago móvil · Transferencia · Punto de venta · Divisas',
+  'Atendemos pólizas de seguro',
+];
+---
+
+<div class="tira">
+  <div class="contenedor tira__fila">
+    <div class="tira__cinta">
+      <div class="tira__pista">
+        {[0, 1].map((copia) => (
+          <ul aria-hidden={copia === 1 ? 'true' : undefined}>
+            {avisos.map((a) => (
+              <li><Icono nombre="reloj" tam={14} />{a}</li>
+            ))}
+          </ul>
+        ))}
+      </div>
+    </div>
+
+    <a class="tira__urgente" href={`tel:${tel.e164}`}>
+      <span class="tira__pulso" aria-hidden="true"></span>
+      Emergencia
+    </a>
+  </div>
+</div>
+
+<style>
+  .tira {
+    background: var(--azul-profundo);
+    color: rgba(255, 255, 255, 0.82);
+    font-size: var(--t-xs);
+  }
+
+  .tira__fila {
+    display: flex;
+    align-items: center;
+    gap: 16px;
+    min-height: 48px;
+  }
+
+  /* ----- cinta ----- */
+  .tira__cinta {
+    flex: 1;
+    min-width: 0;          /* sin esto el flex no encoge y la cinta desborda */
+    overflow: hidden;
+    mask-image: linear-gradient(90deg, transparent, #000 32px, #000 calc(100% - 32px), transparent);
+  }
+
+  .tira__pista {
+    display: flex;
+    width: max-content;
+    animation: desfile 52s linear infinite;
+  }
+  .tira__cinta:hover .tira__pista,
+  .tira__cinta:focus-within .tira__pista { animation-play-state: paused; }
+
+  .tira__pista ul {
+    display: flex;
+    align-items: center;
+    gap: 32px;
+    list-style: none;
+    margin: 0;
+    padding: 0 16px;
+  }
+
+  .tira__pista li {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    white-space: nowrap;
+    color: rgba(255, 255, 255, 0.78);
+  }
+  .tira__pista li :global(svg) { color: var(--rojo); }
+
+  @keyframes desfile {
+    from { transform: translateX(0); }
+    to   { transform: translateX(-50%); }
+  }
+
+  @media (prefers-reduced-motion: reduce) {
+    .tira__pista { animation: none; }
+    .tira__pista ul:nth-child(2) { display: none; }
+    .tira__cinta { mask-image: none; overflow-x: auto; }
+  }
+
+  /* ----- acción urgente ----- */
+  .tira__urgente {
+    flex: none;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    background: var(--rojo);
+    color: #fff;
+    text-decoration: none;
+    font-family: var(--titulares);
+    font-weight: 700;
+    font-size: var(--t-xs);
+    letter-spacing: 0.015em;
+    min-height: 44px;
+    padding: 6px 16px;
+    border-radius: 999px;
+    transition: background-color 180ms ease;
+  }
+  .tira__urgente:hover { background: var(--rojo-hondo); }
+
+  .tira__pulso {
+    width: 7px;
+    height: 7px;
+    border-radius: 50%;
+    background: #fff;
+    animation: latir 2.6s ease-out infinite;
+  }
+  @keyframes latir {
+    0%   { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0.75); }
+    70%  { box-shadow: 0 0 0 8px rgba(255, 255, 255, 0); }
+    100% { box-shadow: 0 0 0 0 rgba(255, 255, 255, 0); }
+  }
+</style>

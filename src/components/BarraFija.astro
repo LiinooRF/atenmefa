@@ -1,0 +1,54 @@
+---
+/**
+ * Barra fija de contacto en móvil. Quien llega con una urgencia no lee:
+ * el teléfono no puede quedar nunca a más de un toque.
+ */
+import { clinica, wa } from '../data/clinica';
+import Icono from './Icono.astro';
+const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
+---
+
+<div class="fija">
+  <a class="fija__accion fija__accion--llamar" href={`tel:${tel.e164}`}>
+    <Icono nombre="telefono" tam={19} />
+    Llamar
+  </a>
+  <a class="fija__accion fija__accion--wa" href={wa('Hola, necesito información sobre sus servicios.')} target="_blank" rel="noopener">
+    <Icono nombre="whatsapp" tam={19} />
+    WhatsApp
+  </a>
+</div>
+
+<style>
+  .fija {
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    z-index: 110;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    box-shadow: 0 -8px 28px -14px rgba(11, 15, 69, 0.55);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+
+  .fija__accion {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    gap: 9px;
+    min-height: var(--barra);
+    color: #fff;
+    text-decoration: none;
+    font-family: var(--titulares);
+    font-size: 1.02rem;
+    font-weight: 700;
+    letter-spacing: -0.01em;
+    transition: background-color 180ms ease;
+  }
+
+  .fija__accion--llamar { background: var(--rojo); }
+  .fija__accion--llamar:active { background: var(--rojo-hondo); }
+  .fija__accion--wa { background: #0f7a3d; }
+  .fija__accion--wa:active { background: #0b5e2f; }
+
+  @media (min-width: 900px) { .fija { display: none; } }
+</style>

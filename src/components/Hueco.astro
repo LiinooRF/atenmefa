@@ -1,0 +1,55 @@
+---
+/**
+ * Hueco para una imagen que todavía no entregó el cliente.
+ * Reserva la relación de aspecto real: cuando llegue la foto se cambia por
+ * <Image> y la página no se mueve ni un pixel.
+ */
+interface Props {
+  ancho: number;
+  alto: number;
+  nota: string;
+}
+const { ancho, alto, nota } = Astro.props;
+---
+
+<div class="hueco" style={`aspect-ratio: ${ancho} / ${alto};`} role="img" aria-label={`Espacio reservado para imagen: ${nota}`}>
+  <div class="hueco__cuerpo">
+    <span class="hueco__medida cifra">{ancho} × {alto}</span>
+    <span class="hueco__unidad">píxeles</span>
+    <span class="hueco__nota">{nota}</span>
+  </div>
+</div>
+
+<style>
+  .hueco {
+    width: 100%;
+    border: 1.5px dashed var(--linea);
+    border-radius: var(--radio);
+    background: var(--bruma);
+    display: grid;
+    place-items: center;
+    padding: 22px;
+    text-align: center;
+  }
+
+  .hueco__cuerpo { display: flex; flex-direction: column; align-items: center; gap: 2px; max-width: min(32ch, 100%); }
+
+  .hueco__medida {
+    font-family: var(--titulares);
+    font-size: clamp(1.2rem, 3vw, 1.6rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--azul);
+  }
+
+  .hueco__unidad {
+    font-size: var(--t-xs);
+    letter-spacing: 0.17em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--rojo);
+    margin-bottom: 8px;
+  }
+
+  .hueco__nota { font-size: var(--t-sm); line-height: 1.5; color: var(--tinta-suave); }
+</style>

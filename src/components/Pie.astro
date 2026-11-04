@@ -1,0 +1,105 @@
+---
+import { clinica, servicios } from '../data/clinica';
+import { ruta } from '../lib/rutas';
+import Icono from './Icono.astro';
+
+const anio = new Date().getFullYear();
+const d = clinica.direccion;
+const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
+---
+
+<footer class="pie">
+
+  <div class="contenedor pie__rejilla">
+    <div class="pie__marca">
+      <img src={ruta('/logo.png')} width="50" height="50" alt="" />
+      <div>
+        <strong>Atenmefa</strong>
+        <span>Atención médica familiar</span>
+      </div>
+      <p class="pie__dir">
+        {d.calle}<br />
+        {d.ciudad}, estado {d.estado}, Venezuela
+      </p>
+    </div>
+
+    <nav aria-label="Servicios">
+      <h2>Servicios</h2>
+      <ul>{servicios.map((s) => <li>{s.nombre}</li>)}</ul>
+    </nav>
+
+    <div>
+      <h2>Contacto</h2>
+      <ul class="pie__contacto">
+        <li><a href={`tel:${tel.e164}`}><Icono nombre="telefono" tam={17} /><span class="cifra">{tel.visible}</span></a></li>
+        <li><a href={`mailto:${clinica.contacto.correo}`}><Icono nombre="correo" tam={17} />{clinica.contacto.correo}</a></li>
+        <li><a href={`https://instagram.com/${clinica.contacto.instagram}`} target="_blank" rel="noopener"><Icono nombre="instagram" tam={17} />@{clinica.contacto.instagram}</a></li>
+      </ul>
+    </div>
+  </div>
+
+  <div class="contenedor pie__legal">
+    <p>© {anio} Atenmefa. Todos los derechos reservados.</p>
+    <p>La información de este sitio es orientativa y no sustituye una consulta médica.</p>
+  </div>
+</footer>
+
+<style>
+  .pie { background: var(--azul-profundo); color: rgba(255, 255, 255, 0.78); }
+
+  .pie__rejilla {
+    display: grid;
+    gap: 34px;
+    padding-block: clamp(42px, 6vw, 68px) 32px;
+  }
+  @media (min-width: 820px) { .pie__rejilla { grid-template-columns: 1.5fr 1fr 1fr; } }
+
+  .pie__marca { display: grid; grid-template-columns: auto 1fr; gap: 0 13px; align-items: center; }
+  .pie__marca img { border-radius: 50%; }
+  .pie__marca > div { display: flex; flex-direction: column; line-height: 1.2; }
+  .pie__marca strong {
+    font-family: var(--titulares);
+    font-size: 1.3rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: #fff;
+  }
+  .pie__marca > div span { font-size: var(--t-xs); color: rgba(255, 255, 255, 0.6); }
+  .pie__dir { grid-column: 1 / -1; margin-top: 18px; font-size: var(--t-sm); color: rgba(255, 255, 255, 0.7); }
+
+  .pie h2 {
+    color: #fff;
+    font-family: var(--titulares);
+    font-size: var(--t-xs);
+    letter-spacing: 0.14em;
+    text-transform: uppercase;
+    font-weight: 700;
+    margin-bottom: 15px;
+  }
+
+  .pie ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 3px; }
+  .pie li { font-size: var(--t-sm); color: rgba(255, 255, 255, 0.72); padding: 5px 0; }
+
+  .pie__contacto a {
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    color: rgba(255, 255, 255, 0.9);
+    text-decoration: none;
+    transition: color 180ms ease;
+  }
+  .pie__contacto a:hover { color: #fff; }
+  .pie__contacto :global(svg) { color: var(--rojo); }
+
+  .pie__legal {
+    border-top: 1px solid rgba(255, 255, 255, 0.14);
+    padding-block: 20px 30px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px 28px;
+    justify-content: space-between;
+    font-size: var(--t-xs);
+    color: rgba(255, 255, 255, 0.55);
+  }
+</style>

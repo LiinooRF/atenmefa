@@ -1,0 +1,94 @@
+---
+/**
+ * Fila de accesos directos, justo debajo de la portada.
+ * Resuelve de un toque lo que la mayoría viene a hacer, sin tener que leer.
+ */
+import { clinica, wa } from '../data/clinica';
+import Icono from './Icono.astro';
+
+const d = clinica.direccion;
+const mapa =
+  d.fichaGoogle ??
+  `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+    `${d.calle}, ${d.ciudad}, ${d.estado}, Venezuela`,
+  )}`;
+
+const accesos = [
+  { icono: 'ambulancia', titulo: 'Pedir una ambulancia', pie: 'Traslados en el estado y fuera', href: wa('Hola, necesito un traslado en ambulancia.'), externo: true },
+  { icono: 'laboratorio', titulo: 'Exámenes de laboratorio', pie: 'Hematología, orina, química', href: wa('Hola, quisiera información sobre exámenes de laboratorio.'), externo: true },
+  { icono: 'estetoscopio', titulo: 'Agendar una consulta', pie: 'Medicina familiar, adultos y niños', href: wa('Hola, quisiera agendar una consulta médica.'), externo: true },
+  { icono: 'ubicacion', titulo: 'Cómo llegar al local', pie: 'C.C. Santa Catalina, La Sabanita', href: mapa, externo: true },
+] as const;
+---
+
+<section class="accesos" aria-label="Accesos directos">
+  <div class="contenedor accesos__fila">
+    {accesos.map((a) => (
+      <a href={a.href} target={a.externo ? '_blank' : undefined} rel={a.externo ? 'noopener' : undefined}>
+        <span class="accesos__icono"><Icono nombre={a.icono} tam={23} /></span>
+        <span class="accesos__texto">
+          <strong>{a.titulo}</strong>
+          <small>{a.pie}</small>
+        </span>
+        <span class="accesos__flecha"><Icono nombre="flecha" tam={18} /></span>
+      </a>
+    ))}
+  </div>
+</section>
+
+<style>
+  .accesos { border-block: 1px solid var(--linea-tenue); background: var(--bruma); }
+
+  .accesos__fila {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
+  }
+
+  .accesos__fila a {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    padding: 22px clamp(14px, 2vw, 24px);
+    text-decoration: none;
+    color: var(--tinta);
+    transition: background-color 180ms ease;
+    position: relative;
+  }
+  .accesos__fila a + a::before {
+    content: '';
+    position: absolute;
+    left: 0; top: 18px; bottom: 18px;
+    width: 1px;
+    background: var(--linea);
+  }
+  .accesos__fila a:hover { background: var(--papel); }
+
+  .accesos__icono {
+    display: grid;
+    place-items: center;
+    width: 44px; height: 44px;
+    flex: none;
+    border-radius: 12px;
+    background: var(--azul-tenue);
+    color: var(--azul);
+    transition: background-color 180ms ease, color 180ms ease;
+  }
+  .accesos__fila a:hover .accesos__icono { background: var(--azul); color: #fff; }
+
+  .accesos__texto { display: flex; flex-direction: column; line-height: 1.3; flex: 1; min-width: 0; }
+  .accesos__texto strong {
+    font-family: var(--titulares);
+    font-size: 1rem;
+    font-weight: 700;
+    letter-spacing: -0.012em;
+    color: var(--azul);
+  }
+  .accesos__texto small { font-size: var(--t-sm); color: var(--tinta-tenue); }
+
+  .accesos__flecha { color: var(--linea); transition: color 180ms ease, transform 180ms ease; }
+  .accesos__fila a:hover .accesos__flecha { color: var(--rojo); transform: translateX(3px); }
+
+  @media (max-width: 560px) {
+    .accesos__fila a + a::before { left: 20px; right: 20px; top: 0; bottom: auto; width: auto; height: 1px; }
+  }
+</style>

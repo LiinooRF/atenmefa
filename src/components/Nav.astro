@@ -1,0 +1,155 @@
+---
+import { clinica } from '../data/clinica';
+import { ruta } from '../lib/rutas';
+import Icono from './Icono.astro';
+import TiraSuperior from './TiraSuperior.astro';
+
+const enlaces = [
+  { href: ruta('/#servicios'), texto: 'Servicios' },
+  { href: ruta('/#equipo'), texto: 'Quiénes atienden' },
+  { href: ruta('/#preguntas'), texto: 'Preguntas' },
+  { href: ruta('/#ubicacion'), texto: 'Ubicación' },
+];
+const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
+---
+
+<header class="cabecera">
+  <TiraSuperior />
+
+  <div class="cabecera__barra">
+    <div class="contenedor cabecera__fila">
+      <a class="marca" href={ruta('/')}>
+        <img src={ruta('/logo.png')} width="42" height="42" alt="" />
+        <span class="marca__texto">
+          <strong>Atenmefa</strong>
+          <small>Atención médica familiar</small>
+        </span>
+      </a>
+
+      <nav class="menu" aria-label="Principal">
+        {enlaces.map((e) => <a href={e.href}>{e.texto}</a>)}
+      </nav>
+
+      <a class="boton boton--rojo cabecera__llamar" href={`tel:${tel.e164}`}>
+        <Icono nombre="telefono" tam={18} />
+        Llamar ahora
+      </a>
+
+      <details class="movil">
+        <summary aria-label="Abrir menú">
+          <span class="movil__barras" aria-hidden="true"><i></i><i></i><i></i></span>
+        </summary>
+        <nav class="movil__panel" aria-label="Principal">
+          {enlaces.map((e) => <a href={e.href}>{e.texto}<Icono nombre="flecha" tam={17} /></a>)}
+        </nav>
+      </details>
+    </div>
+  </div>
+</header>
+
+<style>
+  .cabecera { position: sticky; top: 0; z-index: 100; }
+
+  .cabecera__barra {
+    background: rgba(255, 255, 255, 0.93);
+    backdrop-filter: saturate(170%) blur(14px);
+    border-bottom: 1px solid var(--linea-tenue);
+  }
+
+  .cabecera__fila {
+    display: flex;
+    align-items: center;
+    gap: clamp(14px, 3vw, 34px);
+    min-height: 68px;
+  }
+
+  .marca { display: flex; align-items: center; gap: 11px; min-height: 48px; text-decoration: none; margin-right: auto; }
+  .marca img { border-radius: 50%; }
+  .marca__texto { display: flex; flex-direction: column; line-height: 1.12; }
+  .marca__texto strong {
+    font-family: var(--titulares);
+    font-size: 1.22rem;
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    color: var(--azul);
+  }
+  .marca__texto small { font-size: 0.7rem; color: var(--tinta-tenue); }
+
+  .menu { display: none; align-items: center; gap: clamp(16px, 2.2vw, 30px); }
+  .menu a {
+    font-family: var(--titulares);
+    font-size: 0.95rem;
+    font-weight: 600;
+    color: var(--tinta);
+    text-decoration: none;
+    padding: 10px 0;
+    position: relative;
+  }
+  .menu a::after {
+    content: '';
+    position: absolute;
+    left: 0; right: 0; bottom: 2px;
+    height: 2px;
+    background: var(--rojo);
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 180ms ease;
+  }
+  .menu a:hover { color: var(--azul); }
+  .menu a:hover::after { transform: scaleX(1); }
+
+  .cabecera__llamar { display: none; min-height: 46px; padding: 10px 20px; font-size: 0.95rem; }
+
+  @media (min-width: 1000px) {
+    .menu { display: flex; }
+    .cabecera__llamar { display: inline-flex; }
+    .movil { display: none; }
+  }
+
+  .movil summary {
+    list-style: none;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 48px; height: 48px;
+    border: 1px solid var(--linea);
+    border-radius: var(--radio-sm);
+    cursor: pointer;
+  }
+  .movil summary::-webkit-details-marker { display: none; }
+
+  .movil__barras { display: grid; gap: 5px; }
+  .movil__barras i {
+    display: block;
+    width: 21px; height: 2.5px;
+    border-radius: 2px;
+    background: var(--azul);
+    transition: transform 200ms ease, opacity 200ms ease;
+  }
+  .movil[open] .movil__barras i:nth-child(1) { transform: translateY(7.5px) rotate(45deg); }
+  .movil[open] .movil__barras i:nth-child(2) { opacity: 0; }
+  .movil[open] .movil__barras i:nth-child(3) { transform: translateY(-7.5px) rotate(-45deg); }
+
+  .movil__panel {
+    position: absolute;
+    left: 0; right: 0; top: 100%;
+    background: var(--papel);
+    border-top: 1px solid var(--linea-tenue);
+    box-shadow: var(--flota-alta);
+    padding: 6px clamp(20px, 5vw, 44px) 16px;
+  }
+  .movil__panel a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 17px 2px;
+    font-family: var(--titulares);
+    font-size: 1.08rem;
+    font-weight: 600;
+    color: var(--tinta);
+    text-decoration: none;
+  }
+  .movil__panel a + a { border-top: 1px solid var(--linea-tenue); }
+  .movil__panel a :global(svg) { color: var(--tinta-tenue); }
+</style>

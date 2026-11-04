@@ -1,0 +1,109 @@
+---
+/**
+ * Remate de la página. El recorrido es portada → respaldo → qué se hace →
+ * quiénes → dudas → dónde, y tiene que cerrar en una acción, no caer al pie.
+ */
+import { clinica, wa } from '../data/clinica';
+import Icono from './Icono.astro';
+
+const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
+---
+
+<section class="cierre">
+  <div class="contenedor cierre__caja">
+    <div class="cierre__texto">
+      <h2>¿Necesita una ambulancia o una consulta?</h2>
+      <p>
+        Atendemos en el local de La Sabanita y coordinamos traslados a cualquier
+        estado del país. Si es urgente, llame en vez de escribir: la llamada
+        entra al mismo número y es más rápida.
+      </p>
+    </div>
+
+    <div class="cierre__acciones">
+      <a class="cierre__llamar" href={`tel:${tel.e164}`}>
+        <span class="cierre__icono"><Icono nombre="ambulancia" tam={26} /></span>
+        <span class="cierre__cuerpo">
+          <small>Llame o escriba, mismo número</small>
+          <strong class="cifra">{tel.visible}</strong>
+        </span>
+      </a>
+      <a class="boton boton--claro" href={wa('Hola, necesito información sobre sus servicios.')} target="_blank" rel="noopener">
+        <Icono nombre="whatsapp" tam={19} />
+        Escribir por WhatsApp
+      </a>
+    </div>
+  </div>
+</section>
+
+<style>
+  .cierre {
+    background:
+      radial-gradient(90% 150% at 15% 0%, var(--azul-medio) 0%, transparent 58%),
+      var(--azul);
+    color: #fff;
+    padding-block: clamp(50px, 7vw, 82px);
+  }
+
+  .cierre__caja {
+    display: grid;
+    gap: clamp(28px, 4vw, 54px);
+    align-items: center;
+  }
+  @media (min-width: 900px) { .cierre__caja { grid-template-columns: 1.1fr auto; } }
+
+  .cierre h2 { color: #fff; max-width: 18ch; }
+  .cierre__texto p {
+    margin-top: 16px;
+    color: rgba(255, 255, 255, 0.78);
+    max-width: min(54ch, 100%);
+    font-size: var(--t-md);
+  }
+
+  .cierre__acciones { display: grid; gap: 12px; justify-items: stretch; }
+
+  .cierre__llamar {
+    display: flex;
+    align-items: center;
+    gap: 15px;
+    padding: 16px 24px 16px 18px;
+    background: var(--rojo);
+    color: #fff;
+    border-radius: var(--radio);
+    text-decoration: none;
+    box-shadow: var(--flota);
+    transition: background-color 200ms ease, transform 200ms ease, box-shadow 200ms ease;
+  }
+  .cierre__llamar:hover {
+    background: var(--rojo-hondo);
+    transform: translateY(-2px);
+    box-shadow: var(--flota-alta);
+  }
+
+  .cierre__icono {
+    display: grid;
+    place-items: center;
+    width: 50px; height: 50px;
+    flex: none;
+    border-radius: 12px;
+    background: rgba(255, 255, 255, 0.17);
+  }
+
+  .cierre__cuerpo { display: flex; flex-direction: column; line-height: 1.15; }
+  .cierre__cuerpo small {
+    font-size: var(--t-xs);
+    letter-spacing: 0.06em;
+    text-transform: uppercase;
+    font-weight: 600;
+    color: #fff;
+  }
+  .cierre__cuerpo strong {
+    font-family: var(--titulares);
+    font-size: clamp(1.45rem, 4vw, 1.75rem);
+    font-weight: 800;
+    letter-spacing: -0.03em;
+    margin-top: 3px;
+  }
+
+  .cierre__acciones .boton { min-height: 50px; }
+</style>

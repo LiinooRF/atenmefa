@@ -1,0 +1,97 @@
+---
+/**
+ * Quiénes atienden. En salud, Google y los buscadores con IA no citan a
+ * "profesionales capacitados": citan a alguien con nombre y credencial.
+ * Mientras el cliente no confirme a su personal, se muestra el hueco y no
+ * se inventa a nadie.
+ */
+import { equipo } from '../data/clinica';
+import Hueco from './Hueco.astro';
+import Falta from './Falta.astro';
+---
+
+<section class="seccion" id="equipo">
+  <div class="contenedor">
+    <div class="titulo-seccion">
+      <h2>Quiénes atienden</h2>
+      <p class="guia">
+        Las consultas y los traslados los atiende personal colegiado, con su
+        número de registro a la vista.
+      </p>
+    </div>
+
+    {equipo.length > 0 ? (
+      <ul class="equipo">
+        {equipo.map((m) => (
+          <li>
+            <div class="equipo__foto">
+              <Hueco ancho={600} alto={700} nota={`Retrato de ${m.nombre}, fondo neutro, con bata o uniforme.`} />
+            </div>
+            <div class="equipo__datos">
+              <h3>{m.nombre}</h3>
+              <p class="equipo__titulo">{m.titulo}</p>
+              {m.especialidad && <p class="equipo__esp">{m.especialidad}</p>}
+              <p class="equipo__rol">{m.rol}</p>
+              {m.cm && (
+                <dl class="equipo__registro">
+                  <dt>C.M.</dt><dd class="cifra">{m.cm}</dd>
+                  {m.msds && (<><dt>M.S.D.S.</dt><dd class="cifra">{m.msds}</dd></>)}
+                </dl>
+              )}
+            </div>
+          </li>
+        ))}
+      </ul>
+    ) : (
+      <div class="equipo__vacio">
+        <Falta
+          que="Quiénes atienden en Atenmefa"
+          porque="Nombre, especialidad y número de colegiatura de cada médico y paramédico del centro. Es el dato que más pesa para que Google y Gemini citen al sitio en temas de salud, y el único que no se puede resolver sin el cliente."
+        />
+        <div class="equipo__huecos">
+          <Hueco ancho={600} alto={700} nota="Retrato del primer profesional. Fondo neutro, con bata o uniforme." />
+          <Hueco ancho={600} alto={700} nota="Retrato del segundo profesional, mismo encuadre y misma luz." />
+        </div>
+      </div>
+    )}
+  </div>
+</section>
+
+<style>
+  .equipo {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 22px;
+    grid-template-columns: repeat(auto-fit, minmax(min(270px, 100%), 1fr));
+    max-width: 920px;
+  }
+  .equipo li { display: grid; gap: 16px; }
+
+  .equipo__datos { display: flex; flex-direction: column; gap: 3px; }
+  .equipo__titulo { font-weight: 700; color: var(--rojo); font-size: 0.95rem; }
+  .equipo__esp { font-size: var(--t-sm); color: var(--tinta-suave); }
+  .equipo__rol { font-size: var(--t-sm); color: var(--tinta-tenue); margin-top: 4px; }
+
+  .equipo__registro {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 5px 14px;
+    margin: 12px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--linea);
+    font-size: var(--t-xs);
+  }
+  .equipo__registro dt { color: var(--tinta-tenue); text-transform: uppercase; letter-spacing: 0.07em; font-weight: 700; }
+  .equipo__registro dd { margin: 0 10px 0 0; color: var(--azul); font-weight: 700; }
+
+  .equipo__vacio { display: grid; grid-template-columns: minmax(0, 1fr); gap: 26px; }
+  .equipo__huecos {
+    display: grid;
+    min-width: 0;
+    gap: 22px;
+    grid-template-columns: repeat(auto-fit, minmax(min(230px, 100%), 1fr));
+    max-width: 620px;
+  }
+</style>

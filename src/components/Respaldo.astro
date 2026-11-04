@@ -1,0 +1,56 @@
+---
+/**
+ * Franja de respaldo. El patrón de confianza para servicios locales pide la
+ * prueba antes que la oferta. Acá NO va nada que no se pueda comprobar.
+ */
+import { clinica } from '../data/clinica';
+import Icono from './Icono.astro';
+
+const puntos = [
+  { icono: 'escudo', titulo: 'Personal con registro', pie: 'Médicos y paramédicos colegiados' },
+  { icono: 'ambulancia', titulo: 'Cobertura nacional', pie: 'Traslados a cualquier estado' },
+  { icono: 'latido', titulo: 'Soporte vital a bordo', pie: 'Unidades equipadas y monitoreo' },
+  { icono: 'escudo', titulo: 'Atendemos pólizas', pie: 'Casos de seguro y redes de asistencia' },
+] as const;
+---
+
+<section class="respaldo" aria-label="Respaldo">
+  <div class="contenedor">
+    <ul class="respaldo__lista">
+      {puntos.map((p) => (
+        <li>
+          <Icono nombre={p.icono} tam={22} />
+          <span>
+            <strong>{p.titulo}</strong>
+            <small>{p.pie}</small>
+          </span>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .respaldo { background: var(--azul); color: #fff; }
+
+  .respaldo__lista {
+    list-style: none;
+    margin: 0;
+    padding: clamp(30px, 4.5vw, 44px) 0;
+    display: grid;
+    gap: 24px clamp(22px, 3vw, 40px);
+    grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+  }
+
+  .respaldo__lista li { display: flex; align-items: flex-start; gap: 12px; }
+  .respaldo__lista :global(svg) { color: var(--rojo); margin-top: 2px; }
+
+  .respaldo__lista span { display: flex; flex-direction: column; gap: 2px; }
+  .respaldo__lista strong {
+    font-family: var(--titulares);
+    font-size: 1.02rem;
+    font-weight: 700;
+    letter-spacing: -0.015em;
+  }
+  .respaldo__lista small { font-size: var(--t-sm); color: rgba(255, 255, 255, 0.72); line-height: 1.45; }
+</style>

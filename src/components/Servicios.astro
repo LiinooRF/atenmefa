@@ -1,0 +1,122 @@
+---
+/**
+ * Índice tipográfico, no rejilla de tarjetas: el nombre del servicio es lo
+ * que se busca y lo que tiene que leerse primero. Cada fila es un enlace
+ * completo, no un bloque con un enlace adentro.
+ */
+import { servicios } from '../data/clinica';
+import { wa } from '../data/clinica';
+import Icono from './Icono.astro';
+
+const iconos: Record<string, string> = {
+  'traslados-en-ambulancia': 'ambulancia',
+  emergencias: 'latido',
+  'consulta-medica': 'estetoscopio',
+  'laboratorio-clinico': 'laboratorio',
+  electrocardiograma: 'latido',
+  nebulizacion: 'pulmon',
+  'cirugia-menor': 'bisturi',
+  'alquiler-de-equipos': 'silla',
+};
+---
+
+<section class="seccion" id="servicios">
+  <div class="contenedor">
+    <div class="titulo-seccion">
+      <h2>Qué se hace en Atenmefa</h2>
+      <p class="guia">
+        Consulta, laboratorio y procedimientos en el local de La Sabanita, más
+        traslados en ambulancia dentro y fuera del estado Bolívar.
+      </p>
+    </div>
+
+    <ul class="indice">
+      {servicios.map((s) => (
+        <li>
+          <a href={wa(`Hola, quisiera información sobre: ${s.nombre}.`)} target="_blank" rel="noopener">
+            <span class="indice__icono"><Icono nombre={iconos[s.slug] ?? 'latido'} tam={24} /></span>
+            <span class="indice__cuerpo">
+              <span class="indice__nombre">{s.nombre}</span>
+              <span class="indice__resumen">{s.resumen}</span>
+            </span>
+            <span class="indice__meta">
+              {s.precioDesde && <span class="indice__precio cifra">Desde {s.precioDesde}</span>}
+              <span class="indice__cobertura">{s.cobertura}</span>
+            </span>
+            <span class="indice__flecha"><Icono nombre="flecha" tam={19} /></span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .indice { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--linea); }
+  .indice li { border-bottom: 1px solid var(--linea); }
+
+  .indice a {
+    display: grid;
+    grid-template-columns: auto 1fr auto auto;
+    align-items: center;
+    gap: clamp(14px, 2.4vw, 26px);
+    padding: clamp(18px, 2.6vw, 26px) 4px;
+    text-decoration: none;
+    color: var(--tinta);
+    transition: padding 200ms ease, background-color 200ms ease;
+  }
+  .indice a:hover { background: var(--bruma); padding-inline: 14px; }
+
+  .indice__icono {
+    display: grid;
+    place-items: center;
+    width: 50px; height: 50px;
+    flex: none;
+    border-radius: 13px;
+    background: var(--azul-tenue);
+    color: var(--azul);
+    transition: background-color 200ms ease, color 200ms ease;
+  }
+  .indice a:hover .indice__icono { background: var(--azul); color: #fff; }
+
+  .indice__cuerpo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+
+  .indice__nombre {
+    font-family: var(--titulares);
+    font-size: clamp(1.1rem, 2.6vw, 1.35rem);
+    font-weight: 700;
+    letter-spacing: -0.022em;
+    color: var(--azul);
+  }
+  .indice__resumen {
+    font-size: var(--t-sm);
+    color: var(--tinta-suave);
+    max-width: min(58ch, 100%);
+  }
+
+  .indice__meta { display: flex; flex-direction: column; align-items: flex-end; gap: 5px; text-align: right; }
+
+  .indice__precio {
+    font-family: var(--titulares);
+    font-weight: 700;
+    font-size: var(--t-sm);
+    color: var(--rojo);
+  }
+  .indice__cobertura {
+    font-size: var(--t-xs);
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: var(--tinta-tenue);
+    font-weight: 600;
+    white-space: nowrap;
+  }
+
+  .indice__flecha { color: var(--linea); transition: color 200ms ease, transform 200ms ease; }
+  .indice a:hover .indice__flecha { color: var(--rojo); transform: translateX(4px); }
+
+  @media (max-width: 720px) {
+    .indice a { grid-template-columns: auto 1fr auto; row-gap: 10px; }
+    .indice__meta { grid-column: 2 / -1; flex-direction: row; align-items: center; justify-content: flex-start; gap: 12px; }
+    .indice__flecha { display: none; }
+  }
+</style>
