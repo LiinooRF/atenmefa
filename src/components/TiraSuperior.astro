@@ -45,10 +45,18 @@ const avisos = [
 </div>
 
 <style>
-  .tira {
-    background: var(--azul-profundo);
-    color: rgba(255, 255, 255, 0.82);
-    font-size: var(--t-xs);
+  /* En celular la tira no entra: la cinta queda cortada y la pastilla roja
+     compite con la barra fija de abajo. Fuera. Lo que dice (horario,
+     dirección, formas de pago) está completo en la sección de ubicación. */
+  .tira { display: none; }
+
+  @media (min-width: 860px) {
+    .tira {
+      display: block;
+      background: var(--azul-profundo);
+      color: rgba(255, 255, 255, 0.82);
+      font-size: var(--t-xs);
+    }
   }
 
   .tira__fila {
