@@ -108,80 +108,206 @@ export const equipo: {
  *
  * `precioDesde` en null = no se muestra precio. Pedirlos al cliente.
  */
-export const servicios = [
+export interface Servicio {
+  slug: string;
+  nombre: string;
+  /** Título de la página del servicio. Es lo que se busca, no el nombre comercial. */
+  titulo: string;
+  resumen: string;
+  /** Respuesta directa de dos frases. Es el párrafo que una IA puede citar. */
+  entrada: string;
+  cobertura: string;
+  destacado: boolean;
+  /** Qué incluye. Lo genérico se puede escribir; lo propio del centro, no. */
+  incluye: readonly string[];
+  /** PENDIENTE del cliente, cada uno. En null no se muestra. */
+  precioDesde: Pendiente<string>;
+  duracion: Pendiente<string>;
+  preparacion: Pendiente<string>;
+  entrega: Pendiente<string>;
+  /** Preguntas propias del servicio. Sin respuesta no se publican. */
+  preguntas: readonly { pregunta: string; respuesta: Pendiente<string> }[];
+}
+
+export const servicios: readonly Servicio[] = [
   {
     slug: 'traslados-en-ambulancia',
     nombre: 'Traslados en ambulancia',
+    titulo: 'Traslados en ambulancia desde Ciudad Bolívar',
     resumen:
-      'Unidades con soporte vital y personal paramédico, dentro de Ciudad Bolívar y hacia cualquier estado del país.',
-    detalle:
-      'Traslado de pacientes entre domicilio, clínica y hospital, y traslados de larga distancia fuera del estado Bolívar.',
+      'Unidades con paramédico a bordo, dentro de Ciudad Bolívar y hacia cualquier estado del país.',
+    entrada:
+      'Atenmefa hace traslados en ambulancia desde Ciudad Bolívar hacia cualquier estado de Venezuela, con paramédico a bordo durante todo el trayecto. Se coordinan por teléfono o WhatsApp al 0414-893.91.76.',
     cobertura: 'Nacional',
     destacado: true,
-    precioDesde: null as Pendiente<string>,
-  },
-  {
-    slug: 'emergencias',
-    nombre: 'Atención de emergencias',
-    resumen: 'Atención inmediata en el local, con evaluación y estabilización del paciente.',
-    detalle: null as Pendiente<string>,
-    cobertura: 'Ciudad Bolívar',
-    destacado: true,
-    precioDesde: null as Pendiente<string>,
-  },
-  {
-    slug: 'consulta-medica',
-    nombre: 'Consulta médica',
-    resumen: 'Consulta de medicina familiar para adultos y niños, con historia clínica completa.',
-    detalle: null as Pendiente<string>,
-    cobertura: 'Ciudad Bolívar',
-    destacado: false,
-    precioDesde: null as Pendiente<string>,
+    incluye: [
+      'Traslado entre domicilio, clínica y hospital',
+      'Traslados de larga distancia fuera del estado Bolívar',
+      'Personal paramédico durante todo el trayecto',
+      'Coordinación con la clínica o el hospital que recibe',
+    ],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { pregunta: '¿Cuánto cuesta un traslado de Ciudad Bolívar a Caracas?', respuesta: null },
+      { pregunta: '¿Cuánto tardan en llegar dentro de Ciudad Bolívar?', respuesta: null },
+      { pregunta: '¿Puede acompañar un familiar en la ambulancia?', respuesta: null },
+      { pregunta: '¿Hacen traslados programados, no solo de emergencia?',
+        respuesta: 'Sí. Además de las emergencias, Atenmefa coordina traslados programados: alta de una clínica, ingreso a otra, o viajes a otro estado para un tratamiento.' },
+    ],
   },
   {
     slug: 'laboratorio-clinico',
     nombre: 'Laboratorio clínico',
-    resumen: 'Hematología completa, química sanguínea, orina, heces y perfiles de rutina.',
-    detalle: null as Pendiente<string>,
+    titulo: 'Laboratorio clínico en Ciudad Bolívar',
+    resumen: 'Hematología, química sanguínea, orina, heces y perfiles de rutina.',
+    entrada:
+      'Atenmefa procesa exámenes de laboratorio en su local del C.C. Santa Catalina, en La Sabanita, Ciudad Bolívar. Incluye hematología completa, química sanguínea, orina y heces.',
     cobertura: 'Ciudad Bolívar',
     destacado: true,
-    precioDesde: null as Pendiente<string>,
+    incluye: [
+      'Hematología completa',
+      'Química sanguínea: glicemia, urea, creatinina, perfil lipídico',
+      'Examen de orina',
+      'Examen de heces',
+    ],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { pregunta: '¿Necesito orden médica para hacerme exámenes?', respuesta: null },
+      { pregunta: '¿Hay que ir en ayunas?', respuesta: null },
+      { pregunta: '¿Cuándo están listos los resultados?', respuesta: null },
+      { pregunta: '¿Desde qué hora toman muestras?', respuesta: null },
+    ],
+  },
+  {
+    slug: 'emergencias',
+    nombre: 'Atención de emergencias',
+    titulo: 'Atención de emergencias en La Sabanita',
+    resumen: 'Evaluación y estabilización en el local, con traslado si hace falta.',
+    entrada:
+      'Atenmefa atiende emergencias en su local de La Sabanita, en Ciudad Bolívar: evaluación, estabilización y traslado en su propia ambulancia si el caso lo requiere.',
+    cobertura: 'Ciudad Bolívar',
+    destacado: true,
+    incluye: [
+      'Evaluación y signos vitales',
+      'Estabilización del paciente',
+      'Tratamiento de urgencia',
+      'Traslado en ambulancia propia si hace falta',
+    ],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { pregunta: '¿Atienden emergencias las 24 horas?', respuesta: null },
+      { pregunta: '¿Qué hago si la emergencia es de madrugada?', respuesta: null },
+    ],
+  },
+  {
+    slug: 'consulta-medica',
+    nombre: 'Consulta médica',
+    titulo: 'Consulta de medicina familiar en Ciudad Bolívar',
+    resumen: 'Medicina familiar para adultos y niños, con historia clínica completa.',
+    entrada:
+      'Atenmefa atiende consulta de medicina familiar para adultos y niños en el C.C. Santa Catalina, La Sabanita. Cada consulta queda registrada con historia clínica y récipe.',
+    cobertura: 'Ciudad Bolívar',
+    destacado: false,
+    incluye: [
+      'Evaluación y signos vitales',
+      'Historia clínica',
+      'Diagnóstico y récipe',
+      'Indicación de exámenes si hacen falta',
+    ],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { pregunta: '¿Atienden niños?', respuesta: null },
+      { pregunta: '¿Hay que pedir cita o se atiende por orden de llegada?', respuesta: null },
+    ],
   },
   {
     slug: 'electrocardiograma',
     nombre: 'Electrocardiograma',
+    titulo: 'Electrocardiograma en Ciudad Bolívar',
     resumen: 'Electrocardiograma de reposo con informe del médico.',
-    detalle: null as Pendiente<string>,
+    entrada:
+      'Atenmefa hace electrocardiogramas de reposo con informe médico en su local de La Sabanita, Ciudad Bolívar. El estudio toma pocos minutos y no requiere preparación especial.',
     cobertura: 'Ciudad Bolívar',
     destacado: false,
-    precioDesde: null as Pendiente<string>,
+    incluye: ['Electrocardiograma de reposo de 12 derivaciones', 'Informe del médico', 'Trazado impreso'],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { pregunta: '¿Necesito orden médica para un electrocardiograma?', respuesta: null },
+      { pregunta: '¿Me entregan el informe el mismo día?', respuesta: null },
+    ],
   },
   {
     slug: 'nebulizacion',
     nombre: 'Nebulización',
+    titulo: 'Nebulización en Ciudad Bolívar',
     resumen: 'Terapia respiratoria en el local, para adultos y niños.',
-    detalle: null as Pendiente<string>,
+    entrada:
+      'Atenmefa aplica nebulizaciones en su local de La Sabanita, Ciudad Bolívar, para adultos y niños, con el medicamento indicado por el médico.',
     cobertura: 'Ciudad Bolívar',
     destacado: false,
-    precioDesde: null as Pendiente<string>,
+    incluye: ['Nebulización con el medicamento indicado', 'Evaluación antes y después', 'Adultos y niños'],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { pregunta: '¿Hay que llevar el medicamento?', respuesta: null },
+      { pregunta: '¿Cuántas sesiones hacen falta?', respuesta: null },
+    ],
   },
   {
     slug: 'cirugia-menor',
     nombre: 'Cirugía menor ambulatoria',
+    titulo: 'Cirugía menor ambulatoria en Ciudad Bolívar',
     resumen: 'Suturas, drenajes y procedimientos menores sin hospitalización.',
-    detalle: null as Pendiente<string>,
+    entrada:
+      'Atenmefa realiza procedimientos de cirugía menor ambulatoria en su local de La Sabanita: suturas, drenajes y curas, sin necesidad de hospitalización.',
     cobertura: 'Ciudad Bolívar',
     destacado: false,
-    precioDesde: null as Pendiente<string>,
+    incluye: ['Sutura de heridas', 'Drenaje de abscesos', 'Curas y retiro de puntos'],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { pregunta: '¿Atienden heridas el mismo día?', respuesta: null },
+      { pregunta: '¿Incluye el retiro de los puntos?', respuesta: null },
+    ],
   },
   {
     slug: 'alquiler-de-equipos',
     nombre: 'Alquiler de equipos médicos',
-    resumen: 'Equipos para cuidado en casa: sillas de ruedas, camas, oxígeno y más.',
-    detalle: null as Pendiente<string>,
+    titulo: 'Alquiler de equipos médicos en Ciudad Bolívar',
+    resumen: 'Equipos para cuidado en casa: sillas de ruedas, camas y oxígeno.',
+    entrada:
+      'Atenmefa alquila equipos médicos para cuidado en casa en Ciudad Bolívar: sillas de ruedas, camas clínicas y equipos de oxígeno.',
     cobertura: 'Ciudad Bolívar',
     destacado: false,
-    precioDesde: null as Pendiente<string>,
+    incluye: ['Sillas de ruedas', 'Camas clínicas', 'Equipos de oxígeno'],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { pregunta: '¿Cuál es el alquiler mínimo?', respuesta: null },
+      { pregunta: '¿Piden depósito o garantía?', respuesta: null },
+      { pregunta: '¿Llevan el equipo hasta la casa?', respuesta: null },
+    ],
   },
 ] as const;
 
@@ -248,6 +374,12 @@ export const preguntasPublicables = preguntas.filter(
 );
 
 export const serviciosDestacados = servicios.filter((s) => s.destacado);
+
+export const servicioPorSlug = (slug: string) => servicios.find((s) => s.slug === slug);
+
+/** Solo las preguntas del servicio que ya tienen dato confirmado. */
+export const preguntasDe = (s: Servicio) =>
+  s.preguntas.filter((p): p is { pregunta: string; respuesta: string } => p.respuesta !== null);
 
 export const wa = (mensaje: string) =>
   `https://wa.me/${clinica.contacto.whatsapp.e164.replace('+', '')}?text=${encodeURIComponent(mensaje)}`;

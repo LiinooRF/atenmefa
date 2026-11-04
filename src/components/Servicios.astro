@@ -5,7 +5,7 @@
  * completo, no un bloque con un enlace adentro.
  */
 import { servicios } from '../data/clinica';
-import { wa } from '../data/clinica';
+import { ruta } from '../lib/rutas';
 import Icono from './Icono.astro';
 
 const iconos: Record<string, string> = {
@@ -33,7 +33,7 @@ const iconos: Record<string, string> = {
     <ul class="indice">
       {servicios.map((s) => (
         <li>
-          <a href={wa(`Hola, quisiera información sobre: ${s.nombre}.`)} target="_blank" rel="noopener">
+          <a href={ruta(`/servicios/${s.slug}/`)}>
             <span class="indice__icono"><Icono nombre={iconos[s.slug] ?? 'latido'} tam={24} /></span>
             <span class="indice__cuerpo">
               <span class="indice__nombre">{s.nombre}</span>
