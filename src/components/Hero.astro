@@ -12,15 +12,15 @@ const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
       <h1>Consulta, laboratorio y ambulancia en Ciudad Bolívar.</h1>
 
       <p class="portada__bajada">
-        Atendemos en el local del C.C. Santa Catalina, en La Sabanita. Para
-        traslados salimos con paramédico a bordo, dentro de Ciudad Bolívar
-        y a cualquier estado del país.
+        Atendemos en el local del C.C. Santa Catalina y también a domicilio.
+        Para traslados salimos con paramédico a bordo, dentro de Ciudad
+        Bolívar y a cualquier estado del país.
       </p>
 
       <a class="urgencia" href={`tel:${tel.e164}`}>
         <span class="urgencia__icono"><Icono nombre="ambulancia" tam={28} /></span>
         <span class="urgencia__texto">
-          <small>Llame o escriba, mismo número</small>
+          <small>Emergencias y ambulancia · 24 horas</small>
           <strong class="cifra">{tel.visible}</strong>
         </span>
         <span class="urgencia__flecha"><Icono nombre="flecha" tam={21} /></span>

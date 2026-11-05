@@ -17,24 +17,31 @@ export const clinica = {
   nombre: 'Atenmefa',
   nombreLargo: 'Atenmefa — Atención Médica Familiar',
   descripcionCorta:
-    'Centro de atención médica familiar y traslados en ambulancia en Ciudad Bolívar.',
+    'Centro de atención médica familiar, servicios a domicilio y traslados en ambulancia en Ciudad Bolívar.',
+  /** Del folleto: «Servicios de salud a domicilio». No estaba en el sitio. */
+  aDomicilio: true,
 
   /** Cambiar cuando se defina el dominio final. De acá salen canonical, og:url y schema. */
   dominio: 'https://atenmefa.site',
 
   direccion: {
-    calle: 'Av. Principal de La Sabanita, C.C. Santa Catalina, Local 04',
-    sector: 'La Sabanita',
+    /**
+     * Del folleto propio del cliente. OJO: el sitio viejo decía
+     * "Av. Principal de La Sabanita", que no coincide con su propia
+     * papelería ni con el registro del C.C. Santa Catalina en
+     * OpenStreetMap. Se usa la del folleto. Confirmar con el cliente:
+     * una dirección distinta entre el sitio, el folleto y la ficha de
+     * Google es de lo que más castiga el posicionamiento local.
+     */
+    calle: 'Av. Sucre, Sector Puente Gómez, C.C. Santa Catalina, Local 04',
+    sector: 'Puente Gómez',
     ciudad: 'Ciudad Bolívar',
     estado: 'Bolívar',
     pais: 'VE',
     /**
-     * POR CONFIRMAR con el cliente. Vienen de OpenStreetMap buscando
-     * "C.C. Santa Catalina, Ciudad Bolívar": el registro existe, pero lo
-     * sitúa en Avenida Sucre, sector Puente Gómez, Sabanita Viejo, y la
-     * dirección que dio el cliente dice "Av. Principal de La Sabanita".
-     * Puede ser el mismo sitio con dos nombres, o puede estar mal.
-     * Pedir que abran Google Maps en el local y manden el punto.
+     * De OpenStreetMap. Quedaron confirmadas: OSM ubica el C.C. Santa
+     * Catalina en Avenida Sucre, sector Puente Gómez, y el folleto del
+     * cliente dice exactamente esa dirección.
      */
     lat: 8.1224846 as Pendiente<number>,
     lng: -63.556518 as Pendiente<number>,
@@ -50,6 +57,8 @@ export const clinica = {
      * se agrega acá y la página se reorganiza sola.
      */
     whatsapp: { e164: '+584148939176', visible: '0414-893.91.76' },
+    /** Segunda línea del folleto. También es celular, no fijo. */
+    segundo: { e164: '+584148517422', visible: '0414-851.74.22' },
     /** PENDIENTE: teléfono fijo del local. Para emergencias hace falta un fijo. */
     fijo: null as Pendiente<{ e164: string; visible: string }>,
     /** PENDIENTE: correo propio del dominio. El Gmail resta confianza. */
@@ -64,8 +73,8 @@ export const clinica = {
   horarios: null as Pendiente<string[]>,
   horariosTexto: null as Pendiente<string>,
 
-  /** PENDIENTE: ¿la ambulancia es de verdad 24/7? La subpágina lo promete y el sitio no lo sostiene. */
-  ambulancia24h: null as Pendiente<boolean>,
+  /** El folleto del cliente marca la línea 0414-893.91.76 como «24hrs». */
+  ambulancia24h: true as Pendiente<boolean>,
 
   /** Formas de pago como funcionan en Venezuela. */
   pagos: ['Pago móvil', 'Transferencia en bolívares', 'Punto de venta', 'Divisas en efectivo'],
@@ -204,8 +213,10 @@ export const servicios: readonly Servicio[] = [
     preparacion: null,
     entrega: null,
     preguntas: [
-      { pregunta: '¿Atienden emergencias las 24 horas?', respuesta: null },
-      { pregunta: '¿Qué hago si la emergencia es de madrugada?', respuesta: null },
+      { pregunta: '¿Atienden emergencias las 24 horas?',
+        respuesta: 'Sí. La línea 0414-893.91.76 atiende las 24 horas, todos los días. La segunda línea es 0414-851.74.22.' },
+      { pregunta: '¿Hacen atención a domicilio?',
+        respuesta: 'Sí. Atenmefa presta servicios de salud a domicilio en Ciudad Bolívar, además de atender en su local.' },
     ],
   },
   {
@@ -325,7 +336,17 @@ export const preguntas = [
   {
     pregunta: '¿Dónde queda Atenmefa en Ciudad Bolívar?',
     respuesta:
-      'Atenmefa está en la Av. Principal de La Sabanita, dentro del C.C. Santa Catalina, local 04, en Ciudad Bolívar, estado Bolívar.',
+      'Atenmefa está en la Av. Sucre, sector Puente Gómez, dentro del C.C. Santa Catalina, local 04, en Ciudad Bolívar, estado Bolívar.',
+  },
+  {
+    pregunta: '¿Atienden emergencias las 24 horas?',
+    respuesta:
+      'Sí. La línea 0414-893.91.76 atiende las 24 horas. También está disponible el 0414-851.74.22.',
+  },
+  {
+    pregunta: '¿Hacen atención médica a domicilio?',
+    respuesta:
+      'Sí. Atenmefa presta servicios de salud a domicilio en Ciudad Bolívar, además de la atención en su local del C.C. Santa Catalina.',
   },
   {
     pregunta: '¿Hacen traslados en ambulancia fuera del estado Bolívar?',
@@ -344,10 +365,6 @@ export const preguntas = [
   },
   {
     pregunta: '¿Necesito orden médica para hacerme exámenes de laboratorio?',
-    respuesta: null as Pendiente<string>,
-  },
-  {
-    pregunta: '¿Atienden emergencias las 24 horas?',
     respuesta: null as Pendiente<string>,
   },
   {

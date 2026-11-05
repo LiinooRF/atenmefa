@@ -18,11 +18,16 @@ const mapa =
 /* Un solo número para llamar y para WhatsApp: se muestra una vez, con las
    dos acciones, en vez de repetir la misma cifra en dos filas. */
 const contactos = [
-  { icono: 'telefono', rotulo: 'Llamar', texto: tel.visible, href: `tel:${tel.e164}`, externo: false },
+  { icono: 'telefono', rotulo: clinica.ambulancia24h ? 'Llamar · 24 horas' : 'Llamar',
+    texto: tel.visible, href: `tel:${tel.e164}`, externo: false },
+  ...(clinica.contacto.segundo
+    ? [{ icono: 'telefono' as const, rotulo: 'Segunda línea', texto: clinica.contacto.segundo.visible,
+         href: `tel:${clinica.contacto.segundo.e164}`, externo: false }]
+    : []),
   { icono: 'whatsapp', rotulo: 'WhatsApp, el mismo número', texto: 'Escribir por WhatsApp', href: wa('Hola, necesito información.'), externo: true },
   { icono: 'instagram', rotulo: 'Instagram', texto: `@${clinica.contacto.instagram}`, href: `https://instagram.com/${clinica.contacto.instagram}`, externo: true },
   { icono: 'correo', rotulo: 'Correo', texto: clinica.contacto.correo, href: `mailto:${clinica.contacto.correo}`, externo: false },
-] as const;
+];
 ---
 
 <section class="seccion" id="ubicacion">

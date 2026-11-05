@@ -14,8 +14,9 @@ import { clinica } from '../data/clinica';
 import Icono from './Icono.astro';
 
 const avisos = [
-  clinica.horariosTexto ?? 'Horario de atención: por confirmar',
-  'C.C. Santa Catalina, local 04 · La Sabanita',
+  ...(clinica.ambulancia24h ? ['Emergencias y ambulancia, 24 horas'] : []),
+  ...(clinica.aDomicilio ? ['Atención médica a domicilio'] : []),
+  'Av. Sucre, sector Puente Gómez · C.C. Santa Catalina, local 04',
   'Traslados en ambulancia a todo el país',
   'Pago móvil · Transferencia · Punto de venta · Divisas',
   'Atendemos pólizas de seguro',

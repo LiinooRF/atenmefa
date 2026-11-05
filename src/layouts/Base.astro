@@ -46,6 +46,7 @@ const direccion = {
 
 const telefonos = [
   clinica.contacto.whatsapp.e164,
+  ...(clinica.contacto.segundo ? [clinica.contacto.segundo.e164] : []),
   ...(clinica.contacto.fijo ? [clinica.contacto.fijo.e164] : []),
 ];
 
