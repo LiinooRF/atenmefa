@@ -1,6 +1,7 @@
 // @ts-check
 import { defineConfig } from 'astro/config';
 import sitemap from '@astrojs/sitemap';
+import node from '@astrojs/node';
 
 /**
  * El dominio y la base se pasan por entorno para que el mismo código sirva
@@ -19,6 +20,12 @@ export default defineConfig({
   site: sitio,
   base,
   integrations: [sitemap()],
+  /**
+   * Las páginas públicas se generan estáticas, como hasta ahora. Solo las
+   * de /sistema/ se sirven en el momento, porque necesitan sesión y base
+   * de datos: llevan `export const prerender = false`.
+   */
+  adapter: node({ mode: 'standalone' }),
   build: {
     inlineStylesheets: 'auto',
   },

@@ -1,0 +1,217 @@
+---
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { bd, esquema } from '../../sistema/lib/base';
+import { desc, eq, sql, and, ilike, or } from 'drizzle-orm';
+
+export const prerender = false;
+
+const busca = (Astro.url.searchParams.get('q') ?? '').trim();
+const mes = Astro.url.searchParams.get('mes') ?? '';
+
+const filtros = [eq(esquema.atencion.estado, 'cerrada')];
+if (busca) {
+  const t = `%${busca.toLowerCase()}%`;
+  filtros.push(
+    or(
+      ilike(esquema.paciente.nombreBusca, t),
+      ilike(esquema.paciente.cedulaBusca, `%${busca.replace(/\D/g, '')}%`),
+    )!,
+  );
+}
+if (mes) filtros.push(eq(esquema.atencion.periodo, `${mes}-01`));
+
+const casos = await bd
+  .select({
+    id: esquema.atencion.id,
+    numero: esquema.atencion.numero,
+    fecha: esquema.atencion.fecha,
+    aseguradora: esquema.atencion.aseguradora,
+    paciente: esquema.paciente.nombre,
+    cedula: esquema.paciente.cedula,
+    medico: esquema.user.name,
+    idx: sql<string>`${esquema.atencion.datos} ->> 'idx'`,
+    total: sql<string>`COALESCE((
+      SELECT SUM(r.precio * r.cantidad) FROM renglon r WHERE r.atencion_id = ${esquema.atencion.id}
+    ), 0)`,
+    renglones: sql<number>`(
+      SELECT COUNT(*) FROM renglon r WHERE r.atencion_id = ${esquema.atencion.id}
+    )`,
+  })
+  .from(esquema.atencion)
+  .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+  .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
+  .where(and(...filtros))
+  .orderBy(desc(esquema.atencion.fecha), desc(esquema.atencion.numero))
+  .limit(100);
+
+const dinero = (v: string) =>
+  new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2 }).format(Number(v));
+
+const fechaCorta = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
+---
+
+<Sistema titulo="Casos">
+  <div class="cab">
+    <div>
+      <h1>Casos atendidos</h1>
+      <p class="cab__nota">
+        {casos.length === 100 ? 'Los 100 más recientes' : `${casos.length} ${casos.length === 1 ? 'caso' : 'casos'}`}
+        {mes && ` · ${mes}`}
+      </p>
+    </div>
+    <a class="boton boton--rojo cab__nueva" href="/sistema/atencion/nueva">
+      <Icono nombre="mas" tam={19} />
+      Nueva atención
+    </a>
+  </div>
+
+  <form class="filtros" method="get">
+    <div class="filtros__busca">
+      <Icono nombre="latido" tam={18} />
+      <input type="search" name="q" value={busca} placeholder="Buscar por nombre o cédula" aria-label="Buscar" />
+    </div>
+    <input type="month" name="mes" value={mes} aria-label="Mes" />
+    <button type="submit" class="boton boton--azul">Filtrar</button>
+    {(busca || mes) && <a class="boton boton--contorno" href="/sistema">Limpiar</a>}
+  </form>
+
+  {casos.length === 0 ? (
+    <div class="vacio sis-tarjeta">
+      <h2>{busca || mes ? 'Ningún caso coincide' : 'Todavía no hay casos cerrados'}</h2>
+      <p>
+        {busca || mes
+          ? 'Pruebe con otro nombre, otra cédula u otro mes.'
+          : 'Las atenciones aparecen acá cuando el médico las cierra.'}
+      </p>
+      {!busca && !mes && (
+        <a class="boton boton--rojo" href="/sistema/atencion/nueva">Registrar la primera</a>
+      )}
+    </div>
+  ) : (
+    <ul class="casos">
+      {casos.map((c) => (
+        <li>
+          <a href={`/sistema/atencion/${c.id}`}>
+            <span class="casos__num cifra">{c.numero}</span>
+            <span class="casos__cuerpo">
+              <span class="casos__linea">
+                <strong>{c.paciente}</strong>
+                <em class="cifra">{fechaCorta(c.fecha)}</em>
+              </span>
+              <span class="casos__linea casos__linea--baja">
+                <small>{c.idx ?? 'Sin diagnóstico'}</small>
+                <span class="casos__paga">{c.aseguradora ?? 'Paga el paciente'}</span>
+              </span>
+            </span>
+            <span class="casos__plata">
+              <strong class="cifra">{dinero(c.total)}</strong>
+              <small>{c.renglones} {c.renglones === 1 ? 'renglón' : 'renglones'}</small>
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )}
+</Sistema>
+
+<style>
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
+  .cab h1 { font-size: clamp(1.5rem, 3.5vw, 1.9rem); }
+  .cab__nota { margin-top: 5px; font-size: 0.88rem; color: var(--tinta-tenue); }
+  .cab__nueva { min-height: 46px; padding: 10px 20px; font-size: 0.93rem; }
+
+  .filtros { display: flex; flex-wrap: wrap; gap: 9px; margin: 22px 0 18px; }
+  .filtros__busca {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 1 1 240px;
+    min-width: 0;
+    padding: 0 14px;
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio-sm);
+  }
+  .filtros__busca :global(svg) { color: var(--tinta-tenue); flex: none; }
+  .filtros__busca input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; min-height: 46px; outline: none; }
+  .filtros input[type='month'] {
+    min-height: 48px;
+    padding: 0 12px;
+    border: 1px solid var(--linea);
+    border-radius: var(--radio-sm);
+    background: var(--papel);
+    font: inherit;
+  }
+  .filtros .boton { min-height: 48px; padding: 10px 20px; font-size: 0.93rem; }
+
+  .vacio { text-align: center; padding-block: clamp(36px, 7vw, 64px); }
+  .vacio h2 { font-size: 1.2rem; }
+  .vacio p { margin-top: 9px; color: var(--tinta-tenue); }
+  .vacio .boton { margin-top: 20px; }
+
+  /* Lista tipo chat: cada fila es un caso, con la fecha y quién paga. */
+  .casos { list-style: none; margin: 0; padding: 0; background: var(--papel);
+           border: 1px solid var(--linea); border-radius: var(--radio); overflow: hidden; }
+  .casos li + li { border-top: 1px solid var(--linea-tenue); }
+
+  .casos a {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    padding: 13px 16px;
+    text-decoration: none;
+    color: var(--tinta);
+    transition: background-color 150ms ease;
+  }
+  .casos a:hover { background: var(--bruma); }
+
+  .casos__num {
+    display: grid;
+    place-items: center;
+    min-width: 46px;
+    height: 46px;
+    padding: 0 8px;
+    border-radius: 12px;
+    background: var(--azul-tenue);
+    color: var(--azul);
+    font-family: var(--titulares);
+    font-weight: 700;
+    font-size: 0.92rem;
+  }
+
+  .casos__cuerpo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .casos__linea { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .casos__linea strong {
+    font-family: var(--titulares);
+    font-size: 1rem;
+    font-weight: 600;
+    color: var(--azul);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .casos__linea em { font-style: normal; font-size: 0.78rem; color: var(--tinta-tenue); flex: none; }
+  .casos__linea--baja small {
+    font-size: 0.84rem;
+    color: var(--tinta-suave);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .casos__paga {
+    flex: none;
+    font-size: 0.7rem;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--tinta-tenue);
+  }
+
+  .casos__plata { display: none; flex-direction: column; align-items: flex-end; gap: 2px; }
+  .casos__plata strong { font-family: var(--titulares); font-size: 1rem; font-weight: 700; color: var(--azul); }
+  .casos__plata small { font-size: 0.72rem; color: var(--tinta-tenue); }
+  @media (min-width: 620px) { .casos__plata { display: flex; } }
+</style>

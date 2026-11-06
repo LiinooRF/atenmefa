@@ -1,0 +1,134 @@
+/* ---------------------------------------------------------------
+   Sistema interno. Es una herramienta, no una página de marketing:
+   densidad alta, objetivos grandes para tablet, cero adorno.
+   --------------------------------------------------------------- */
+
+.sis {
+  background: var(--bruma);
+  padding-bottom: 0;
+  font-size: 16px;
+}
+
+/* La pantalla de entrar no lleva barra ni contenedor: el fondo llena todo. */
+.sis--desnuda { background: var(--azul-profundo); margin: 0; }
+
+.sis__barra {
+  position: sticky;
+  top: 0;
+  z-index: 50;
+  background: var(--azul-profundo);
+  color: #fff;
+}
+
+.sis__barra-int {
+  max-width: 1320px;
+  margin-inline: auto;
+  padding: 0 clamp(14px, 3vw, 26px);
+  display: flex;
+  align-items: center;
+  gap: clamp(12px, 2.5vw, 28px);
+  min-height: 58px;
+}
+
+.sis__marca { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #fff; }
+.sis__marca img { border-radius: 50%; }
+.sis__marca span { display: flex; flex-direction: column; line-height: 1.15; }
+.sis__marca span { font-family: var(--titulares); font-weight: 800; letter-spacing: -0.02em; }
+.sis__marca small { font-size: 0.66rem; font-weight: 400; color: rgba(255, 255, 255, 0.58); letter-spacing: 0; }
+
+.sis__nav { display: flex; gap: 4px; margin-right: auto; }
+.sis__nav a {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  min-height: 44px;
+  padding: 8px 14px;
+  border-radius: 999px;
+  color: rgba(255, 255, 255, 0.76);
+  text-decoration: none;
+  font-family: var(--titulares);
+  font-size: 0.9rem;
+  font-weight: 600;
+  transition: background-color 160ms ease, color 160ms ease;
+}
+.sis__nav a:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.sis__nav a[aria-current='page'] { background: var(--rojo); color: #fff; }
+
+.sis__quien { display: flex; align-items: center; gap: 12px; }
+.sis__quien span { display: none; flex-direction: column; line-height: 1.15; text-align: right; }
+.sis__quien strong { font-size: 0.88rem; font-weight: 600; }
+.sis__quien small { font-size: 0.68rem; color: rgba(255, 255, 255, 0.58); }
+@media (min-width: 680px) { .sis__quien span { display: flex; } }
+
+.sis__salir {
+  min-height: 40px;
+  padding: 7px 15px;
+  border-radius: 999px;
+  border: 1px solid rgba(255, 255, 255, 0.28);
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-family: var(--titulares);
+  font-size: 0.85rem;
+  font-weight: 600;
+  cursor: pointer;
+  transition: background-color 160ms ease;
+}
+.sis__salir:hover { background: rgba(255, 255, 255, 0.14); }
+
+.sis__cuerpo {
+  max-width: 1320px;
+  margin-inline: auto;
+  padding: clamp(20px, 3.5vw, 36px) clamp(14px, 3vw, 26px) 80px;
+}
+
+/* ---------- piezas comunes ---------- */
+
+.sis-tarjeta {
+  background: var(--papel);
+  border: 1px solid var(--linea);
+  border-radius: var(--radio);
+  padding: clamp(20px, 3vw, 30px);
+}
+
+.sis-campo { display: flex; flex-direction: column; gap: 7px; }
+.sis-campo label {
+  font-family: var(--titulares);
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--tinta-suave);
+}
+.sis-campo input,
+.sis-campo select,
+.sis-campo textarea {
+  width: 100%;
+  min-height: 48px;
+  padding: 11px 14px;
+  border: 1px solid var(--linea);
+  border-radius: var(--radio-sm);
+  background: var(--papel);
+  color: var(--tinta);
+  font: inherit;
+  font-size: 1rem;
+}
+.sis-campo textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
+.sis-campo input:focus,
+.sis-campo select:focus,
+.sis-campo textarea:focus {
+  outline: 2px solid var(--azul-medio);
+  outline-offset: 1px;
+  border-color: var(--azul-medio);
+}
+.sis-campo .pista { font-size: 0.78rem; color: var(--tinta-tenue); }
+
+.sis-error {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 13px 16px;
+  border-radius: var(--radio-sm);
+  background: #fdeced;
+  border: 1px solid #f3bfc2;
+  color: #8f1017;
+  font-size: 0.92rem;
+}

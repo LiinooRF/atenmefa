@@ -1,0 +1,116 @@
+---
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { auth } from '../../sistema/lib/auth';
+
+export const prerender = false;
+
+let error = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const correo = String(form.get('correo') ?? '').trim();
+  const clave = String(form.get('clave') ?? '');
+
+  if (!correo || !clave) {
+    error = 'Escriba su correo y su clave.';
+  } else {
+    try {
+      const r = await auth.api.signInEmail({
+        body: { email: correo, password: clave },
+        headers: Astro.request.headers,
+        asResponse: true,
+      });
+
+      if (r.ok) {
+        // Better Auth devuelve la cookie de sesión en la respuesta;
+        // hay que pasarla a la redirección o el login no persiste.
+        const cookies = r.headers.getSetCookie?.() ?? [];
+        const salida = Astro.redirect('/sistema');
+        for (const c of cookies) salida.headers.append('set-cookie', c);
+        return salida;
+      }
+      error = 'Correo o clave incorrectos.';
+    } catch {
+      error = 'Correo o clave incorrectos.';
+    }
+  }
+}
+---
+
+<Sistema titulo="Entrar" desnuda>
+  <div class="entrar">
+    <div class="entrar__caja">
+      <div class="entrar__marca">
+        <img src="/logo.png" width="52" height="52" alt="" />
+        <span>
+          <strong>Atenmefa</strong>
+          <small>Sistema interno</small>
+        </span>
+      </div>
+
+      <h1>Entrar</h1>
+      <p class="entrar__nota">
+        Solo para el personal del centro. Las cuentas las crea administración.
+      </p>
+
+      {error && (
+        <p class="sis-error">
+          <Icono nombre="escudo" tam={18} />
+          {error}
+        </p>
+      )}
+
+      <form method="post" class="entrar__form">
+        <div class="sis-campo">
+          <label for="correo">Correo</label>
+          <input id="correo" name="correo" type="email" autocomplete="username" required autofocus />
+        </div>
+        <div class="sis-campo">
+          <label for="clave">Clave</label>
+          <input id="clave" name="clave" type="password" autocomplete="current-password" required />
+        </div>
+        <button type="submit" class="boton boton--rojo entrar__boton">Entrar</button>
+      </form>
+    </div>
+  </div>
+</Sistema>
+
+<style>
+  .entrar {
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background:
+      radial-gradient(90% 70% at 50% 0%, #161c6e 0%, transparent 60%),
+      var(--azul-profundo);
+  }
+
+  .entrar__caja {
+    width: 100%;
+    max-width: 430px;
+    background: var(--papel);
+    border-radius: var(--radio);
+    padding: clamp(26px, 5vw, 40px);
+    box-shadow: var(--flota-alta);
+  }
+
+  .entrar__marca { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+  .entrar__marca img { border-radius: 50%; }
+  .entrar__marca span { display: flex; flex-direction: column; line-height: 1.2; }
+  .entrar__marca strong {
+    font-family: var(--titulares);
+    font-size: 1.22rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    color: var(--azul);
+  }
+  .entrar__marca small { font-size: 0.74rem; color: var(--tinta-tenue); }
+
+  .entrar h1 { font-size: 1.7rem; }
+  .entrar__nota { margin-top: 8px; font-size: 0.9rem; color: var(--tinta-tenue); }
+  .sis-error { margin-top: 20px; }
+  .entrar__form { display: grid; gap: 16px; margin-top: 24px; }
+  .entrar__boton { width: 100%; margin-top: 4px; }
+</style>

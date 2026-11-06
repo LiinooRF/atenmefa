@@ -1,0 +1,72 @@
+---
+/**
+ * Capa del sistema interno. Nada de esto se indexa ni comparte estilos de
+ * marketing con el sitio público: es una herramienta de trabajo, se usa de
+ * pie y con una tablet en la mano.
+ */
+import '../styles/fuentes.css';
+import '@fontsource/noto-sans/latin-400.css';
+import '@fontsource/noto-sans/latin-600.css';
+import '../styles/global.css';
+import '../styles/sistema.css';
+import Icono from '../components/Icono.astro';
+
+interface Props {
+  titulo: string;
+  /** La pantalla de entrada no lleva barra ni menú. */
+  desnuda?: boolean;
+}
+const { titulo, desnuda = false } = Astro.props;
+const usuario = Astro.locals.usuario;
+
+const enlaces = [
+  { href: '/sistema', texto: 'Casos', icono: 'latido' as const },
+  { href: '/sistema/atencion/nueva', texto: 'Nueva atención', icono: 'mas' as const },
+];
+---
+
+<!doctype html>
+<html lang="es-VE">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>{titulo} · Atenmefa</title>
+    <meta name="robots" content="noindex, nofollow" />
+    <meta name="theme-color" content="#0b0f45" />
+    <link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" />
+  </head>
+
+  <body class:list={['sis', desnuda && 'sis--desnuda']}>
+    {!desnuda && usuario && (
+      <header class="sis__barra">
+        <div class="sis__barra-int">
+          <a class="sis__marca" href="/sistema">
+            <img src="/logo.png" width="34" height="34" alt="" />
+            <span>Atenmefa<small>Sistema interno</small></span>
+          </a>
+
+          <nav class="sis__nav" aria-label="Sistema">
+            {enlaces.map((e) => (
+              <a href={e.href} aria-current={Astro.url.pathname === e.href ? 'page' : undefined}>
+                <Icono nombre={e.icono} tam={17} />
+                {e.texto}
+              </a>
+            ))}
+          </nav>
+
+          <div class="sis__quien">
+            <span>
+              <strong>{usuario.name}</strong>
+              <small>{usuario.rol === 'medico' ? 'Médico' : 'Administración'}</small>
+            </span>
+            <form method="post" action="/sistema/salir">
+              <button type="submit" class="sis__salir">Salir</button>
+            </form>
+          </div>
+        </div>
+      </header>
+    )}
+
+    <main class:list={[!desnuda && 'sis__cuerpo']}><slot /></main>
+  </body>
+</html>
