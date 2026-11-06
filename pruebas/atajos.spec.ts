@@ -16,7 +16,7 @@ const CEDULA_NUEVA = cedulaDePrueba(7, 1);
 const NOMBRE = 'Rosalba Esperanza Núñez de Prueba';
 
 test.afterAll(async () => {
-  await borrarPacientes(CEDULA, CEDULA_NUEVA);
+  await borrarPacientes(CEDULA, CEDULA_NUEVA, 'V-99.700.000');
 });
 
 /* ---------------------------------------------------------------
@@ -25,7 +25,7 @@ test.afterAll(async () => {
 
 test('el formulario se muestra de a un paso', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000');
 
   const hojas = page.locator('[data-hoja]');
   await expect(hojas).toHaveCount(9);
@@ -42,7 +42,7 @@ test('el formulario se muestra de a un paso', async ({ page }) => {
 
 test('el paso queda en la dirección y sobrevive a una recarga', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000');
   await page.getByRole('button', { name: 'Siguiente' }).click();
   await page.getByRole('button', { name: 'Siguiente' }).click();
   await expect(page).toHaveURL(/paso=2/);
@@ -54,9 +54,9 @@ test('el paso queda en la dirección y sobrevive a una recarga', async ({ page }
 
 test('cerrar atención solo aparece en el último paso', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000');
   await expect(page.getByRole('button', { name: 'Cerrar atención' })).toBeHidden();
-  await page.goto('/sistema/atencion/nueva?paso=8');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000&paso=8');
   await expect(page.getByRole('button', { name: 'Cerrar atención' })).toBeVisible();
 });
 
@@ -66,10 +66,9 @@ test('cerrar atención solo aparece en el último paso', async ({ page }) => {
 
 test('lo escrito sobrevive a una recarga sin haber tocado guardar', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva');
-
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
+  await page.locator('[data-ir="0"]').click();
   await page.locator('#c-nombre').fill(NOMBRE);
-  await page.locator('#c-cedula').fill(CEDULA);
 
   // El guardado automático crea la atención y cambia la dirección.
   await expect(page).toHaveURL(/\/sistema\/atencion\/[0-9a-f-]{36}\/editar/, { timeout: 15000 });
@@ -83,10 +82,9 @@ test('lo escrito sobrevive a una recarga sin haber tocado guardar', async ({ pag
 
 test('no se crea una atención duplicada al cerrar después del guardado automático', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva');
-
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_NUEVA)}`);
+  await page.locator('[data-ir="0"]').click();
   await page.locator('#c-nombre').fill('Paciente Sin Duplicar');
-  await page.locator('#c-cedula').fill(CEDULA_NUEVA);
   await expect(page).toHaveURL(/\/editar/, { timeout: 15000 });
 
   const cuantas = await conBase(async (sql) => {
@@ -101,9 +99,9 @@ test('no se crea una atención duplicada al cerrar después del guardado automá
 
 test('el estado dice cuántos campos faltan para poder cerrar', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
+  await page.locator('[data-ir="0"]').click();
   await page.locator('#c-nombre').fill('Paciente Faltantes');
-  await page.locator('#c-cedula').fill(CEDULA);
   await expect(page.locator('#pasos-estado')).toContainText('Faltan', { timeout: 15000 });
 });
 
@@ -121,44 +119,37 @@ test('la cédula conocida rellena los datos personales', async ({ page }) => {
     alergias: 'Penicilina',
   });
 
+  // La puerta resuelve al paciente antes de abrir el formulario.
   await page.goto('/sistema/atencion/nueva');
-  await page.locator('#c-cedula').fill(CEDULA);
-  await page.locator('#c-cedula').blur();
+  await page.locator('#cedula').fill(CEDULA);
+  await page.getByRole('button', { name: 'Continuar' }).click();
 
-  await expect(page.locator('#atajos-paciente')).toBeVisible({ timeout: 10000 });
   await expect(page.locator('#atajos-titulo')).toContainText('Ya atendimos');
   await expect(page.locator('#c-nombre')).toHaveValue(NOMBRE);
 });
 
 test('los antecedentes NO se copian solos: se ofrecen', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva');
-  await page.locator('#c-cedula').fill(CEDULA);
-  await page.locator('#c-cedula').blur();
-  await expect(page.locator('#atajos-previo')).toBeVisible({ timeout: 10000 });
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
+  await expect(page.locator('#atajos-previo')).toBeVisible();
 
   // Está a la vista, pero el campo sigue vacío hasta que el médico decida.
   await expect(page.locator('#atajos-lista')).toContainText('Penicilina');
-  await page.goto(page.url().split('?')[0] + '?paso=2');
   await expect(page.locator('#c-alergias')).toHaveValue('');
 });
 
 test('el botón de traer antecedentes sí los copia', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva');
-  await page.locator('#c-cedula').fill(CEDULA);
-  await page.locator('#c-cedula').blur();
-  await expect(page.locator('#atajos-traer')).toBeVisible({ timeout: 10000 });
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
+  await expect(page.locator('#atajos-traer')).toBeVisible();
   await page.locator('#atajos-traer').click();
   await expect(page.locator('#c-alergias')).toHaveValue('Penicilina');
 });
 
 test('una cédula desconocida no muestra nada', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva');
-  await page.locator('#c-cedula').fill('V-98.765.432');
-  await page.locator('#c-cedula').blur();
-  await page.waitForTimeout(1200);
+  await page.goto('/sistema/atencion/nueva?cedula=V-98.765.432');
+  await expect(page.locator('.form__nota')).toContainText('Paciente nuevo');
   await expect(page.locator('#atajos-paciente')).toBeHidden();
 });
 
@@ -166,7 +157,7 @@ test('el formulario por pasos no desborda a 390 px', async ({ page }) => {
   await entrar(page, 'medico');
   await page.setViewportSize({ width: 390, height: 844 });
   for (const paso of [0, 4, 8]) {
-    await page.goto(`/sistema/atencion/nueva?paso=${paso}`);
+    await page.goto(`/sistema/atencion/nueva?cedula=V-99.700.000&paso=${paso}`);
     const m = await page.evaluate(() => ({
       doc: document.documentElement.scrollWidth,
       v: document.documentElement.clientWidth,

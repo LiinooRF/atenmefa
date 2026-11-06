@@ -19,11 +19,20 @@ interface Props {
   /** Vacío en una atención nueva; el id cuando se reabre un borrador. */
   atencionId?: string;
   numero?: number;
+  /** Dónde arrancar. Con el paciente ya resuelto se empieza en "El caso". */
+  pasoInicial?: number;
+  /** Antecedentes de su última atención, si ya se lo conocía. */
+  previos?: Record<string, string>;
+  paciente?: string;
+  ultima?: { numero: number; fecha: string; idx: string } | null;
 }
-const { datos = {}, atencionId = '', numero } = Astro.props;
+const {
+  datos = {}, atencionId = '', numero, pasoInicial = 0,
+  previos = {}, paciente = '', ultima = null,
+} = Astro.props;
 ---
 
-<div class="pasos" data-atencion={atencionId}>
+<div class="pasos" data-atencion={atencionId} data-inicial={pasoInicial}>
   <ol class="pasos__guia" id="pasos-guia" hidden>
     {historia.map((s, i) => (
       <li>
@@ -40,7 +49,7 @@ const { datos = {}, atencionId = '', numero } = Astro.props;
   </div>
 
   <div class="pasos__cuerpo">
-    <Atajos />
+    <Atajos previos={previos} nombre={paciente} ultima={ultima} />
     {historia.map((s, i) => (
       <div class="pasos__hoja" data-hoja={i}>
         <Seccion seccion={s} datos={datos} />
@@ -188,9 +197,21 @@ const { datos = {}, atencionId = '', numero } = Astro.props;
 
     /* El número del paso se guarda en la dirección: si se recarga, se
        vuelve a donde estaba y no al principio. */
+    const valido = (n: number) => Number.isInteger(n) && n >= 0 && n < hojas.length;
+
     const deLaUrl = () => {
-      const n = Number(new URL(location.href).searchParams.get('paso'));
-      return Number.isInteger(n) && n >= 0 && n < hojas.length ? n : 0;
+      /* Hay que mirar si el parámetro EXISTE antes de convertirlo:
+         Number(null) da 0, que es un paso válido, así que sin esta
+         comprobación el formulario siempre arrancaba en el primero y el
+         paso inicial no se usaba nunca. */
+      const crudo = new URL(location.href).searchParams.get('paso');
+      if (crudo !== null) {
+        const n = Number(crudo);
+        if (valido(n)) return n;
+      }
+      // Con el paciente ya resuelto se arranca en el paso siguiente.
+      const inicial = Number(caja.dataset.inicial ?? 0);
+      return valido(inicial) ? inicial : 0;
     };
     let actual = deLaUrl();
 

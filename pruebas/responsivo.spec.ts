@@ -71,6 +71,7 @@ test.beforeAll(async ({ browser }) => {
     `/sistema?q=${encodeURIComponent(CEDULA_CERRADA)}`,
     '/sistema/borradores',
     '/sistema/atencion/nueva',
+    '/sistema/atencion/nueva?cedula=V-99.800.000',
     `/sistema/atencion/${cerrada}`,
     `/sistema/atencion/${cerrada}/cobro`,
     `/sistema/atencion/${cerrada}/editar`,
@@ -114,7 +115,7 @@ test('ninguna pantalla del panel desborda a 390 px', async ({ page }) => {
 test('la barra del panel y el pie de guardar caben sin desplazar', async ({ page }) => {
   // El formulario es del médico: administración no escribe historias.
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.800.000');
 
   // La barra fija de arriba y la de guardar son las dos que pueden empujar.
   for (const caja of ['.sis__barra-int', '.pasos__pie-int']) {
@@ -139,7 +140,7 @@ test('la barra del panel y el pie de guardar caben sin desplazar', async ({ page
    debajo; el mínimo está unificado en la hoja del panel. */
 test('todo lo que se toca mide 44 px de alto', async ({ page }) => {
   await entrar(page, 'administracion');
-  await page.goto('/sistema/atencion/nueva');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.800.000');
 
   const botones = page.locator('.sis-boton');
   for (let i = 0; i < (await botones.count()); i++) {

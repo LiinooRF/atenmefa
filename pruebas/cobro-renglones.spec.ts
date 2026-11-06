@@ -81,7 +81,7 @@ test.beforeAll(async ({ browser }) => {
   await deAdmin.close();
 
   // Un caso con seguro, para que el cobro proponga la aseguradora.
-  await page.goto('/sistema/atencion/nueva');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
   /* llenar() navega al paso de cada campo: la aseguradora vive en "El
      caso", que es el segundo, y un campo oculto no se puede escribir. */
   await llenar(page, { nombre: PACIENTE, cedula: CEDULA, aseguradora: 'Seguros de prueba' });

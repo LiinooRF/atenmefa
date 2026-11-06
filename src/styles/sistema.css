@@ -58,8 +58,8 @@
   padding: 0 20px;
   display: flex;
   align-items: center;
-  gap: 18px;
-  min-height: 56px;
+  gap: 22px;
+  min-height: 58px;
 }
 
 .sis__marca { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #fff; }
@@ -67,25 +67,55 @@
 .sis__marca span { display: flex; flex-direction: column; line-height: 1.15; font-weight: 700; letter-spacing: -0.015em; }
 .sis__marca small { font-size: var(--u-xs); font-weight: 400; color: rgba(255, 255, 255, 0.56); letter-spacing: 0; }
 
-.sis__nav { display: flex; gap: 3px; margin-right: auto; }
+/* El menú desplaza dentro de su propia caja. Con seis entradas no entra
+   en una tablet, y arrastrar la página entera de lado por culpa del menú
+   es peor que desplazar el menú. */
+.sis__nav {
+  display: flex;
+  gap: 2px;
+  margin-right: auto;
+  min-width: 0;
+  overflow-x: auto;
+  scrollbar-width: none;
+  mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
+}
+.sis__nav::-webkit-scrollbar { display: none; }
+.sis__nav a { flex: none; white-space: nowrap; }
+
+/* El marcado de "usted está acá" NO va en rojo: ese color está reservado
+   para la acción urgente, y usarlo acá lo convierte en una alerta metida
+   en el menú. La página actual se distingue con contraste y una barra
+   fina abajo, que es lo que se espera de una navegación. */
 .sis__nav a {
+  position: relative;
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 40px;
-  padding: 7px 13px;
-  border-radius: 8px;
-  color: rgba(255, 255, 255, 0.74);
+  min-height: 44px;
+  padding: 0 14px;
+  color: rgba(255, 255, 255, 0.68);
   text-decoration: none;
   font-size: var(--u-sm);
   font-weight: 600;
+  border-radius: 7px;
   transition: background-color 160ms ease, color 160ms ease;
 }
-.sis__nav a:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
-.sis__nav a:active { background: rgba(255, 255, 255, 0.16); }
-.sis__nav a[aria-current='page'] { background: var(--rojo); color: #fff; }
+.sis__nav a :global(svg) { opacity: 0.75; }
+.sis__nav a:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.sis__nav a:active { background: rgba(255, 255, 255, 0.14); }
 
-.sis__quien { display: flex; align-items: center; gap: 12px; }
+.sis__nav a[aria-current='page'] { color: #fff; background: rgba(255, 255, 255, 0.1); }
+.sis__nav a[aria-current='page'] :global(svg) { opacity: 1; }
+.sis__nav a[aria-current='page']::after {
+  content: '';
+  position: absolute;
+  left: 14px; right: 14px; bottom: -1px;
+  height: 2px;
+  border-radius: 2px 2px 0 0;
+  background: #fff;
+}
+
+.sis__quien { display: flex; align-items: center; gap: 10px; flex: none; }
 .sis__quien .sis__yo {
   display: none;
   flex-direction: column;
@@ -105,19 +135,20 @@
 
 .sis__salir {
   min-height: 38px;
-  padding: 7px 14px;
-  border-radius: 8px;
-  border: 1px solid rgba(255, 255, 255, 0.26);
+  padding: 0 12px;
+  border: 0;
+  border-radius: 7px;
   background: transparent;
-  color: #fff;
+  color: rgba(255, 255, 255, 0.6);
   font: inherit;
+  font-family: var(--ui);
   font-size: var(--u-sm);
   font-weight: 600;
   cursor: pointer;
-  transition: background-color 160ms ease;
+  transition: background-color 160ms ease, color 160ms ease;
 }
-.sis__salir:hover { background: rgba(255, 255, 255, 0.13); }
-.sis__salir:active { background: rgba(255, 255, 255, 0.2); }
+.sis__salir:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.sis__salir:active { background: rgba(255, 255, 255, 0.16); }
 
 /* En un teléfono la fila no alcanza: la barra pide 475 px y la pantalla
    tiene 390, así que el nombre quedaba recortado y la página entera se
@@ -130,7 +161,7 @@
   /* Va al final para caer en la segunda fila: en el HTML está antes de
      quién entró, que tiene que quedar arriba a la derecha. */
   .sis__nav { order: 3; width: 100%; margin-right: 0; padding-bottom: 6px; }
-  .sis__nav a { flex: 1; justify-content: center; min-height: 44px; padding-inline: 8px; }
+  .sis__nav a { justify-content: center; min-height: 44px; padding-inline: 11px; }
 
   /* Tres destinos con icono no entran en 390 px sin partir los rótulos en
      dos líneas. El icono acompaña, el rótulo es el que nombra: en el

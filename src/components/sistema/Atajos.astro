@@ -1,28 +1,60 @@
 ---
 /**
- * Atajos del formulario de atención.
+ * Lo que quedó anotado la vez pasada.
  *
- * Es el único JavaScript del proyecto, y se justifica: son 54 campos en
- * una tablet y el médico tiene al paciente enfrente. Sin esto reescribe
- * cada vez lo que el sistema ya sabe.
+ * Cuando el paciente se reconoce en la puerta, esto llega ya servido desde
+ * el servidor y se ve sin JavaScript. El script solo entra en acción si el
+ * médico corrige la cédula dentro del formulario, que es la excepción.
  *
- * Si el script no carga, el formulario sigue funcionando a mano: nada de
- * lo que hace acá es necesario para guardar una atención.
+ * Los antecedentes NO se copian solos: se muestran para que el médico los
+ * confirme. Una alergia copiada en silencio desde hace dos años es peor
+ * que no tenerla.
  */
+interface Props {
+  /** Antecedentes de la última atención, si el paciente ya se conocía. */
+  previos?: Record<string, string>;
+  nombre?: string;
+  ultima?: { numero: number; fecha: string; idx: string } | null;
+}
+const { previos = {}, nombre = '', ultima = null } = Astro.props;
+
+const ROTULOS: Record<string, string> = {
+  alergias: 'Alergias',
+  medicacion: 'Medicación actual',
+  antecedentes_medicos: 'Antecedentes médicos',
+  quirurgicos: 'Intervenciones',
+  tabaco: 'Tabáquicos',
+  alcohol: 'Alcohol',
+};
+
+const hayPrevios = Object.entries(previos).filter(([, v]) => v);
+const fechaCorta = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
 ---
 
-<div class="atajos" hidden id="atajos-paciente" aria-live="polite">
+<div class="atajos" hidden={hayPrevios.length === 0} id="atajos-paciente" aria-live="polite"
+     data-previos={hayPrevios.length ? JSON.stringify(previos) : undefined}>
   <div class="atajos__cab">
-    <strong id="atajos-titulo"></strong>
+    <strong id="atajos-titulo">
+      {nombre ? `Ya atendimos a ${nombre}` : ''}
+    </strong>
     <button type="button" class="atajos__cerrar" id="atajos-cerrar" aria-label="Cerrar">×</button>
   </div>
-  <p class="atajos__nota" id="atajos-nota"></p>
-  <div class="atajos__previo" id="atajos-previo" hidden>
+  <p class="atajos__nota" id="atajos-nota">
+    {ultima
+      ? `Última atención: N° ${ultima.numero} del ${fechaCorta(ultima.fecha)}${ultima.idx ? ` · ${ultima.idx}` : ''}.`
+      : ''}
+  </p>
+  <div class="atajos__previo" id="atajos-previo" hidden={hayPrevios.length === 0}>
     <p class="atajos__aviso">
       Esto quedó anotado la vez pasada. Confírmelo con el paciente antes de usarlo:
       los antecedentes no se copian solos.
     </p>
-    <ul id="atajos-lista"></ul>
+    <ul id="atajos-lista">
+      {hayPrevios.map(([k, v]) => (
+        <li><b>{ROTULOS[k] ?? k}: </b>{v}</li>
+      ))}
+    </ul>
     <button type="button" class="sis-boton sis-boton--suave" id="atajos-traer">
       Traer estos antecedentes
     </button>
@@ -85,8 +117,11 @@
       alcohol: 'Alcohol',
     };
 
-    let antecedentes: Record<string, string> = {};
-    let ultimaBuscada = '';
+    /* Lo que ya vino servido: el botón de traer funciona sin red. */
+    let antecedentes: Record<string, string> = (() => {
+      try { return JSON.parse(caja.dataset.previos ?? '{}'); } catch { return {}; }
+    })();
+    let ultimaBuscada = cedula.value.replace(/\D/g, '');
 
     const poner = (clave: string, valor: string, soloSiVacio = true) => {
       const campo = document.getElementById(`c-${clave}`) as HTMLInputElement | null;

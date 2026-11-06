@@ -212,8 +212,22 @@ export async function abrirSeccion(page: Page, clave: string) {
 }
 
 /** Guarda un borrador desde el formulario nuevo y devuelve su id. */
+/**
+ * Abre el formulario pasando por la puerta de la cédula, que es lo primero
+ * que se pregunta. Sin cédula no hay a quién atender, así que las pruebas
+ * que no la traen se quedan en la puerta a propósito.
+ */
+async function abrirFormulario(page: Page, cedula?: string) {
+  if (!cedula) {
+    await page.goto('/sistema/atencion/nueva');
+    return;
+  }
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(cedula)}`);
+  await expect(page.locator('[data-hoja]').first()).toBeAttached();
+}
+
 export async function crearBorrador(page: Page, campos: Record<string, string>) {
-  await page.goto('/sistema/atencion/nueva');
+  await abrirFormulario(page, campos.cedula);
   await llenar(page, campos);
   // El botón de borrador lleva formnovalidate: guarda aunque falte todo.
   await page.getByRole('button', { name: 'Guardar y salir' }).click();
@@ -232,8 +246,9 @@ async function irAlUltimoPaso(page: Page) {
 
 /** Registra y cierra una atención completa. Devuelve su id. */
 export async function crearAtencionCerrada(page: Page, campos: Record<string, string>) {
-  await page.goto('/sistema/atencion/nueva');
-  await llenar(page, { ...historiaMinima, ...campos });
+  const todo = { ...historiaMinima, ...campos };
+  await abrirFormulario(page, todo.cedula);
+  await llenar(page, todo);
   await irAlUltimoPaso(page);
   await page.getByRole('button', { name: 'Cerrar atención' }).click();
   await expect(page).toHaveURL(FICHA);

@@ -1,0 +1,334 @@
+---
+/**
+ * Tablero de administración.
+ *
+ * Lo que el cliente dijo que necesitaba saber: cuántos pacientes se
+ * atendieron, qué se les hizo y a quién se le cobra. Nada de adorno: cada
+ * número de acá se puede rastrear hasta su caso.
+ *
+ * Los gráficos son de una sola medida, así que llevan un solo tono: el
+ * largo de la barra es lo que informa, el color no codifica nada. Una
+ * paleta de colores distintos acá sería ruido disfrazado de información.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { metricas } from '../../sistema/lib/metricas';
+import { rangoDesdeUrl, nombreDelRango, hoyEnCaracas } from '../../sistema/lib/fechas';
+import Rango from '../../components/sistema/Rango.astro';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'ver_cierre');
+if (corte) return corte;
+
+const hoy = hoyEnCaracas();
+const { desde, hasta } = rangoDesdeUrl(Astro.url);
+const m = await metricas(desde, hasta);
+
+const numero = (v: number) => new Intl.NumberFormat('es-VE').format(v);
+const dinero = (v: number) =>
+  new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
+
+const rotulo = nombreDelRango(desde, hasta);
+
+/* La variación contra el tramo anterior solo se muestra si hay con qué
+   comparar: "+100%" sobre cero no dice nada. */
+const variacion = m.casosAntes > 0
+  ? Math.round(((m.casos - m.casosAntes) / m.casosAntes) * 100)
+  : null;
+
+const topeDia = Math.max(1, ...m.porDia.map((d) => d.casos));
+/* Si todavía no se cargó ningún cobro, todos los totales valen cero y un
+   gráfico de barras en cero no dice nada. En ese caso la magnitud pasa a
+   ser la cantidad de casos, y el rótulo lo aclara: es preferible mostrar
+   lo que sí se sabe antes que un gráfico vacío con pinta de roto. */
+const hayPlata = m.porPagador.some((p) => p.total > 0);
+const valorPagador = (p: { casos: number; total: number }) => (hayPlata ? p.total : p.casos);
+const topePagador = Math.max(1, ...m.porPagador.map(valorPagador));
+const topeDx = Math.max(1, ...m.diagnosticos.map((d) => d.veces));
+
+const diaCorto = (f: string) => String(Number(f.slice(-2)));
+const esFinde = (f: string) => [0, 6].includes(new Date(`${f}T12:00:00`).getDay());
+const vacio = m.casos === 0;
+---
+
+<Sistema titulo="Tablero">
+  <header class="cab">
+    <div>
+      <h1>Tablero</h1>
+      <p class="cab__nota">{rotulo} · {m.dias} {m.dias === 1 ? 'día' : 'días'}. Solo atenciones cerradas: las anuladas no cuentan.</p>
+    </div>
+  </header>
+
+  <Rango desde={desde} hasta={hasta} />
+
+  <!-- Cifras del período: son titulares, no gráficos. Un gráfico de un solo
+       número es decoración. -->
+  <ul class="cifras">
+    <li class="sis-tarjeta">
+      <span class="cifras__rotulo">Atenciones</span>
+      <strong class="cifras__dato cifra">{numero(m.casos)}</strong>
+      {variacion !== null && (
+        <span class:list={['cifras__cambio', variacion >= 0 ? 'sube' : 'baja']}>
+          {variacion >= 0 ? '+' : ''}{variacion}% contra {numero(m.casosAntes)} en los {m.dias} días anteriores
+        </span>
+      )}
+    </li>
+    <li class="sis-tarjeta">
+      <span class="cifras__rotulo">Pacientes distintos</span>
+      <strong class="cifras__dato cifra">{numero(m.pacientes)}</strong>
+      <span class="cifras__pie">{numero(m.pacientesNuevos)} llegaron por primera vez</span>
+    </li>
+    <li class="sis-tarjeta">
+      <span class="cifras__rotulo">Cargado para cobrar</span>
+      <strong class="cifras__dato cifra">{dinero(m.cobrado)}</strong>
+      <span class="cifras__pie">en dólares</span>
+    </li>
+    <li class:list={['sis-tarjeta', m.sinCobro > 0 && 'cifras--ojo']}>
+      <span class="cifras__rotulo">Sin cobro cargado</span>
+      <strong class="cifras__dato cifra">{numero(m.sinCobro)}</strong>
+      <span class="cifras__pie">
+        {m.sinCobro > 0
+          ? 'atenciones cerradas que no se le facturan a nadie'
+          : 'todas las atenciones tienen su cobro'}
+      </span>
+    </li>
+  </ul>
+
+  {m.borradores > 0 && (
+    <p class="pendiente">
+      <Icono nombre="reloj" tam={17} />
+      Hay {numero(m.borradores)} {m.borradores === 1 ? 'atención sin terminar' : 'atenciones sin terminar'}.
+      Mientras sigan en borrador no entran en el cierre ni se le cobran a nadie.
+    </p>
+  )}
+
+  {vacio ? (
+    <div class="sis-tarjeta nada">
+      <h2>Ninguna atención cerrada en este período</h2>
+      <p>Elija otras fechas, o revise si quedaron atenciones en borrador sin cerrar.</p>
+    </div>
+  ) : (
+    <div class="rejilla">
+      <!-- Ritmo del mes: una columna por día, con los días sin atención
+           en cero. Saltarse los días vacíos mentiría sobre el ritmo. -->
+      <section class="sis-tarjeta panel panel--ancho">
+        <h2>Atenciones por día</h2>
+        <div class="dias" role="img" aria-label={`Atenciones por día, ${rotulo}`}>
+          {m.porDia.map((d) => (
+            <div class:list={['dias__col', esFinde(d.dia) && 'dias__col--finde']}>
+              <div class="dias__carril">
+                <div
+                  class="dias__barra"
+                  style={`height: ${(d.casos / topeDia) * 100}%`}
+                  data-cero={d.casos === 0 ? '' : undefined}
+                >
+                  <span class="dias__globo">{d.casos} {d.casos === 1 ? 'atención' : 'atenciones'} · {diaCorto(d.dia)}</span>
+                </div>
+              </div>
+              <span class="dias__dia cifra">{diaCorto(d.dia)}</span>
+            </div>
+          ))}
+        </div>
+        <p class="panel__pie">Máximo en un día: <strong class="cifra">{topeDia}</strong>. Los días en gris claro son fin de semana.</p>
+      </section>
+
+      <section class="sis-tarjeta panel">
+        <h2>A quién se le cobra</h2>
+        {m.porPagador.length > 0 && !hayPlata && (
+          <p class="panel__aclara">
+            Todavía no se cargó ningún monto, así que las barras muestran la
+            cantidad de casos.
+          </p>
+        )}
+        {m.porPagador.length === 0 ? (
+          <p class="panel__vacio">Todavía no se cargó ningún cobro este mes.</p>
+        ) : (
+          <ul class="barras">
+            {m.porPagador.map((p) => (
+              <li>
+                <div class="barras__fila">
+                  <span class="barras__nombre">{p.cobrarA}</span>
+                  <span class="barras__valor cifra">
+                    {hayPlata ? dinero(p.total) : `${numero(p.casos)} ${p.casos === 1 ? 'caso' : 'casos'}`}
+                  </span>
+                </div>
+                <div class="barras__carril">
+                  <div class="barras__barra" style={`width: ${(valorPagador(p) / topePagador) * 100}%`}></div>
+                </div>
+                {hayPlata && (
+                  <span class="barras__pie">{numero(p.casos)} {p.casos === 1 ? 'caso' : 'casos'}</span>
+                )}
+              </li>
+            ))}
+          </ul>
+        )}
+        <p class="panel__pie">
+          <a href={`/sistema/cierre?mes=${desde.slice(0, 7)}`}>Ver el cierre del mes y descargarlo</a>
+        </p>
+      </section>
+
+      <section class="sis-tarjeta panel">
+        <h2>Lo que más se diagnosticó</h2>
+        {m.diagnosticos.length === 0 ? (
+          <p class="panel__vacio">Ninguna atención del mes tiene diagnóstico escrito.</p>
+        ) : (
+          <ul class="barras barras--finas">
+            {m.diagnosticos.map((d) => (
+              <li>
+                <div class="barras__fila">
+                  <span class="barras__nombre">{d.idx}</span>
+                  <span class="barras__valor cifra">{d.veces}</span>
+                </div>
+                <div class="barras__carril">
+                  <div class="barras__barra" style={`width: ${(d.veces / topeDx) * 100}%`}></div>
+                </div>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      <section class="sis-tarjeta panel">
+        <h2>Quién atendió</h2>
+        <ul class="lista">
+          {m.porMedico.map((x) => (
+            <li><span>{x.medico}</span><strong class="cifra">{numero(x.casos)}</strong></li>
+          ))}
+        </ul>
+      </section>
+
+      <section class="sis-tarjeta panel">
+        <h2>Servicios que más se cargaron</h2>
+        {m.serviciosMasCargados.length === 0 ? (
+          <p class="panel__vacio">Todavía no se cargó ningún renglón este mes.</p>
+        ) : (
+          <ul class="lista">
+            {m.serviciosMasCargados.map((s) => (
+              <li>
+                <span>{s.descripcion}<small>{numero(s.veces)} {s.veces === 1 ? 'vez' : 'veces'}</small></span>
+                <strong class="cifra">{dinero(s.total)}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+    </div>
+  )}
+</Sistema>
+
+<style>
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; justify-content: space-between; }
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  /* ---------- cifras ---------- */
+  .cifras {
+    list-style: none; margin: 20px 0 0; padding: 0;
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  }
+  .cifras li { display: grid; gap: 3px; align-content: start; }
+  .cifras__rotulo {
+    font-size: var(--u-xs); text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--tinta-tenue); font-weight: 700;
+  }
+  .cifras__dato {
+    font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; color: var(--azul); line-height: 1.05;
+  }
+  .cifras__pie, .cifras__cambio { font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.4; }
+  .cifras__cambio.sube { color: #15663f; }
+  .cifras__cambio.baja { color: #8f1017; }
+  .cifras--ojo { border-color: #f0c4c7; background: #fdf8f8; }
+  .cifras--ojo .cifras__dato { color: var(--rojo); }
+
+  .pendiente {
+    display: flex; align-items: flex-start; gap: 9px;
+    margin-top: 14px; padding: 11px 14px;
+    border: 1px solid #e8c98a; background: #fdf0d9; border-radius: 8px;
+    color: #7a5200; font-size: var(--u-sm);
+  }
+  .pendiente :global(svg) { flex: none; margin-top: 1px; }
+
+  .nada { margin-top: 18px; text-align: center; padding-block: 48px; }
+  .nada h2 { font-size: var(--u-lg); }
+  .nada p { margin-top: 8px; color: var(--tinta-tenue); font-size: var(--u-sm); }
+
+  /* ---------- paneles ---------- */
+  .rejilla {
+    display: grid; gap: 12px; margin-top: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  }
+  .panel--ancho { grid-column: 1 / -1; }
+  .panel h2 { font-size: var(--u-md); margin-bottom: 14px; }
+  .panel__pie { margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--linea-tenue); font-size: var(--u-xs); color: var(--tinta-tenue); }
+  .panel__pie a { color: var(--azul); font-weight: 600; }
+  .panel__vacio { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .panel__aclara {
+    margin: -6px 0 13px;
+    font-size: var(--u-xs);
+    color: var(--tinta-tenue);
+    line-height: 1.45;
+  }
+
+  /* ---------- columnas por día ---------- */
+  .dias { display: flex; gap: 2px; align-items: flex-end; height: 150px; }
+  .dias__col { flex: 1; display: flex; flex-direction: column; gap: 5px; min-width: 0; height: 100%; }
+  .dias__carril { flex: 1; display: flex; align-items: flex-end; background: var(--panel); border-radius: 3px; position: relative; }
+  .dias__col--finde .dias__carril { background: #e8ecf5; }
+
+  .dias__barra {
+    width: 100%;
+    min-height: 2px;
+    background: var(--azul-medio);
+    border-radius: 4px 4px 0 0;   /* extremo del dato redondeado, apoyado en la base */
+    position: relative;
+    transition: background-color 150ms ease;
+  }
+  .dias__barra[data-cero] { background: transparent; min-height: 0; }
+  .dias__col:hover .dias__barra:not([data-cero]) { background: var(--azul); }
+
+  /* El globo aparece al pasar por encima: el gráfico no lleva un número
+     en cada columna, que sería ilegible con 31 días. */
+  .dias__globo {
+    position: absolute;
+    bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%);
+    background: var(--azul-profundo); color: #fff;
+    font-size: var(--u-xs); white-space: nowrap;
+    padding: 5px 9px; border-radius: 6px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 140ms ease;
+    z-index: 5;
+  }
+  .dias__col:hover .dias__globo { opacity: 1; }
+
+  /* En los primeros y últimos días el globo centrado se sale de la
+     pantalla y arrastra la página de lado: ahí se ancla al borde. */
+  .dias__col:nth-child(-n + 4) .dias__globo { left: 0; transform: none; }
+  .dias__col:nth-last-child(-n + 4) .dias__globo { left: auto; right: 0; transform: none; }
+
+  .dias__dia { font-size: 0.62rem; color: var(--tinta-tenue); text-align: center; }
+
+  /* ---------- barras horizontales ---------- */
+  .barras { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
+  .barras--finas { gap: 10px; }
+  .barras__fila { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+  .barras__nombre { font-size: var(--u-sm); color: var(--tinta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .barras__valor { font-size: var(--u-sm); font-weight: 700; color: var(--azul); flex: none; }
+  .barras__carril { height: 8px; background: var(--panel); border-radius: 999px; overflow: hidden; }
+  .barras__barra { height: 100%; background: var(--azul-medio); border-radius: 999px; min-width: 3px; }
+  .barras__pie { display: block; margin-top: 4px; font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  /* ---------- listas ---------- */
+  .lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+  .lista li {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+    padding: 9px 0; border-top: 1px solid var(--linea-tenue);
+  }
+  .lista li:first-child { border-top: 0; padding-top: 0; }
+  .lista span { display: flex; flex-direction: column; font-size: var(--u-sm); min-width: 0; }
+  .lista small { font-size: var(--u-xs); color: var(--tinta-tenue); }
+  .lista strong { font-weight: 700; color: var(--azul); flex: none; }
+</style>

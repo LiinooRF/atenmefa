@@ -1,0 +1,113 @@
+---
+/**
+ * Filtro de fechas: atajos y rango libre.
+ *
+ * Los campos son `<input type="date">` nativos a propósito. En la tablet
+ * abren el calendario propio de Android o de iOS, que el médico ya sabe
+ * usar y funciona con el dedo; traer un calendario de biblioteca sumaría
+ * decenas de kilobytes y un control que nadie vio antes.
+ *
+ * Los atajos cubren lo que se mira todos los días; el rango libre existe
+ * para lo que no.
+ */
+interface Props {
+  desde: string;
+  hasta: string;
+  /** A dónde se envía. Permite reusarlo en cierre o bitácora. */
+  accion?: string;
+}
+const { desde, hasta, accion = '' } = Astro.props;
+
+const hoyVE = new Intl.DateTimeFormat('en-CA', {
+  timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit',
+}).format(new Date());
+
+const dia = (desplazamiento: number) => {
+  const d = new Date(`${hoyVE}T12:00:00`);
+  d.setDate(d.getDate() + desplazamiento);
+  return d.toISOString().slice(0, 10);
+};
+const primeroDelMes = (meses = 0) => {
+  const d = new Date(`${hoyVE}T12:00:00`);
+  d.setDate(1);
+  d.setMonth(d.getMonth() + meses);
+  return d.toISOString().slice(0, 10);
+};
+const ultimoDelMes = (meses = 0) => {
+  const d = new Date(`${hoyVE}T12:00:00`);
+  d.setDate(1);
+  d.setMonth(d.getMonth() + meses + 1);
+  d.setDate(0);
+  return d.toISOString().slice(0, 10);
+};
+
+const atajos = [
+  { nombre: 'Hoy', desde: hoyVE, hasta: hoyVE },
+  { nombre: 'Últimos 7 días', desde: dia(-6), hasta: hoyVE },
+  { nombre: 'Este mes', desde: primeroDelMes(), hasta: hoyVE },
+  { nombre: 'Mes pasado', desde: primeroDelMes(-1), hasta: ultimoDelMes(-1) },
+  { nombre: 'Últimos 90 días', desde: dia(-89), hasta: hoyVE },
+  { nombre: 'Este año', desde: `${hoyVE.slice(0, 4)}-01-01`, hasta: hoyVE },
+];
+
+const activo = atajos.find((a) => a.desde === desde && a.hasta === hasta);
+---
+
+<form class="rango" method="get" action={accion || undefined}>
+  <div class="rango__atajos" role="group" aria-label="Períodos frecuentes">
+    {atajos.map((a) => (
+      <button
+        type="submit" name="d" value={`${a.desde}|${a.hasta}`}
+        class="rango__atajo" aria-pressed={activo?.nombre === a.nombre ? 'true' : 'false'}
+      >{a.nombre}</button>
+    ))}
+  </div>
+
+  <div class="rango__libre">
+    <label for="desde">Desde</label>
+    <input id="desde" type="date" name="desde" value={desde} max={hoyVE} required />
+    <label for="hasta">Hasta</label>
+    <input id="hasta" type="date" name="hasta" value={hasta} max={hoyVE} required />
+    <button type="submit" class="sis-boton sis-boton--azul">Ver</button>
+  </div>
+</form>
+
+<style>
+  .rango { display: grid; gap: 10px; margin: 18px 0 16px; }
+
+  .rango__atajos { display: flex; flex-wrap: wrap; gap: 6px; }
+  .rango__atajo {
+    min-height: 38px;
+    padding: 0 14px;
+    border: 1px solid var(--linea);
+    border-radius: 999px;
+    background: var(--papel);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+    font-weight: 600;
+    color: var(--tinta-suave);
+    cursor: pointer;
+    transition: border-color 150ms ease, background-color 150ms ease, color 150ms ease;
+  }
+  .rango__atajo:hover { border-color: var(--azul-medio); color: var(--azul); }
+  .rango__atajo[aria-pressed='true'] {
+    background: var(--azul); border-color: var(--azul); color: #fff;
+  }
+
+  .rango__libre { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .rango__libre label { font-size: var(--u-xs); color: var(--tinta-tenue); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
+  .rango__libre input {
+    min-height: 42px;
+    padding: 8px 11px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background: var(--papel);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+    color: var(--tinta);
+  }
+  .rango__libre input:focus { outline: 2px solid var(--azul-medio); border-color: var(--azul-medio); }
+  .rango__libre .sis-boton { min-height: 42px; }
+</style>

@@ -1,13 +1,25 @@
 ---
+/**
+ * Nueva atención.
+ *
+ * Primero la cédula, siempre. Si el paciente ya existe no tiene sentido
+ * volver a preguntar su nombre, su edad ni su dirección: el sistema los
+ * tiene y el médico los confirma de un vistazo.
+ *
+ * La pantalla tiene dos momentos:
+ *   · sin cédula en la dirección, se pregunta solo eso;
+ *   · con cédula, se abre el formulario con lo que ya se sabe cargado.
+ */
 import Sistema from '../../../layouts/Sistema.astro';
 import Pasos from '../../../components/sistema/Pasos.astro';
 import Icono from '../../../components/Icono.astro';
-import { bd, esquema } from '../../../sistema/lib/base';
 import { exigir } from '../../../sistema/lib/guardia';
+import { bd, esquema } from '../../../sistema/lib/base';
 import {
   limpiarDatos, faltantes, pacienteDe, anotar, hoyEnVenezuela, ahoraEnVenezuela,
-  guardarBorrador, esIdentificador,
+  guardarBorrador, esIdentificador, soloDigitos,
 } from '../../../sistema/lib/atenciones';
+import { eq, desc, and, ne } from 'drizzle-orm';
 
 export const prerender = false;
 
@@ -16,22 +28,109 @@ if (corte) return corte;
 
 const usuario = Astro.locals.usuario!;
 let error = '';
+
+const cedulaPedida = (Astro.url.searchParams.get('cedula') ?? '').trim();
+const digitos = soloDigitos(cedulaPedida);
+
+/* ----------------------------------------------------------------
+   Momento 1: todavía no sabemos a quién se atiende.
+   ---------------------------------------------------------------- */
+let conocido: {
+  nombre: string; cedula: string; telefono: string; sexo: string;
+  edad: string; direccion: string; ciudad: string; referencia: string;
+  ultima: { numero: number; fecha: string; idx: string } | null;
+} | null = null;
+
+let antecedentesPrevios: Record<string, string> = {};
+
+if (digitos.length >= 6) {
+  const [paciente] = await bd
+    .select()
+    .from(esquema.paciente)
+    .where(eq(esquema.paciente.cedulaBusca, digitos))
+    .limit(1);
+
+  if (paciente) {
+    const [ultima] = await bd
+      .select({
+        numero: esquema.atencion.numero,
+        fecha: esquema.atencion.fecha,
+        datos: esquema.atencion.datos,
+      })
+      .from(esquema.atencion)
+      .where(and(
+        eq(esquema.atencion.pacienteId, paciente.id),
+        ne(esquema.atencion.estado, 'anulada'),
+      ))
+      .orderBy(desc(esquema.atencion.fecha), desc(esquema.atencion.numero))
+      .limit(1);
+
+    const d = (ultima?.datos ?? {}) as Record<string, string>;
+
+    /* La edad se recalcula si pasó más de un año: copiarla tal cual deja
+       niños de 8 que ya tienen 11. */
+    let edad = d.edad ?? '';
+    if (edad && ultima?.fecha) {
+      const anios = Math.floor(
+        (Date.now() - new Date(`${ultima.fecha}T12:00:00`).getTime()) / 31_557_600_000,
+      );
+      if (anios >= 1) edad = String(Number(edad) + anios);
+    }
+
+    antecedentesPrevios = {
+      alergias: d.alergias ?? '',
+      medicacion: d.medicacion ?? '',
+      antecedentes_medicos: d.antecedentes_medicos ?? '',
+      quirurgicos: d.quirurgicos ?? '',
+      tabaco: d.tabaco ?? '',
+      alcohol: d.alcohol ?? '',
+    };
+
+    conocido = {
+      nombre: paciente.nombre,
+      cedula: paciente.cedula,
+      telefono: paciente.telefono ?? '',
+      sexo: paciente.sexo ?? '',
+      edad,
+      direccion: d.direccion ?? '',
+      ciudad: d.ciudad ?? '',
+      referencia: d.referencia ?? '',
+      ultima: ultima ? { numero: ultima.numero, fecha: ultima.fecha, idx: d.idx ?? '' } : null,
+    };
+  }
+}
+
+const abrirFormulario = digitos.length >= 6;
+
+/* ----------------------------------------------------------------
+   Guardar.
+   ---------------------------------------------------------------- */
 let datos: Record<string, string> = {
   fecha: hoyEnVenezuela(),
   hora_inicio: ahoraEnVenezuela(),
   medico: usuario.name,
+  ...(cedulaPedida ? { cedula: conocido?.cedula ?? cedulaPedida } : {}),
+  ...(conocido
+    ? {
+        nombre: conocido.nombre,
+        telefono: conocido.telefono,
+        sexo: conocido.sexo,
+        edad: conocido.edad,
+        direccion: conocido.direccion,
+        ciudad: conocido.ciudad,
+        referencia: conocido.referencia,
+      }
+    : {}),
 };
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
   const cerrar = form.get('accion') === 'cerrar';
-
-  /* El guardado automático pudo haber creado ya la atención mientras el
-     médico escribía. Si llega su id, se termina ESA y no se crea otra:
-     redirigir sin guardar perdería el cierre que acaba de pedir. */
-  const yaCreada = String(form.get('id') ?? '').trim();
   datos = { ...datos, ...limpiarDatos(form) };
 
+  /* El guardado automático pudo haber creado ya la atención mientras el
+     médico escribía. Si llega su id, se termina ESA y no se crea otra. */
+  const yaCreada = String(form.get('id') ?? '').trim();
   const faltan = cerrar ? faltantes(datos) : [];
 
   if (cerrar && faltan.length) {
@@ -48,62 +147,121 @@ if (Astro.request.method === 'POST') {
           await anotar(usuario.id, cerrar ? 'cerro' : 'edito', guardada.id, { numero: guardada.numero });
           return Astro.redirect(`/sistema/atencion/${guardada.id}`);
         }
+      } else {
+        const paciente = await pacienteDe(datos);
+        const [creada] = await bd
+          .insert(esquema.atencion)
+          .values({
+            pacienteId: paciente.id,
+            medicoId: usuario.id,
+            estado: cerrar ? 'cerrada' : 'borrador',
+            fecha: datos.fecha,
+            aseguradora: datos.aseguradora ?? null,
+            poliza: datos.poliza ?? null,
+            casoNumero: datos.caso_numero ?? null,
+            datos,
+            cerrada: cerrar ? new Date() : null,
+          })
+          .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
+
+        await anotar(usuario.id, cerrar ? 'cerro' : 'creo', creada.id, { numero: creada.numero });
+        return Astro.redirect(`/sistema/atencion/${creada.id}`);
       }
-
-      const paciente = await pacienteDe(datos);
-      const [creada] = await bd
-        .insert(esquema.atencion)
-        .values({
-          pacienteId: paciente.id,
-          medicoId: usuario.id,
-          estado: cerrar ? 'cerrada' : 'borrador',
-          fecha: datos.fecha,
-          aseguradora: datos.aseguradora ?? null,
-          poliza: datos.poliza ?? null,
-          casoNumero: datos.caso_numero ?? null,
-          datos,
-          cerrada: cerrar ? new Date() : null,
-        })
-        .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
-
-      await anotar(usuario.id, cerrar ? 'cerro' : 'creo', creada.id, { numero: creada.numero });
-      return Astro.redirect(`/sistema/atencion/${creada.id}`);
     } catch (e) {
       error = e instanceof Error ? e.message : 'No se pudo guardar la atención.';
     }
   }
 }
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
 ---
 
 <Sistema titulo="Nueva atención">
-  <form method="post" class="form">
-    <header class="form__cab">
-      <div>
-        <h1>Nueva atención</h1>
-        <p class="form__nota">
-          Lo marcado con <abbr title="Obligatorio">*</abbr> hace falta para cerrar.
-          Puede guardarla como borrador y terminarla después.
-        </p>
-      </div>
-      <a class="sis-boton sis-boton--suave" href="/sistema">Cancelar</a>
-    </header>
-
-    {error && (
-      <p class="sis-error form__error">
-        <Icono nombre="escudo" tam={18} />
-        {error}
+  {!abrirFormulario ? (
+    <div class="quien">
+      <h1>¿A quién va a atender?</h1>
+      <p class="quien__nota">
+        Empiece por la cédula. Si ya lo atendimos antes, no hace falta volver
+        a escribir sus datos.
       </p>
-    )}
-      <Pasos datos={datos} />
-  </form>
+
+      <form method="get" class="sis-tarjeta quien__form">
+        <div class="sis-campo">
+          <label for="cedula">Cédula del paciente</label>
+          <input
+            id="cedula" name="cedula" required autofocus autocomplete="off"
+            inputmode="numeric" placeholder="V-12.345.678"
+            pattern="[VvEeJjGg]?[-.\s0-9]{6,}"
+          />
+          <span class="pista">Con o sin puntos, con o sin letra. Da igual cómo se escriba.</span>
+        </div>
+        <button type="submit" class="sis-boton sis-boton--primario">
+          Continuar
+          <Icono nombre="flecha" tam={18} />
+        </button>
+      </form>
+
+      <p class="quien__salida">
+        <a href="/sistema">Volver a los casos</a>
+      </p>
+    </div>
+  ) : (
+    <form method="post" class="form">
+      <header class="form__cab">
+        <div>
+          <h1>Nueva atención</h1>
+          {conocido ? (
+            <p class="form__nota">
+              <strong>{conocido.nombre}</strong> · {conocido.cedula}
+              {conocido.ultima && (
+                <> · última atención N° {conocido.ultima.numero} del {fechaLarga(conocido.ultima.fecha)}
+                  {conocido.ultima.idx && <> por {conocido.ultima.idx.toLowerCase()}</>}</>
+              )}
+            </p>
+          ) : (
+            <p class="form__nota">
+              Paciente nuevo, cédula {cedulaPedida}. Se registra con esta atención.
+            </p>
+          )}
+        </div>
+        <a class="sis-boton sis-boton--suave" href="/sistema/atencion/nueva">No es este paciente</a>
+      </header>
+
+      {error && (
+        <p class="sis-error form__error">
+          <Icono nombre="escudo" tam={18} />
+          {error}
+        </p>
+      )}
+
+      <Pasos
+        datos={datos}
+        pasoInicial={conocido ? 1 : 0}
+        previos={antecedentesPrevios}
+        paciente={conocido?.nombre ?? ''}
+        ultima={conocido?.ultima ?? null}
+      />
+    </form>
+  )}
 </Sistema>
 
 <style>
+  /* ---------- a quién se atiende ---------- */
+  .quien { max-width: 520px; margin-inline: auto; padding-top: clamp(16px, 5vw, 48px); }
+  .quien h1 { font-size: var(--u-2xl); }
+  .quien__nota { margin-top: 8px; color: var(--tinta-suave); font-size: var(--u-sm); }
+  .quien__form { margin-top: 20px; display: grid; gap: 16px; }
+  .quien__form input { font-size: var(--u-lg); min-height: 54px; letter-spacing: 0.01em; }
+  .quien__form .sis-boton { min-height: 48px; justify-self: start; }
+  .quien__salida { margin-top: 18px; font-size: var(--u-sm); }
+  .quien__salida a { color: var(--tinta-suave); }
+
+  /* ---------- formulario ---------- */
   .form { padding-bottom: 0; }
-
   .form__cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
-  .form__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 60ch; }
-  .form__nota abbr { color: var(--rojo); text-decoration: none; font-weight: 700; }
-
+  .form__cab h1 { font-size: var(--u-2xl); }
+  .form__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 70ch; }
+  .form__nota strong { color: var(--azul); }
   .form__error { margin-top: 18px; }
 </style>

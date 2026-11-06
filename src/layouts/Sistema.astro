@@ -23,7 +23,8 @@ const usuario = Astro.locals.usuario;
 /* El menú solo muestra lo que el rol puede abrir: una puerta visible que
    lleva a "no tiene permiso" es peor que no mostrarla. */
 const todos: { href: string; texto: string; icono: 'latido' | 'mas' | 'reloj' | 'laboratorio' | 'escudo'; permiso: Permiso }[] = [
-  { href: '/sistema', texto: 'Casos', icono: 'latido', permiso: 'ver_casos' },
+  { href: '/sistema/tablero', texto: 'Tablero', icono: 'latido', permiso: 'ver_cierre' },
+  { href: '/sistema', texto: 'Casos', icono: 'estetoscopio', permiso: 'ver_casos' },
   { href: '/sistema/atencion/nueva', texto: 'Nueva atención', icono: 'mas', permiso: 'escribir_historia' },
   { href: '/sistema/borradores', texto: 'Borradores', icono: 'reloj', permiso: 'escribir_historia' },
   { href: '/sistema/cierre', texto: 'Cierre del mes', icono: 'laboratorio', permiso: 'ver_cierre' },
