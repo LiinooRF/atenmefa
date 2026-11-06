@@ -1,0 +1,45 @@
+# Despliegue en Dokploy.
+#
+# Dos servicios: el sitio y su base. El Postgres no publica puerto al
+# exterior a propósito: guarda historias clínicas y solo tiene que ser
+# alcanzable desde el contenedor del sitio.
+services:
+  sitio:
+    build:
+      context: .
+      args:
+        SITIO: ${SITIO:-https://atenmefa.site}
+    restart: unless-stopped
+    environment:
+      BASE_DATOS: postgres://atenmefa:${CLAVE_BASE:?falta CLAVE_BASE}@base:5432/atenmefa
+      AUTH_SECRETO: ${AUTH_SECRETO:?falta AUTH_SECRETO}
+      URL_BASE: ${URL_BASE:?falta URL_BASE}
+      PORT: "4321"
+    depends_on:
+      base:
+        condition: service_healthy
+    expose:
+      - "4321"
+
+  base:
+    image: postgres:17-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: atenmefa
+      POSTGRES_USER: atenmefa
+      POSTGRES_PASSWORD: ${CLAVE_BASE:?falta CLAVE_BASE}
+      # Para que los acentos y las comparaciones de texto ordenen en español.
+      POSTGRES_INITDB_ARGS: "--locale=es_ES.UTF-8 --encoding=UTF8"
+      TZ: America/Caracas
+    volumes:
+      - datos:/var/lib/postgresql/data
+      # Las migraciones corren solas la primera vez, en orden alfabético.
+      - ./src/sistema/base:/docker-entrypoint-initdb.d:ro
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U atenmefa -d atenmefa"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  datos:

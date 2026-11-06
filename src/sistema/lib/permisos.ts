@@ -31,7 +31,8 @@ export type Permiso =
   | 'editar_catalogo'      // servicios y precios
   | 'ver_cierre'           // consolidado del mes
   | 'exportar_cierre'      // la descarga en Excel
-  | 'ver_bitacora';        // quién vio o tocó qué
+  | 'ver_bitacora'         // quién vio o tocó qué
+  | 'administrar_usuarios'; // crear cuentas, cambiar roles, dar de baja
 
 const TABLA: Record<Rol, readonly Permiso[]> = {
   /**
@@ -68,6 +69,7 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
     'ver_cierre',
     'exportar_cierre',
     'ver_bitacora',
+    'administrar_usuarios',
   ],
 };
 
@@ -108,4 +110,5 @@ export const porQueNo: Record<Permiso, string> = {
   ver_cierre: 'El cierre del mes es de administración.',
   exportar_cierre: 'La exportación del cierre es de administración.',
   ver_bitacora: 'La bitácora de accesos es de administración.',
+  administrar_usuarios: 'Las cuentas las maneja administración.',
 };
