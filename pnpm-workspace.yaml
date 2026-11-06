@@ -1,0 +1,5 @@
+# sharp y esbuild necesitan correr su script de instalación para bajar el
+# binario de su plataforma. Sin esto pnpm los ignora y el build falla.
+allowBuilds:
+  esbuild: true
+  sharp: true

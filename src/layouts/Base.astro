@@ -26,6 +26,7 @@ const {
 } = Astro.props;
 
 const previa = import.meta.env.PREVIA === '1';
+const sinIndexar = previa || rutaPagina === '/404';
 
 /* Raíz real del despliegue: dominio + base. En producción la base es "/" y
    esto equivale al dominio; en la vista previa incluye el subdirectorio. */
@@ -202,7 +203,7 @@ const jsonLd = JSON.stringify({ '@context': 'https://schema.org', '@graph': graf
     <title>{titulo}</title>
     <meta name="description" content={descripcion} />
     <link rel="canonical" href={canonical} />
-    <meta name="robots" content={previa ? "noindex, nofollow" : "index, follow, max-image-preview:large, max-snippet:-1"} />
+    <meta name="robots" content={sinIndexar ? "noindex, nofollow" : "index, follow, max-image-preview:large, max-snippet:-1"} />
     <meta name="theme-color" content="#111663" />
 
     <meta property="og:type" content="website" />

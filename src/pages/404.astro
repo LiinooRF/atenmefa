@@ -1,0 +1,89 @@
+---
+import Base from '../layouts/Base.astro';
+import Icono from '../components/Icono.astro';
+import { servicios, clinica } from '../data/clinica';
+import { ruta } from '../lib/rutas';
+
+const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
+---
+
+<Base
+  titulo="Página no encontrada | Atenmefa"
+  descripcion="La página que busca no existe. Vea los servicios de Atenmefa o comuníquese con el centro."
+  ruta="/404"
+>
+  <section class="perdido">
+    <div class="contenedor">
+      <p class="perdido__codigo">404</p>
+      <h1>Esta página no existe</h1>
+      <p class="guia">
+        Puede que el enlace esté mal escrito o que la página haya cambiado de
+        dirección. Si necesita atención ahora, llame al {tel.visible}.
+      </p>
+
+      <div class="perdido__acciones">
+        <a class="boton boton--rojo" href={`tel:${tel.e164}`}>
+          <Icono nombre="telefono" tam={19} />
+          Llamar al {tel.visible}
+        </a>
+        <a class="boton boton--contorno" href={ruta('/')}>Ir al inicio</a>
+      </div>
+
+      <h2>Servicios</h2>
+      <ul class="perdido__lista">
+        {servicios.map((s) => (
+          <li>
+            <a href={ruta(`/servicios/${s.slug}/`)}>
+              {s.nombre}
+              <Icono nombre="flecha" tam={17} />
+            </a>
+          </li>
+        ))}
+      </ul>
+    </div>
+  </section>
+</Base>
+
+<style>
+  .perdido { padding-block: clamp(50px, 8vw, 96px); }
+  .perdido__codigo {
+    font-family: var(--titulares);
+    font-size: clamp(3rem, 9vw, 4.6rem);
+    font-weight: 800;
+    letter-spacing: -0.04em;
+    line-height: 1;
+    color: var(--rojo);
+  }
+  .perdido h1 { margin-top: 10px; }
+  .perdido .guia { margin-top: 18px; }
+  .perdido__acciones { display: flex; flex-wrap: wrap; gap: 11px; margin-top: 28px; }
+  .perdido h2 {
+    margin-top: clamp(40px, 6vw, 62px);
+    font-size: var(--t-lg);
+    padding-bottom: 14px;
+    border-bottom: 1px solid var(--linea);
+  }
+  .perdido__lista {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(min(250px, 100%), 1fr));
+  }
+  .perdido__lista li { border-bottom: 1px solid var(--linea-tenue); }
+  .perdido__lista a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    min-height: 56px;
+    padding: 10px 2px;
+    text-decoration: none;
+    font-family: var(--titulares);
+    font-weight: 600;
+    color: var(--tinta);
+  }
+  .perdido__lista a:hover { color: var(--rojo); }
+  .perdido__lista :global(svg) { color: var(--linea); }
+  .perdido__lista a:hover :global(svg) { color: var(--rojo); }
+</style>

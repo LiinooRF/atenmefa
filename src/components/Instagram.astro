@@ -1,0 +1,104 @@
+---
+/**
+ * Muro de Instagram. Las piezas que entregó el cliente son publicaciones
+ * de Instagram —cuadradas, con el texto incrustado y su arroba—, así que se
+ * muestran como lo que son y no haciéndose pasar por fotos del centro.
+ *
+ * Las imágenes pasan por <Image>: Astro las sirve en WebP, al tamaño que
+ * hace falta y con carga diferida.
+ */
+import { Image } from 'astro:assets';
+import { clinica } from '../data/clinica';
+import Icono from './Icono.astro';
+
+import p1 from '../assets/instagram/01.jpg';
+import p2 from '../assets/instagram/02.jpg';
+import p3 from '../assets/instagram/03.jpg';
+import p4 from '../assets/instagram/04.jpg';
+import p5 from '../assets/instagram/05.jpg';
+import p6 from '../assets/instagram/06.jpg';
+
+const perfil = `https://instagram.com/${clinica.contacto.instagram}`;
+
+const piezas = [
+  { img: p1, alt: 'Publicación de Atenmefa sobre su servicio de ambulancia' },
+  { img: p2, alt: 'Publicación de Atenmefa con acciones para cuidar los pulmones' },
+  { img: p3, alt: 'Publicación de Atenmefa con la lista de servicios que ofrece' },
+  { img: p4, alt: 'Publicación de Atenmefa con consejos para cuidar los ojos' },
+  { img: p5, alt: 'Publicación de Atenmefa recordando asistir a las consultas médicas' },
+  { img: p6, alt: 'Publicación de Atenmefa recordando mantener las vacunas al día' },
+];
+---
+
+<section class="ig">
+  <div class="contenedor">
+    <div class="ig__cabeza">
+      <div class="titulo-seccion">
+        <h2>Lo que publicamos</h2>
+        <p class="guia">
+          Recordatorios de salud, servicios y avisos. Todo en nuestro Instagram.
+        </p>
+      </div>
+      <a class="boton boton--contorno" href={perfil} target="_blank" rel="noopener">
+        <Icono nombre="instagram" tam={19} />
+        Seguir a @{clinica.contacto.instagram}
+      </a>
+    </div>
+
+    <ul class="ig__muro">
+      {piezas.map((p) => (
+        <li>
+          <a href={perfil} target="_blank" rel="noopener">
+            <Image src={p.img} alt={p.alt} widths={[280, 420]} sizes="(min-width: 900px) 280px, 45vw" loading="lazy" />
+            <span class="ig__velo" aria-hidden="true"><Icono nombre="instagram" tam={24} /></span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .ig { padding-block: clamp(58px, 9vw, 104px); }
+
+  .ig__cabeza {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 20px;
+    align-items: flex-end;
+    justify-content: space-between;
+  }
+  .ig__cabeza .titulo-seccion { margin-bottom: 0; }
+  .ig__cabeza .boton { min-height: 48px; padding: 11px 20px; font-size: 0.95rem; }
+
+  .ig__muro {
+    list-style: none;
+    margin: clamp(28px, 4vw, 44px) 0 0;
+    padding: 0;
+    display: grid;
+    gap: 10px;
+    grid-template-columns: repeat(auto-fit, minmax(min(150px, 45%), 1fr));
+  }
+
+  .ig__muro a {
+    display: block;
+    position: relative;
+    border-radius: var(--radio-sm);
+    overflow: hidden;
+    line-height: 0;
+  }
+  .ig__muro :global(img) { width: 100%; height: auto; aspect-ratio: 1; object-fit: cover; }
+
+  .ig__velo {
+    position: absolute;
+    inset: 0;
+    display: grid;
+    place-items: center;
+    background: rgba(11, 15, 69, 0.55);
+    color: #fff;
+    opacity: 0;
+    transition: opacity 200ms ease;
+  }
+  .ig__muro a:hover .ig__velo,
+  .ig__muro a:focus-visible .ig__velo { opacity: 1; }
+</style>

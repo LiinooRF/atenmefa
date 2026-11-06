@@ -1,7 +1,8 @@
 ---
 import { clinica, wa } from '../data/clinica';
 import Icono from './Icono.astro';
-import Hueco from './Hueco.astro';
+import { Image } from 'astro:assets';
+import folleto from '../assets/folleto.jpg';
 
 const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
 ---
@@ -39,10 +40,13 @@ const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
     </div>
 
     <div class="portada__imagen">
-      <Hueco
-        ancho={960}
-        alto={1080}
-        nota="Foto vertical de la ambulancia o de la fachada del local. Luz de día, sin texto encima."
+      <Image
+        src={folleto}
+        alt="Folleto de Atenmefa: servicios de salud a domicilio, traslados en ambulancia, consulta médica y laboratorio clínico"
+        widths={[480, 720, 960]}
+        sizes="(min-width: 960px) 480px, 92vw"
+        loading="eager"
+        fetchpriority="high"
       />
     </div>
   </div>
@@ -132,6 +136,10 @@ const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
   /* En móvil manda el texto: quien llega con una urgencia tiene que ver el
      titular y el botón de emergencia sin desplazar. La foto va después y
      con altura acotada para no comerse la pantalla. */
-  .portada__imagen :global(.hueco) { max-height: 46vh; }
-  @media (min-width: 960px) { .portada__imagen :global(.hueco) { max-height: none; } }
+  .portada__imagen :global(img) {
+    width: 100%;
+    height: auto;
+    border-radius: var(--radio);
+    border: 1px solid var(--linea);
+  }
 </style>
