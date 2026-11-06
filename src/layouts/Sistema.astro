@@ -28,6 +28,8 @@ const todos: { href: string; texto: string; icono: 'latido' | 'mas' | 'reloj' | 
   { href: '/sistema/borradores', texto: 'Borradores', icono: 'reloj', permiso: 'escribir_historia' },
   { href: '/sistema/cierre', texto: 'Cierre del mes', icono: 'laboratorio', permiso: 'ver_cierre' },
   { href: '/sistema/servicios', texto: 'Servicios', icono: 'escudo', permiso: 'editar_catalogo' },
+  { href: '/sistema/usuarios', texto: 'Cuentas', icono: 'estetoscopio', permiso: 'administrar_usuarios' },
+  { href: '/sistema/bitacora', texto: 'Bitácora', icono: 'escudo', permiso: 'ver_bitacora' },
 ];
 const enlaces = todos.filter((e) => puede(usuario?.rol as string, e.permiso));
 ---
@@ -62,10 +64,10 @@ const enlaces = todos.filter((e) => puede(usuario?.rol as string, e.permiso));
           </nav>
 
           <div class="sis__quien">
-            <span>
+            <a class="sis__yo" href="/sistema/mi-clave" title="Cambiar mi clave">
               <strong>{usuario.name}</strong>
               <small>{nombreDelRol(usuario.rol as string)}</small>
-            </span>
+            </a>
             <form method="post" action="/sistema/salir">
               <button type="submit" class="sis__salir">Salir</button>
             </form>

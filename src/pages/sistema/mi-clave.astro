@@ -1,0 +1,114 @@
+---
+/**
+ * Cambiar la propia clave.
+ *
+ * Sin esto, una clave repartida por WhatsApp al dar de alta se queda así
+ * para siempre. No pide permiso: cualquiera con sesión cambia la suya.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { auth } from '../../sistema/lib/auth';
+import { cambiarClave, claveFloja } from '../../sistema/lib/usuarios';
+import { anotar } from '../../sistema/lib/atenciones';
+
+export const prerender = false;
+
+const yo = Astro.locals.usuario!;
+let error = '';
+let listo = false;
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const actual = String(form.get('actual') ?? '');
+  const nueva = String(form.get('nueva') ?? '');
+  const repetida = String(form.get('repetida') ?? '');
+
+  const floja = claveFloja(nueva);
+
+  if (nueva !== repetida) {
+    error = 'Las dos claves nuevas no coinciden.';
+  } else if (floja) {
+    error = floja;
+  } else if (nueva === actual) {
+    error = 'La clave nueva tiene que ser distinta de la actual.';
+  } else {
+    /* Se comprueba la clave actual antes de cambiarla: si alguien deja la
+       sesión abierta, que no le puedan cambiar la clave y dejarlo afuera. */
+    let correcta = true;
+    try {
+      const r = await auth.api.signInEmail({
+        body: { email: yo.email, password: actual },
+        asResponse: true,
+      });
+      correcta = r.ok;
+    } catch {
+      correcta = false;
+    }
+
+    if (!correcta) {
+      error = 'La clave actual no es correcta.';
+    } else {
+      await cambiarClave(yo.id, nueva);
+      await anotar(yo.id, 'cambio_su_clave');
+      listo = true;
+    }
+  }
+}
+---
+
+<Sistema titulo="Mi clave">
+  <div class="caja">
+    <h1>Cambiar mi clave</h1>
+
+    {listo ? (
+      <section class="sis-tarjeta hecho">
+        <Icono nombre="escudo" tam={26} />
+        <h2>Clave cambiada</h2>
+        <p>
+          Se cerraron todas las sesiones abiertas, incluida esta. Vuelva a entrar
+          con la clave nueva.
+        </p>
+        <a class="sis-boton sis-boton--primario" href="/sistema/entrar">Entrar de nuevo</a>
+      </section>
+    ) : (
+      <>
+        <p class="caja__nota">
+          Entró como <strong>{yo.name}</strong> ({yo.email}). Al cambiarla se
+          cierran todas sus sesiones y tendrá que volver a entrar.
+        </p>
+
+        {error && <p class="sis-error"><Icono nombre="escudo" tam={18} />{error}</p>}
+
+        <form method="post" class="sis-tarjeta formulario">
+          <div class="sis-campo">
+            <label for="actual">Clave actual</label>
+            <input id="actual" name="actual" type="password" required autocomplete="current-password" />
+          </div>
+          <div class="sis-campo">
+            <label for="nueva">Clave nueva</label>
+            <input id="nueva" name="nueva" type="password" minlength="10" required autocomplete="new-password" />
+            <span class="pista">Mínimo 10 caracteres y que no sean solo números.</span>
+          </div>
+          <div class="sis-campo">
+            <label for="repetida">Repita la clave nueva</label>
+            <input id="repetida" name="repetida" type="password" minlength="10" required autocomplete="new-password" />
+          </div>
+          <button type="submit" class="sis-boton sis-boton--primario">Cambiar mi clave</button>
+        </form>
+      </>
+    )}
+  </div>
+</Sistema>
+
+<style>
+  .caja { max-width: 480px; display: grid; gap: 14px; }
+  .caja h1 { font-size: var(--u-2xl); }
+  .caja__nota { font-size: var(--u-sm); color: var(--tinta-suave); }
+  .formulario { display: grid; gap: 15px; }
+  .formulario .sis-boton { min-height: 46px; margin-top: 3px; }
+  .hecho { display: grid; justify-items: start; gap: 10px; }
+  .hecho :global(svg) { color: #15663f; }
+  .hecho h2 { font-size: var(--u-lg); }
+  .hecho p { color: var(--tinta-suave); font-size: var(--u-sm); }
+  .hecho .sis-boton { margin-top: 5px; }
+</style>

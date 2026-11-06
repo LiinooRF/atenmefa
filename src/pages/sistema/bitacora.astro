@@ -1,0 +1,187 @@
+---
+/**
+ * Bitácora de accesos.
+ *
+ * El sistema venía registrando todo desde el primer día, pero no había
+ * forma de leerlo sin entrar a la base. En datos de salud, un registro que
+ * nadie puede consultar no sirve para la única cosa que justifica tenerlo:
+ * saber quién vio qué historia y cuándo.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { bd, esquema } from '../../sistema/lib/base';
+import { desc, eq, and, gte, lte, type SQL } from 'drizzle-orm';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'ver_bitacora');
+if (corte) return corte;
+
+const p = Astro.url.searchParams;
+const quien = p.get('quien') ?? '';
+const queHizo = p.get('accion') ?? '';
+const desdeTxt = p.get('desde') ?? '';
+const hastaTxt = p.get('hasta') ?? '';
+
+const filtros: SQL[] = [];
+if (quien) filtros.push(eq(esquema.bitacora.usuarioId, quien));
+if (queHizo) filtros.push(eq(esquema.bitacora.accion, queHizo));
+if (desdeTxt) filtros.push(gte(esquema.bitacora.momento, new Date(`${desdeTxt}T00:00:00`)));
+if (hastaTxt) filtros.push(lte(esquema.bitacora.momento, new Date(`${hastaTxt}T23:59:59`)));
+
+const filas = await bd
+  .select({
+    id: esquema.bitacora.id,
+    accion: esquema.bitacora.accion,
+    momento: esquema.bitacora.momento,
+    detalle: esquema.bitacora.detalle,
+    atencionId: esquema.bitacora.atencionId,
+    numero: esquema.atencion.numero,
+    paciente: esquema.paciente.nombre,
+    usuario: esquema.user.name,
+    usuarioId: esquema.user.id,
+  })
+  .from(esquema.bitacora)
+  .leftJoin(esquema.user, eq(esquema.user.id, esquema.bitacora.usuarioId))
+  .leftJoin(esquema.atencion, eq(esquema.atencion.id, esquema.bitacora.atencionId))
+  .leftJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+  .where(filtros.length ? and(...filtros) : undefined)
+  .orderBy(desc(esquema.bitacora.momento))
+  .limit(300);
+
+const gente = await bd
+  .select({ id: esquema.user.id, nombre: esquema.user.name })
+  .from(esquema.user)
+  .orderBy(esquema.user.name);
+
+/* Las acciones se guardan como verbos cortos: acá se traducen a algo que
+   se pueda leer de corrido en una auditoría. */
+const COMO_SE_LEE: Record<string, string> = {
+  vio: 'Abrió la historia',
+  creo: 'Registró la atención',
+  edito: 'Editó el borrador',
+  cerro: 'Cerró y firmó',
+  anulo: 'Anuló la atención',
+  cobro: 'Cargó cobro',
+  imprimio: 'Imprimió el documento',
+  exporto: 'Exportó el cierre',
+  servicio: 'Tocó el catálogo',
+  creo_usuario: 'Creó una cuenta',
+  dio_de_baja: 'Dio de baja una cuenta',
+  activo_usuario: 'Reactivó una cuenta',
+  cambio_rol: 'Cambió un rol',
+  cambio_clave: 'Cambió la clave de alguien',
+  cambio_su_clave: 'Cambió su propia clave',
+};
+
+const ACCIONES = Object.keys(COMO_SE_LEE);
+
+const cuando = (m: Date) =>
+  new Intl.DateTimeFormat('es-VE', {
+    timeZone: 'America/Caracas',
+    day: '2-digit', month: '2-digit', year: 'numeric',
+    hour: '2-digit', minute: '2-digit', hour12: false,
+  }).format(m);
+
+const hayFiltro = Boolean(quien || queHizo || desdeTxt || hastaTxt);
+---
+
+<Sistema titulo="Bitácora">
+  <div class="cab">
+    <h1>Bitácora de accesos</h1>
+    <p class="cab__nota">
+      Quién vio o tocó cada historia. Se guarda sola y no se puede editar.
+      {filas.length === 300 ? ' Se muestran los 300 movimientos más recientes.' : ` ${filas.length} movimientos.`}
+    </p>
+  </div>
+
+  <form class="filtros" method="get">
+    <select name="quien" aria-label="Usuario">
+      <option value="">Cualquiera</option>
+      {gente.map((g) => <option value={g.id} selected={quien === g.id}>{g.nombre}</option>)}
+    </select>
+    <select name="accion" aria-label="Qué hizo">
+      <option value="">Cualquier acción</option>
+      {ACCIONES.map((a) => <option value={a} selected={queHizo === a}>{COMO_SE_LEE[a]}</option>)}
+    </select>
+    <input type="date" name="desde" value={desdeTxt} aria-label="Desde" />
+    <input type="date" name="hasta" value={hastaTxt} aria-label="Hasta" />
+    <button type="submit" class="sis-boton sis-boton--azul">Filtrar</button>
+    {hayFiltro && <a class="sis-boton sis-boton--suave" href="/sistema/bitacora">Limpiar</a>}
+  </form>
+
+  {filas.length === 0 ? (
+    <div class="sis-tarjeta vacio">
+      <h2>No hay movimientos</h2>
+      <p>{hayFiltro ? 'Pruebe con otro usuario, otra acción u otras fechas.' : 'Todavía nadie tocó ninguna historia.'}</p>
+    </div>
+  ) : (
+    <div class="sis-tarjeta tabla">
+      <table>
+        <thead>
+          <tr><th>Cuándo</th><th>Quién</th><th>Qué hizo</th><th>Sobre qué</th></tr>
+        </thead>
+        <tbody>
+          {filas.map((f) => (
+            <tr>
+              <td class="cifra">{cuando(f.momento)}</td>
+              <td>{f.usuario ?? 'Cuenta borrada'}</td>
+              <td>{COMO_SE_LEE[f.accion] ?? f.accion}</td>
+              <td>
+                {f.atencionId ? (
+                  <a href={`/sistema/atencion/${f.atencionId}`}>
+                    N° {f.numero} · {f.paciente}
+                  </a>
+                ) : (
+                  <span class="nada">—</span>
+                )}
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+  )}
+</Sistema>
+
+<style>
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 70ch; }
+
+  .filtros { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 16px; }
+  .filtros select, .filtros input {
+    min-height: 42px;
+    padding: 8px 11px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background: var(--papel);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+  }
+  .filtros .sis-boton { min-height: 42px; }
+
+  .vacio { text-align: center; padding-block: 48px; }
+  .vacio h2 { font-size: var(--u-lg); }
+  .vacio p { margin-top: 8px; color: var(--tinta-tenue); font-size: var(--u-sm); }
+
+  /* La tabla se desplaza dentro de su caja: el panel nunca se mueve de lado. */
+  .tabla { padding: 0; overflow-x: auto; }
+  table { width: 100%; min-width: 620px; border-collapse: collapse; font-size: var(--u-sm); }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--linea-tenue); }
+  th {
+    font-size: var(--u-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--tinta-tenue);
+    background: var(--panel);
+    position: sticky;
+    top: 0;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--bruma); }
+  td a { color: var(--azul); text-decoration: none; font-weight: 600; }
+  td a:hover { color: var(--rojo); text-decoration: underline; }
+  .nada { color: var(--tinta-tenue); }
+</style>

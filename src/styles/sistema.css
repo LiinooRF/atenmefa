@@ -86,10 +86,22 @@
 .sis__nav a[aria-current='page'] { background: var(--rojo); color: #fff; }
 
 .sis__quien { display: flex; align-items: center; gap: 12px; }
-.sis__quien span { display: none; flex-direction: column; line-height: 1.15; text-align: right; }
+.sis__quien .sis__yo {
+  display: none;
+  flex-direction: column;
+  line-height: 1.15;
+  text-align: right;
+  color: inherit;
+  text-decoration: none;
+  padding: 5px 9px;
+  border-radius: 8px;
+  transition: background-color 160ms ease;
+}
+.sis__quien .sis__yo:hover { background: rgba(255, 255, 255, 0.1); }
 .sis__quien strong { font-size: var(--u-sm); font-weight: 600; }
 .sis__quien small { font-size: var(--u-xs); color: rgba(255, 255, 255, 0.56); }
-@media (min-width: 680px) { .sis__quien span { display: flex; } }
+.sis__quien small { font-size: var(--u-xs); color: rgba(255, 255, 255, 0.56); }
+@media (min-width: 680px) { .sis__quien .sis__yo { display: flex; } }
 
 .sis__salir {
   min-height: 38px;

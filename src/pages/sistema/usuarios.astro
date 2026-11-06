@@ -1,0 +1,259 @@
+---
+/**
+ * Cuentas del sistema.
+ *
+ * Hasta acá se creaban por línea de comandos, lo que significaba que el
+ * centro no podía dar de alta a nadie sin pedírselo a quien lo programó.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import {
+  listarUsuarios, crearUsuario, correoTomado, cambiarEstado, cambiarRol,
+  cambiarClave, claveFloja, ROLES, usuarioPorId,
+} from '../../sistema/lib/usuarios';
+import { anotar } from '../../sistema/lib/atenciones';
+import type { Rol } from '../../sistema/lib/permisos';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'administrar_usuarios');
+if (corte) return corte;
+
+const yo = Astro.locals.usuario!;
+let error = '';
+let aviso = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const accion = String(form.get('accion') ?? '');
+
+  if (accion === 'crear') {
+    const nombre = String(form.get('nombre') ?? '').trim();
+    const correo = String(form.get('correo') ?? '').trim().toLowerCase();
+    const clave = String(form.get('clave') ?? '');
+    const rol = String(form.get('rol') ?? 'medico') as Rol;
+    const colegiatura = String(form.get('colegiatura') ?? '').trim();
+
+    const floja = claveFloja(clave);
+    if (!nombre || !correo) error = 'Hacen falta el nombre y el correo.';
+    else if (!ROLES.some((r) => r.valor === rol)) error = 'Ese rol no existe.';
+    else if (floja) error = floja;
+    else if (await correoTomado(correo)) error = `Ya hay una cuenta con el correo ${correo}.`;
+    else {
+      const id = await crearUsuario({ nombre, correo, clave, rol, colegiatura });
+      await anotar(yo.id, 'creo_usuario', undefined, { usuario: id, correo, rol });
+      aviso = `Cuenta creada para ${nombre}. Pásele la clave por un medio seguro y pídale que la cambie al entrar.`;
+    }
+  }
+
+  if (accion === 'estado' || accion === 'rol' || accion === 'clave') {
+    const id = String(form.get('id') ?? '');
+    const quien = await usuarioPorId(id);
+
+    if (!quien) {
+      error = 'Esa cuenta ya no existe.';
+    } else if (id === yo.id && accion !== 'clave') {
+      /* Dejarse a uno mismo sin rol ni acceso cierra la puerta por dentro:
+         si es el único administrador, nadie puede volver a abrirla. */
+      error = 'No puede cambiarse el rol ni darse de baja a usted mismo. Pídaselo a otro administrador.';
+    } else if (accion === 'estado') {
+      const activar = form.get('valor') === 'activar';
+      await cambiarEstado(id, activar);
+      await anotar(yo.id, activar ? 'activo_usuario' : 'dio_de_baja', undefined, { usuario: id });
+      aviso = activar
+        ? `${quien.name} vuelve a tener acceso.`
+        : `${quien.name} quedó sin acceso. Sus atenciones se conservan: hacen falta para saber quién firmó cada historia.`;
+    } else if (accion === 'rol') {
+      const rol = String(form.get('valor') ?? '') as Rol;
+      if (!ROLES.some((r) => r.valor === rol)) error = 'Ese rol no existe.';
+      else {
+        await cambiarRol(id, rol);
+        await anotar(yo.id, 'cambio_rol', undefined, { usuario: id, rol });
+        aviso = `${quien.name} ahora es ${ROLES.find((r) => r.valor === rol)!.nombre.toLowerCase()}.`;
+      }
+    } else {
+      const clave = String(form.get('valor') ?? '');
+      const floja = claveFloja(clave);
+      if (floja) error = floja;
+      else {
+        await cambiarClave(id, clave);
+        await anotar(yo.id, 'cambio_clave', undefined, { usuario: id });
+        aviso = `Clave cambiada. ${quien.name} tiene que volver a entrar.`;
+      }
+    }
+  }
+}
+
+const usuarios = await listarUsuarios();
+const activos = usuarios.filter((u) => u.activo !== false).length;
+---
+
+<Sistema titulo="Cuentas">
+  <div class="cab">
+    <h1>Cuentas del sistema</h1>
+    <p class="cab__nota">
+      {activos} con acceso{usuarios.length > activos ? `, ${usuarios.length - activos} de baja` : ''}.
+      No hay registro abierto: las cuentas se crean acá.
+    </p>
+  </div>
+
+  {error && <p class="sis-error msj"><Icono nombre="escudo" tam={18} />{error}</p>}
+  {aviso && <p class="msj msj--bien"><Icono nombre="escudo" tam={18} />{aviso}</p>}
+
+  <div class="col">
+    <section class="sis-tarjeta">
+      <h2>Quiénes tienen acceso</h2>
+      <ul class="gente">
+        {usuarios.map((u) => (
+          <li class:list={[u.activo === false && 'gente--baja']}>
+            <div class="gente__quien">
+              <strong>{u.nombre}{u.id === yo.id ? ' · usted' : ''}</strong>
+              <small>{u.correo}</small>
+              {u.colegiatura && <small>C.M. {u.colegiatura}</small>}
+            </div>
+
+            <div class="gente__acciones">
+              <form method="post" class="enlinea">
+                <input type="hidden" name="accion" value="rol" />
+                <input type="hidden" name="id" value={u.id} />
+                <select name="valor" aria-label={`Rol de ${u.nombre}`} disabled={u.id === yo.id}>
+                  {ROLES.map((r) => <option value={r.valor} selected={u.rol === r.valor}>{r.nombre}</option>)}
+                </select>
+                <button type="submit" class="sis-boton sis-boton--suave" disabled={u.id === yo.id}>Cambiar</button>
+              </form>
+
+              <form method="post" class="enlinea">
+                <input type="hidden" name="accion" value="estado" />
+                <input type="hidden" name="id" value={u.id} />
+                <input type="hidden" name="valor" value={u.activo === false ? 'activar' : 'dar-de-baja'} />
+                <button type="submit" class:list={['sis-boton', 'sis-boton--suave', u.activo !== false && 'anular']}
+                        disabled={u.id === yo.id}>
+                  {u.activo === false ? 'Dar acceso' : 'Dar de baja'}
+                </button>
+              </form>
+            </div>
+
+            <details class="gente__clave">
+              <summary>Cambiarle la clave</summary>
+              <form method="post" class="enlinea">
+                <input type="hidden" name="accion" value="clave" />
+                <input type="hidden" name="id" value={u.id} />
+                <input type="password" name="valor" minlength="10" required
+                       aria-label={`Clave nueva de ${u.nombre}`} placeholder="Clave nueva" autocomplete="new-password" />
+                <button type="submit" class="sis-boton sis-boton--azul">Cambiar</button>
+              </form>
+              <span class="pista">Al cambiarla se cierran sus sesiones abiertas.</span>
+            </details>
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    <section class="sis-tarjeta">
+      <h2>Crear una cuenta</h2>
+      <form method="post" class="alta">
+        <input type="hidden" name="accion" value="crear" />
+        <div class="sis-campo">
+          <label for="nombre">Nombre y apellido</label>
+          <input id="nombre" name="nombre" required autocomplete="off" />
+        </div>
+        <div class="sis-campo">
+          <label for="correo">Correo</label>
+          <input id="correo" name="correo" type="email" required autocomplete="off" />
+          <span class="pista">Es con lo que entra al sistema.</span>
+        </div>
+        <div class="sis-campo">
+          <label for="rol">Rol</label>
+          <select id="rol" name="rol">
+            {ROLES.map((r) => <option value={r.valor}>{r.nombre}</option>)}
+          </select>
+          <span class="pista">{ROLES.map((r) => `${r.nombre}: ${r.explica}`).join(' ')}</span>
+        </div>
+        <div class="sis-campo">
+          <label for="colegiatura">Colegiatura</label>
+          <input id="colegiatura" name="colegiatura" autocomplete="off" />
+          <span class="pista">Solo para médicos. Sale en el documento que firman.</span>
+        </div>
+        <div class="sis-campo">
+          <label for="clave">Clave provisional</label>
+          <input id="clave" name="clave" type="password" minlength="10" required autocomplete="new-password" />
+          <span class="pista">Mínimo 10 caracteres y que no sean solo números.</span>
+        </div>
+        <button type="submit" class="sis-boton sis-boton--primario">Crear la cuenta</button>
+      </form>
+    </section>
+  </div>
+</Sistema>
+
+<style>
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .msj { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; }
+  .msj--bien {
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+    font-size: var(--u-sm);
+  }
+  .msj--bien :global(svg) { color: #15663f; flex: none; margin-top: 1px; }
+
+  .col { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 20px; align-items: start; }
+  @media (min-width: 1000px) { .col { grid-template-columns: minmax(0, 1fr) 380px; } }
+
+  h2 { font-size: var(--u-md); margin-bottom: 13px; }
+
+  .gente { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+  .gente li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 10px;
+    padding: 14px 0;
+    border-top: 1px solid var(--linea-tenue);
+  }
+  .gente li:first-child { border-top: 0; padding-top: 0; }
+  @media (min-width: 720px) {
+    .gente li { grid-template-columns: minmax(0, 1fr) auto; align-items: center; }
+    .gente__clave { grid-column: 1 / -1; }
+  }
+  .gente--baja .gente__quien strong { color: var(--tinta-tenue); text-decoration: line-through; }
+
+  .gente__quien { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+  .gente__quien strong { font-size: var(--u-base); font-weight: 600; color: var(--azul); }
+  /* Un correo largo no tiene espacios donde cortar: sin esto empuja la
+     fila y el panel entero se arrastra de lado en el teléfono. */
+  .gente__quien small { font-size: var(--u-xs); color: var(--tinta-tenue); overflow-wrap: anywhere; }
+
+  .gente__acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+  .enlinea { display: flex; gap: 7px; align-items: center; }
+  .enlinea select, .enlinea input {
+    min-height: 40px;
+    padding: 7px 10px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+    background: var(--papel);
+  }
+  .enlinea .sis-boton { min-height: 40px; padding: 7px 14px; }
+
+  .gente__clave summary {
+    list-style: none;
+    cursor: pointer;
+    font-size: var(--u-sm);
+    color: var(--azul);
+    font-weight: 600;
+    padding: 6px 0;
+    min-height: 32px;
+  }
+  .gente__clave summary::-webkit-details-marker { display: none; }
+  .gente__clave summary:hover { color: var(--rojo); }
+  .gente__clave .pista { display: block; margin-top: 6px; font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  .alta { display: grid; gap: 14px; }
+  .alta .sis-boton { min-height: 46px; margin-top: 2px; }
+</style>
