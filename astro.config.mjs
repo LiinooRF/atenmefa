@@ -29,5 +29,15 @@ export default defineConfig({
   build: {
     inlineStylesheets: 'auto',
   },
+
+  /**
+   * El chequeo de origen de Astro se apaga acá y se hace a mano en el
+   * middleware. No es un relajo de seguridad, es lo contrario: detrás de
+   * un proxy que termina el TLS, el servidor ve la petición como http y
+   * rechaza el Origin https que manda el navegador, así que TODO formulario
+   * daba 403. Comparar contra URL_BASE, que es el origen público real y la
+   * aplicación ya conoce, es más preciso que adivinarlo del socket.
+   */
+  security: { checkOrigin: false },
   compressHTML: true,
 });

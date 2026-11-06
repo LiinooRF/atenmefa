@@ -93,3 +93,38 @@ test('salir invalida la sesión', async ({ page }) => {
   await expect(page).toHaveURL(/\/sistema\/entrar$/);
   await expect(page.getByRole('heading', { name: 'Entrar' })).toBeVisible();
 });
+
+/* ---------------------------------------------------------------
+   Origen de los formularios.
+
+   El chequeo de Astro compara contra el esquema del socket, que detrás
+   de un proxy que termina el TLS es http y nunca coincide con el https
+   del navegador: todo formulario daba 403 en producción. Se reemplazó
+   por uno propio contra URL_BASE, y esto lo vigila.
+   --------------------------------------------------------------- */
+
+test('un formulario desde otro sitio se rechaza', async ({ request }) => {
+  const r = await request.post('/sistema/entrar', {
+    form: { correo: 'medico@atenmefa.local', clave: 'clave-de-prueba-1' },
+    headers: { Origin: 'https://sitio-ajeno.example' },
+    maxRedirects: 0,
+  });
+  expect(r.status()).toBe(403);
+});
+
+test('un formulario que no dice de dónde viene se rechaza', async ({ request }) => {
+  const r = await request.post('/sistema/entrar', {
+    form: { correo: 'medico@atenmefa.local', clave: 'clave-de-prueba-1' },
+    maxRedirects: 0,
+  });
+  expect(r.status()).toBe(403);
+});
+
+test('un formulario del propio sitio pasa', async ({ request }) => {
+  const r = await request.post('/sistema/entrar', {
+    form: { correo: 'medico@atenmefa.local', clave: 'clave-de-prueba-1' },
+    headers: { Origin: 'http://localhost:4399' },
+    maxRedirects: 0,
+  });
+  expect(r.status()).toBe(302);
+});

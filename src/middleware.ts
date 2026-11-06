@@ -1,11 +1,48 @@
 import { defineMiddleware } from 'astro:middleware';
 import { auth } from './sistema/lib/auth';
+import { entorno } from './sistema/lib/entorno';
+
+/* Los orígenes desde los que se aceptan formularios. URL_BASE es el
+   público; localhost queda para desarrollo y para las pruebas. */
+const PROPIOS = new Set(
+  [entorno('URL_BASE'), 'http://localhost:4321', 'http://localhost:4399']
+    .filter(Boolean)
+    .map((u) => new URL(u!).origin),
+);
+
+/**
+ * Defensa contra formularios enviados desde otro sitio.
+ *
+ * Reemplaza al chequeo de Astro, que detrás de un proxy compara contra el
+ * esquema del socket (http) en vez del público (https) y rechaza todo.
+ * Acá se compara contra el origen que la aplicación tiene configurado.
+ */
+function vieneDeAfuera(pedido: Request) {
+  if (['GET', 'HEAD', 'OPTIONS'].includes(pedido.method)) return false;
+
+  const origen = pedido.headers.get('origin');
+  if (origen) return !PROPIOS.has(origen);
+
+  /* Sin Origin se mira el Referer. Si no hay ninguno de los dos se
+     rechaza: un formulario de verdad siempre manda al menos uno. */
+  const referente = pedido.headers.get('referer');
+  if (!referente) return true;
+  try {
+    return !PROPIOS.has(new URL(referente).origin);
+  } catch {
+    return true;
+  }
+}
 
 /**
  * Guardia de /sistema/. Todo lo de adentro exige sesión; el resto del
  * sitio es estático y no toca la base.
  */
 export const onRequest = defineMiddleware(async (ctx, siguiente) => {
+  if (vieneDeAfuera(ctx.request)) {
+    return new Response('Origen no permitido', { status: 403 });
+  }
+
   const ruta = ctx.url.pathname;
 
   if (!ruta.startsWith('/sistema')) return siguiente();
