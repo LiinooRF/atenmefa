@@ -8,7 +8,7 @@
  * así el número de caso que ya vio el paciente no cambia.
  */
 import Sistema from '../../../../layouts/Sistema.astro';
-import Seccion from '../../../../components/sistema/Seccion.astro';
+import Pasos from '../../../../components/sistema/Pasos.astro';
 import Icono from '../../../../components/Icono.astro';
 import { historia } from '../../../../sistema/historia';
 import { exigir } from '../../../../sistema/lib/guardia';
@@ -141,31 +141,7 @@ const fechaLarga = (f: string) =>
           {error}
         </p>
       )}
-
-      <div class="form__bloques">
-        {secciones.map((s) => <Seccion seccion={s} datos={datos} />)}
-      </div>
-
-      <div class="form__pie">
-        <div class="form__pie-int">
-          <span class="form__pie-nota">
-            <Icono nombre="reloj" tam={16} />
-            Se guarda sobre la misma atención N° {caso.numero}.
-          </span>
-          <div class="form__pie-acciones">
-            <!-- formnovalidate: un borrador es incompleto por definición, así que
-                 no puede toparse con la validación nativa de los obligatorios. -->
-            <button type="submit" name="accion" value="borrador" formnovalidate
-                    class="sis-boton sis-boton--suave">
-              Guardar borrador
-            </button>
-            <button type="submit" name="accion" value="cerrar" class="sis-boton sis-boton--primario">
-              <Icono nombre="escudo" tam={18} />
-              Cerrar atención
-            </button>
-          </div>
-        </div>
-      </div>
+        <Pasos datos={datos} atencionId={caso.id} numero={caso.numero} />
     </form>
   )}
 </Sistema>
@@ -181,7 +157,7 @@ const fechaLarga = (f: string) =>
   .trabada p { margin-top: 10px; color: var(--tinta-suave); }
   .trabada__acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
 
-  .form { padding-bottom: 92px; }
+  .form { padding-bottom: 0; }
 
   .form__cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
   .form__linea { display: flex; flex-wrap: wrap; align-items: center; gap: 11px; }
@@ -199,38 +175,7 @@ const fechaLarga = (f: string) =>
   }
 
   .form__error { margin-top: 18px; }
-  .form__bloques { display: grid; gap: 14px; margin-top: 20px; }
 
   /* La barra de guardar queda fija, igual que en el formulario nuevo: en una
      atención larga el médico no debería desplazar hasta el final. */
-  .form__pie {
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
-    z-index: 40;
-    background: var(--papel);
-    border-top: 1px solid var(--linea);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  .form__pie-int {
-    max-width: 1320px;
-    margin-inline: auto;
-    padding: 12px 20px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .form__pie-nota {
-    display: none;
-    align-items: center;
-    gap: 8px;
-    font-size: var(--u-sm);
-    color: var(--tinta-tenue);
-  }
-  .form__pie-nota :global(svg) { color: var(--tinta-tenue); }
-  @media (min-width: 620px) { .form__pie-nota { display: flex; } }
-
-  .form__pie-acciones { display: flex; gap: 10px; margin-left: auto; }
-  .form__pie-acciones .sis-boton { min-height: 46px; }
 </style>

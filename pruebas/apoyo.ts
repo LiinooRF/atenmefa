@@ -159,21 +159,53 @@ export const historiaMinima = {
 
 /**
  * Escribe campos del formulario por su clave del modelo. Campo.astro le
- * pone el id `c-<clave>` a cada uno, así que la prueba no depende del orden
- * de la pantalla ni del rótulo con que se muestre.
+ * pone el id `c-<clave>` a cada uno, así que la prueba no depende del
+ * rótulo con que se muestre.
+ *
+ * El formulario va por pasos y muestra una sección a la vez: antes de
+ * escribir hay que estar en el paso del campo, igual que el médico.
  */
 export async function llenar(page: Page, campos: Record<string, string>) {
   for (const [clave, valor] of Object.entries(campos)) {
     const campo = page.locator(`#c-${clave}`);
+    await irAlPasoDe(page, campo);
     const etiqueta = await campo.evaluate((e) => e.tagName);
     if (etiqueta === 'SELECT') await campo.selectOption(valor);
     else await campo.fill(valor);
   }
 }
 
-/** Abre una sección plegable del formulario para poder escribir dentro. */
+/** Lleva el formulario al paso donde vive ese campo, si hay pasos. */
+async function irAlPasoDe(page: Page, campo: Locator) {
+  const indice = await campo.evaluate((e) => {
+    const hoja = e.closest('[data-hoja]') as HTMLElement | null;
+    if (!hoja) return -1;            // pantalla sin pasos
+    return hoja.hidden ? Number(hoja.dataset.hoja) : -1;
+  });
+  if (indice < 0) return;
+  await page.locator(`[data-ir="${indice}"]`).click();
+  await expect(campo).toBeVisible();
+}
+
+/**
+ * Deja una sección lista para escribir dentro.
+ *
+ * Con el formulario por pasos ya no hace falta desplegar nada: el script
+ * abre todas las secciones al cargar, porque plegarlas estorba cuando se
+ * ve una a la vez. Queda esperar a que eso haya pasado — el script es
+ * diferido y la prueba puede llegar antes.
+ *
+ * Sin JavaScript (o en una pantalla sin pasos) sigue haciendo el clic.
+ */
 export async function abrirSeccion(page: Page, clave: string) {
   const seccion = page.locator(`#s-${clave}`);
+  const hayPasos = (await page.locator('[data-hoja]').count()) > 0;
+
+  if (hayPasos) {
+    await expect(seccion.locator('details[open]')).toHaveCount(1);
+    return;
+  }
+
   if (await seccion.locator('details[open]').count()) return;
   await seccion.locator('summary').click();
   await expect(seccion.locator('details[open]')).toHaveCount(1);
@@ -184,15 +216,25 @@ export async function crearBorrador(page: Page, campos: Record<string, string>) 
   await page.goto('/sistema/atencion/nueva');
   await llenar(page, campos);
   // El botón de borrador lleva formnovalidate: guarda aunque falte todo.
-  await page.getByRole('button', { name: 'Guardar borrador' }).click();
+  await page.getByRole('button', { name: 'Guardar y salir' }).click();
   await expect(page).toHaveURL(FICHA);
   return idDeLaFicha(page.url());
+}
+
+/**
+ * Cerrar una atención solo se ofrece en el último paso: antes confunde.
+ * El médico llega ahí avanzando; la prueba, saltando al último.
+ */
+async function irAlUltimoPaso(page: Page) {
+  const pasos = await page.locator('[data-ir]').count();
+  if (pasos) await page.locator(`[data-ir="${pasos - 1}"]`).click();
 }
 
 /** Registra y cierra una atención completa. Devuelve su id. */
 export async function crearAtencionCerrada(page: Page, campos: Record<string, string>) {
   await page.goto('/sistema/atencion/nueva');
   await llenar(page, { ...historiaMinima, ...campos });
+  await irAlUltimoPaso(page);
   await page.getByRole('button', { name: 'Cerrar atención' }).click();
   await expect(page).toHaveURL(FICHA);
   return idDeLaFicha(page.url());

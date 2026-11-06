@@ -1,0 +1,168 @@
+---
+/**
+ * Atajos del formulario de atención.
+ *
+ * Es el único JavaScript del proyecto, y se justifica: son 54 campos en
+ * una tablet y el médico tiene al paciente enfrente. Sin esto reescribe
+ * cada vez lo que el sistema ya sabe.
+ *
+ * Si el script no carga, el formulario sigue funcionando a mano: nada de
+ * lo que hace acá es necesario para guardar una atención.
+ */
+---
+
+<div class="atajos" hidden id="atajos-paciente" aria-live="polite">
+  <div class="atajos__cab">
+    <strong id="atajos-titulo"></strong>
+    <button type="button" class="atajos__cerrar" id="atajos-cerrar" aria-label="Cerrar">×</button>
+  </div>
+  <p class="atajos__nota" id="atajos-nota"></p>
+  <div class="atajos__previo" id="atajos-previo" hidden>
+    <p class="atajos__aviso">
+      Esto quedó anotado la vez pasada. Confírmelo con el paciente antes de usarlo:
+      los antecedentes no se copian solos.
+    </p>
+    <ul id="atajos-lista"></ul>
+    <button type="button" class="sis-boton sis-boton--suave" id="atajos-traer">
+      Traer estos antecedentes
+    </button>
+  </div>
+</div>
+
+<style>
+  .atajos {
+    grid-column: 1 / -1;
+    border: 1px solid #a9c4e8;
+    background: #eff5fd;
+    border-radius: 10px;
+    padding: 14px 16px;
+    display: grid;
+    gap: 9px;
+  }
+  .atajos[hidden] { display: none; }
+
+  .atajos__cab { display: flex; align-items: center; justify-content: space-between; gap: 12px; }
+  .atajos__cab strong { font-size: var(--u-base); font-weight: 600; color: var(--azul); }
+
+  .atajos__cerrar {
+    border: 0;
+    background: none;
+    font-size: 1.3rem;
+    line-height: 1;
+    color: var(--tinta-tenue);
+    cursor: pointer;
+    min-width: 32px;
+    min-height: 32px;
+  }
+  .atajos__cerrar:hover { color: var(--rojo); }
+
+  .atajos__nota { font-size: var(--u-sm); color: var(--tinta-suave); }
+
+  .atajos__previo { display: grid; gap: 9px; padding-top: 10px; border-top: 1px solid #c6dcf5; }
+  .atajos__aviso { font-size: var(--u-sm); color: #8a4b00; }
+  .atajos__previo ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 5px; }
+  .atajos__previo li { font-size: var(--u-sm); color: var(--tinta); }
+  .atajos__previo li b { color: var(--tinta-tenue); font-weight: 600; }
+  .atajos__previo .sis-boton { justify-self: start; }
+</style>
+
+<script>
+  const caja = document.getElementById('atajos-paciente');
+  const titulo = document.getElementById('atajos-titulo');
+  const nota = document.getElementById('atajos-nota');
+  const previo = document.getElementById('atajos-previo');
+  const lista = document.getElementById('atajos-lista');
+  const traer = document.getElementById('atajos-traer');
+  const cedula = document.getElementById('c-cedula') as HTMLInputElement | null;
+
+  if (caja && cedula) {
+    const ROTULOS: Record<string, string> = {
+      alergias: 'Alergias',
+      medicacion: 'Medicación actual',
+      antecedentes_medicos: 'Antecedentes médicos',
+      quirurgicos: 'Intervenciones',
+      tabaco: 'Tabáquicos',
+      alcohol: 'Alcohol',
+    };
+
+    let antecedentes: Record<string, string> = {};
+    let ultimaBuscada = '';
+
+    const poner = (clave: string, valor: string, soloSiVacio = true) => {
+      const campo = document.getElementById(`c-${clave}`) as HTMLInputElement | null;
+      if (!campo || !valor) return;
+      // No se pisa lo que el médico ya escribió.
+      if (soloSiVacio && campo.value.trim()) return;
+      campo.value = valor;
+      campo.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    const buscar = async () => {
+      const valor = cedula.value.replace(/\D/g, '');
+      if (valor.length < 6 || valor === ultimaBuscada) return;
+      ultimaBuscada = valor;
+
+      let r;
+      try {
+        r = await fetch(`/sistema/api/paciente?cedula=${encodeURIComponent(valor)}`);
+      } catch {
+        return; // sin conexión: el formulario sigue a mano
+      }
+      if (!r.ok) return;
+      const d = await r.json();
+
+      if (!d.encontrado) {
+        caja.hidden = true;
+        return;
+      }
+
+      /* Lo administrativo entra solo: equivocarse ahí no tiene consecuencia
+         clínica, y es lo que más se repite. */
+      for (const [k, v] of Object.entries(d.administrativo)) {
+        if (k !== 'cedula') poner(k, String(v ?? ''));
+      }
+
+      titulo!.textContent = `Ya atendimos a ${d.administrativo.nombre}`;
+      nota!.textContent = d.ultima
+        ? `Última atención: N° ${d.ultima.numero} del ${d.ultima.fecha}` +
+          (d.ultima.idx ? ` · ${d.ultima.idx}` : '') +
+          '. Se completaron los datos personales; revise la edad.'
+        : 'Se completaron los datos personales.';
+
+      antecedentes = d.antecedentes ?? {};
+      const hay = Object.entries(antecedentes).filter(([, v]) => v);
+
+      if (hay.length) {
+        lista!.innerHTML = '';
+        for (const [k, v] of hay) {
+          const li = document.createElement('li');
+          const b = document.createElement('b');
+          b.textContent = `${ROTULOS[k] ?? k}: `;
+          li.append(b, document.createTextNode(String(v)));
+          lista!.append(li);
+        }
+        previo!.hidden = false;
+      } else {
+        previo!.hidden = true;
+      }
+
+      caja.hidden = false;
+    };
+
+    cedula.addEventListener('blur', buscar);
+    cedula.addEventListener('change', buscar);
+
+    traer?.addEventListener('click', () => {
+      for (const [k, v] of Object.entries(antecedentes)) poner(k, v, false);
+      // La sección de antecedentes va plegada: se abre para que se vea qué entró.
+      const seccion = document.getElementById('s-antecedentes')?.querySelector('details');
+      if (seccion) (seccion as HTMLDetailsElement).open = true;
+      previo!.hidden = true;
+      nota!.textContent = 'Antecedentes traídos de la atención anterior. Revíselos con el paciente.';
+    });
+
+    document.getElementById('atajos-cerrar')?.addEventListener('click', () => {
+      caja.hidden = true;
+    });
+  }
+</script>

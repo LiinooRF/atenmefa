@@ -49,21 +49,10 @@ export interface Seccion {
   campos: readonly Campo[];
 }
 
+/* El paciente va primero a propósito: la cédula es lo que dispara el
+   relleno de lo que el sistema ya sabe, y el guardado automático no puede
+   empezar hasta tener a quién colgarle la atención. */
 export const historia: readonly Seccion[] = [
-  {
-    clave: 'caso',
-    titulo: 'El caso',
-    campos: [
-      { clave: 'fecha', rotulo: 'Fecha', tipo: 'fecha', exigido: true, ancho: 1 },
-      { clave: 'hora_inicio', rotulo: 'Hora de inicio', tipo: 'hora', exigido: true, ancho: 1 },
-      { clave: 'aseguradora', rotulo: 'Seguro o red', tipo: 'texto', ancho: 2,
-        pista: 'Quién cubre el caso. Vacío si el paciente paga directo.' },
-      { clave: 'poliza', rotulo: 'N° de póliza', tipo: 'texto', ancho: 1 },
-      { clave: 'caso_numero', rotulo: 'N° de caso', tipo: 'texto', ancho: 1,
-        pista: 'El que asigna el seguro, si lo hay. El correlativo interno lo pone el sistema.' },
-      { clave: 'empresa', rotulo: 'Empresa', tipo: 'texto', ancho: 2 },
-    ],
-  },
   {
     clave: 'paciente',
     titulo: 'Paciente',
@@ -82,6 +71,20 @@ export const historia: readonly Seccion[] = [
       { clave: 'ciudad', rotulo: 'Ciudad', tipo: 'texto', ancho: 2 },
       { clave: 'referencia', rotulo: 'Punto de referencia', tipo: 'texto', ancho: 2,
         pista: 'Lo que de verdad sirve para llegar.' },
+    ],
+  },
+  {
+    clave: 'caso',
+    titulo: 'El caso',
+    campos: [
+      { clave: 'fecha', rotulo: 'Fecha', tipo: 'fecha', exigido: true, ancho: 1 },
+      { clave: 'hora_inicio', rotulo: 'Hora de inicio', tipo: 'hora', exigido: true, ancho: 1 },
+      { clave: 'aseguradora', rotulo: 'Seguro o red', tipo: 'texto', ancho: 2,
+        pista: 'Quién cubre el caso. Vacío si el paciente paga directo.' },
+      { clave: 'poliza', rotulo: 'N° de póliza', tipo: 'texto', ancho: 1 },
+      { clave: 'caso_numero', rotulo: 'N° de caso', tipo: 'texto', ancho: 1,
+        pista: 'El que asigna el seguro, si lo hay. El correlativo interno lo pone el sistema.' },
+      { clave: 'empresa', rotulo: 'Empresa', tipo: 'texto', ancho: 2 },
     ],
   },
   {

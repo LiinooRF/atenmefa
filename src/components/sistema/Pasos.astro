@@ -1,0 +1,316 @@
+---
+/**
+ * El formulario de atención, en pasos y con guardado automático.
+ *
+ * Sin JavaScript se ve como siempre: todas las secciones abiertas y un
+ * solo botón de guardar. Con JavaScript se muestra una sección a la vez,
+ * con avance arriba, y lo escrito se guarda solo cada pocos segundos.
+ *
+ * El guardado va al servidor y no al navegador: si la tablet se apaga en
+ * mitad de una consulta, el trabajo tiene que estar en la base.
+ */
+import { historia } from '../../sistema/historia';
+import Seccion from './Seccion.astro';
+import Atajos from './Atajos.astro';
+import Icono from '../Icono.astro';
+
+interface Props {
+  datos?: Record<string, string>;
+  /** Vacío en una atención nueva; el id cuando se reabre un borrador. */
+  atencionId?: string;
+  numero?: number;
+}
+const { datos = {}, atencionId = '', numero } = Astro.props;
+---
+
+<div class="pasos" data-atencion={atencionId}>
+  <ol class="pasos__guia" id="pasos-guia" hidden>
+    {historia.map((s, i) => (
+      <li>
+        <button type="button" data-ir={i} class="pasos__paso">
+          <span class="pasos__num">{i + 1}</span>
+          <span class="pasos__nombre">{s.titulo}</span>
+        </button>
+      </li>
+    ))}
+  </ol>
+
+  <div class="pasos__barra" id="pasos-barra" hidden>
+    <div class="pasos__relleno" id="pasos-relleno"></div>
+  </div>
+
+  <div class="pasos__cuerpo">
+    <Atajos />
+    {historia.map((s, i) => (
+      <div class="pasos__hoja" data-hoja={i}>
+        <Seccion seccion={s} datos={datos} />
+      </div>
+    ))}
+  </div>
+
+  <input type="hidden" name="id" id="atencion-id" value={atencionId} />
+
+  <div class="pasos__pie">
+    <div class="pasos__pie-int">
+      <span class="pasos__estado" id="pasos-estado" aria-live="polite">
+        {numero ? `Atención N° ${numero}` : 'Se guarda solo mientras escribe.'}
+      </span>
+
+      <div class="pasos__botones">
+        <button type="button" class="sis-boton sis-boton--suave" id="pasos-atras" hidden>
+          Atrás
+        </button>
+        <button type="button" class="sis-boton sis-boton--azul" id="pasos-siguiente" hidden>
+          Siguiente
+          <Icono nombre="flecha" tam={17} />
+        </button>
+        <button type="submit" name="accion" value="borrador" formnovalidate
+                class="sis-boton sis-boton--suave" id="pasos-salir">
+          Guardar y salir
+        </button>
+        <button type="submit" name="accion" value="cerrar" class="sis-boton sis-boton--primario" id="pasos-cerrar">
+          <Icono nombre="escudo" tam={17} />
+          Cerrar atención
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<style>
+  .pasos { padding-bottom: 96px; }
+
+  /* ---------- avance ---------- */
+
+  .pasos__guia {
+    list-style: none;
+    margin: 0 0 14px;
+    padding: 0 0 4px;
+    display: flex;
+    gap: 6px;
+    overflow-x: auto;
+    scrollbar-width: thin;
+  }
+  .pasos__guia[hidden] { display: none; }
+
+  .pasos__paso {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 40px;
+    padding: 6px 13px 6px 7px;
+    border: 1px solid var(--linea);
+    border-radius: 999px;
+    background: var(--papel);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+    color: var(--tinta-suave);
+    white-space: nowrap;
+    cursor: pointer;
+    transition: border-color 160ms ease, background-color 160ms ease, color 160ms ease;
+  }
+  .pasos__paso:hover { border-color: var(--azul-medio); color: var(--azul); }
+
+  .pasos__num {
+    display: grid;
+    place-items: center;
+    width: 26px; height: 26px;
+    border-radius: 50%;
+    background: var(--panel);
+    color: var(--tinta-tenue);
+    font-size: var(--u-xs);
+    font-weight: 700;
+    flex: none;
+  }
+
+  .pasos__paso[aria-current='step'] { border-color: var(--azul); background: var(--azul); color: #fff; }
+  .pasos__paso[aria-current='step'] .pasos__num { background: rgba(255, 255, 255, 0.22); color: #fff; }
+
+  .pasos__paso[data-listo] .pasos__num { background: #d9ece2; color: #15663f; }
+  .pasos__paso[data-falta] .pasos__num { background: #fdeced; color: #8f1017; }
+  .pasos__paso[aria-current='step'][data-listo] .pasos__num,
+  .pasos__paso[aria-current='step'][data-falta] .pasos__num { background: rgba(255, 255, 255, 0.22); color: #fff; }
+
+  .pasos__barra { height: 4px; background: var(--linea); border-radius: 999px; overflow: hidden; margin-bottom: 16px; }
+  .pasos__barra[hidden] { display: none; }
+  .pasos__relleno { height: 100%; width: 0; background: var(--azul); transition: width 260ms ease; }
+
+  /* ---------- hojas ---------- */
+
+  .pasos__cuerpo { display: grid; gap: 14px; }
+  .pasos__hoja[hidden] { display: none; }
+
+  /* ---------- pie ---------- */
+
+  .pasos__pie {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 40;
+    background: var(--papel);
+    border-top: 1px solid var(--linea);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .pasos__pie-int {
+    max-width: 1320px;
+    margin-inline: auto;
+    padding: 11px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+  }
+
+  .pasos__estado { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .pasos__estado[data-guardando] { color: var(--azul-medio); }
+  .pasos__estado[data-guardado] { color: #15663f; }
+  .pasos__estado[data-falla] { color: var(--rojo); }
+
+  .pasos__botones { display: flex; flex-wrap: wrap; gap: 9px; margin-left: auto; }
+  .pasos__botones .sis-boton { min-height: 44px; }
+</style>
+
+<script>
+  const caja = document.querySelector('.pasos') as HTMLElement | null;
+  const form = caja?.closest('form') as HTMLFormElement | null;
+  if (caja && form) {
+    const hojas = [...caja.querySelectorAll<HTMLElement>('[data-hoja]')];
+    const guia = document.getElementById('pasos-guia')!;
+    const barra = document.getElementById('pasos-barra')!;
+    const relleno = document.getElementById('pasos-relleno')!;
+    const estado = document.getElementById('pasos-estado')!;
+    const atras = document.getElementById('pasos-atras') as HTMLButtonElement;
+    const siguiente = document.getElementById('pasos-siguiente') as HTMLButtonElement;
+    const cerrar = document.getElementById('pasos-cerrar') as HTMLButtonElement;
+    const campoId = document.getElementById('atencion-id') as HTMLInputElement;
+    const botones = [...guia.querySelectorAll<HTMLButtonElement>('[data-ir]')];
+
+    /* El número del paso se guarda en la dirección: si se recarga, se
+       vuelve a donde estaba y no al principio. */
+    const deLaUrl = () => {
+      const n = Number(new URL(location.href).searchParams.get('paso'));
+      return Number.isInteger(n) && n >= 0 && n < hojas.length ? n : 0;
+    };
+    let actual = deLaUrl();
+
+    const marcarSecciones = () => {
+      hojas.forEach((hoja, i) => {
+        const exigidos = [...hoja.querySelectorAll<HTMLInputElement>('[required]')];
+        const falta = exigidos.some((c) => !c.value.trim());
+        const b = botones[i];
+        if (!exigidos.length) { delete b.dataset.listo; delete b.dataset.falta; return; }
+        if (falta) { b.dataset.falta = ''; delete b.dataset.listo; }
+        else { b.dataset.listo = ''; delete b.dataset.falta; }
+      });
+    };
+
+    const mostrar = (n: number, moverUrl = true) => {
+      actual = Math.max(0, Math.min(n, hojas.length - 1));
+      hojas.forEach((h, i) => { h.hidden = i !== actual; });
+      botones.forEach((b, i) => {
+        if (i === actual) b.setAttribute('aria-current', 'step');
+        else b.removeAttribute('aria-current');
+      });
+      relleno.style.width = `${((actual + 1) / hojas.length) * 100}%`;
+      atras.hidden = actual === 0;
+      siguiente.hidden = actual === hojas.length - 1;
+      // Cerrar solo tiene sentido al final; antes confunde.
+      cerrar.hidden = actual !== hojas.length - 1;
+      botones[actual]?.scrollIntoView({ block: 'nearest', inline: 'center' });
+      window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
+      if (moverUrl) {
+        const u = new URL(location.href);
+        u.searchParams.set('paso', String(actual));
+        history.replaceState(null, '', u);
+      }
+      marcarSecciones();
+    };
+
+    // Las secciones plegables estorban cuando se ve una a la vez.
+    caja.querySelectorAll('details').forEach((d) => { (d as HTMLDetailsElement).open = true; });
+    guia.hidden = false;
+    barra.hidden = false;
+    mostrar(actual, false);
+
+    atras.addEventListener('click', () => mostrar(actual - 1));
+    siguiente.addEventListener('click', () => mostrar(actual + 1));
+    botones.forEach((b, i) => b.addEventListener('click', () => mostrar(i)));
+
+    /* ---------- guardado automático ---------- */
+
+    let reloj: ReturnType<typeof setTimeout> | undefined;
+    let guardando = false;
+    let sucio = false;
+
+    const decir = (texto: string, marca?: string) => {
+      estado.textContent = texto;
+      delete estado.dataset.guardando;
+      delete estado.dataset.guardado;
+      delete estado.dataset.falla;
+      if (marca) estado.dataset[marca] = '';
+    };
+
+    const guardar = async () => {
+      if (guardando || !sucio) return;
+      const datos = new FormData(form);
+      datos.set('id', campoId.value);
+
+      guardando = true;
+      decir('Guardando…', 'guardando');
+      try {
+        const r = await fetch('/sistema/api/borrador', { method: 'POST', body: datos });
+        const d = await r.json();
+
+        if (d.guardado) {
+          sucio = false;
+          if (d.id && !campoId.value) {
+            campoId.value = d.id;
+            /* Se cambia la dirección a la del borrador: así una recarga
+               cae en la atención ya creada y no en un formulario vacío. */
+            const u = new URL(`/sistema/atencion/${d.id}/editar`, location.origin);
+            u.searchParams.set('paso', String(actual));
+            history.replaceState(null, '', u);
+          }
+          const faltan = (d.faltan ?? []).length;
+          decir(
+            faltan === 0
+              ? 'Guardado. Ya se puede cerrar.'
+              : `Guardado. Faltan ${faltan} ${faltan === 1 ? 'campo' : 'campos'} para cerrar.`,
+            'guardado',
+          );
+        } else if (d.motivo === 'faltan-datos-del-paciente') {
+          decir('Escriba el nombre y la cédula para que se empiece a guardar.');
+        } else {
+          decir('No se pudo guardar: la atención ya no se puede editar.', 'falla');
+        }
+      } catch {
+        decir('Sin conexión con el servidor. No cierre esta pantalla.', 'falla');
+      } finally {
+        guardando = false;
+        marcarSecciones();
+      }
+    };
+
+    form.addEventListener('input', () => {
+      sucio = true;
+      clearTimeout(reloj);
+      reloj = setTimeout(guardar, 2500);
+    });
+
+    // Al cambiar de paso se guarda sin esperar: es el momento natural.
+    [atras, siguiente, ...botones].forEach((b) =>
+      b.addEventListener('click', () => { clearTimeout(reloj); guardar(); }),
+    );
+
+    // Y antes de irse de la página.
+    window.addEventListener('pagehide', () => {
+      if (!sucio || !campoId.value) return;
+      const datos = new FormData(form);
+      datos.set('id', campoId.value);
+      navigator.sendBeacon('/sistema/api/borrador', datos);
+    });
+
+    form.addEventListener('submit', () => { clearTimeout(reloj); sucio = false; });
+  }
+</script>

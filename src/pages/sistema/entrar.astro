@@ -50,9 +50,6 @@ if (Astro.request.method === 'POST') {
       </div>
 
       <h1>Entrar</h1>
-      <p class="entrar__nota">
-        Solo para el personal del centro. Las cuentas las crea administración.
-      </p>
 
       {error && (
         <p class="sis-error">
@@ -109,7 +106,6 @@ if (Astro.request.method === 'POST') {
   .entrar__marca small { font-size: 0.74rem; color: var(--tinta-tenue); }
 
   .entrar h1 { font-size: var(--u-2xl); }
-  .entrar__nota { margin-top: 8px; font-size: 0.9rem; color: var(--tinta-tenue); }
   .sis-error { margin-top: 20px; }
   .entrar__form { display: grid; gap: 16px; margin-top: 24px; }
   .entrar__boton { width: 100%; min-height: 46px; margin-top: 4px; }

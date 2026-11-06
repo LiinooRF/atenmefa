@@ -13,7 +13,7 @@
 import { test, expect } from '@playwright/test';
 import {
   FICHA, abrirSeccion, borrarPacientes, cedulaDePrueba, crearAtencionCerrada, crearBorrador,
-  cuantasAtenciones, entrar, historiaMinima, llenar, numeroDelCaso,
+  cuantasAtenciones, entrar, historiaMinima, llenar, numeroDelCaso, conBase,
 } from './apoyo';
 
 test.describe.configure({ mode: 'serial' });
@@ -73,6 +73,9 @@ test('sin los campos obligatorios el navegador no deja cerrar', async ({ page })
   await page.goto('/sistema/atencion/nueva');
 
   await llenar(page, { nombre: 'Nadie de Prueba', cedula: CEDULA_SIN_GUARDAR });
+  // Cerrar solo se ofrece en el último paso: el médico llega avanzando.
+  const pasos = await page.locator('[data-ir]').count();
+  await page.locator(`[data-ir="${pasos - 1}"]`).click();
   await page.getByRole('button', { name: 'Cerrar atención' }).click();
 
   /* El botón de cerrar no lleva formnovalidate, al revés que el de
@@ -81,10 +84,22 @@ test('sin los campos obligatorios el navegador no deja cerrar', async ({ page })
      tecleado delante; si hubiera cerrado, esto ya sería una ficha. */
   await expect(page.locator('#c-edad:invalid')).toHaveCount(1);
   await expect(page.locator('#c-nombre')).toHaveValue('Nadie de Prueba');
-  await expect(page).toHaveURL(/\/sistema\/atencion\/nueva$/);
 
-  // Y lo que importa: no quedó nada guardado.
-  expect(await cuantasAtenciones(CEDULA_SIN_GUARDAR)).toBe(0);
+  /* Seguimos en el formulario, no en una ficha. La dirección ya no es
+     /nueva porque el guardado automático creó el borrador apenas hubo
+     nombre y cédula: eso es lo que queremos, que nada se pierda. Lo que
+     importa acá es que NO se cerró. */
+  await expect(page).toHaveURL(/\/(nueva|editar)/);
+  await expect(page.getByRole('button', { name: 'Cerrar atención' })).toBeVisible();
+
+  // Quedó como borrador, nunca como cerrada.
+  const estados = await conBase(
+    (sql) => sql`
+      SELECT a.estado FROM atencion a
+        JOIN paciente p ON p.id = a.paciente_id
+       WHERE p.cedula_busca = ${CEDULA_SIN_GUARDAR.replace(/\D/g, '')}`,
+  );
+  expect(estados.every((e) => e.estado === 'borrador')).toBe(true);
 });
 
 test('el servidor tampoco cierra un borrador incompleto', async ({ page, baseURL }) => {
@@ -156,17 +171,25 @@ test('lo que se agrega al borrador se guarda sobre el mismo caso', async ({ page
   // "Hábitos y antecedentes" es plegable: hay que abrirla para escribir.
   await abrirSeccion(page, 'antecedentes');
   await llenar(page, { alergias: 'Ninguna que refiera', edad: '33' });
-  await page.getByRole('button', { name: 'Guardar borrador' }).click();
+  await page.getByRole('button', { name: 'Guardar y salir' }).click();
   await expect(page).toHaveURL(FICHA);
 
   // Se actualizó la misma fila: ni un caso nuevo ni un número nuevo.
   expect(await cuantasAtenciones(CEDULA_BORRADOR)).toBe(1);
   expect(await numeroDelCaso(page)).toBe(numeroBorrador);
 
-  /* Y al volver a abrirlo, la sección plegable ya viene abierta: una
-     alergia anotada no puede quedar escondida detrás de un título. */
+  /* Y al volver a abrirlo, lo anotado sigue ahí y su sección viene
+     desplegada: una alergia no puede quedar escondida detrás de un título
+     plegado. Con el formulario por pasos vive en su paso, así que se llega
+     tocando el paso, no desplegando nada. */
   await page.goto(`/sistema/atencion/${borrador}/editar`);
   await expect(page.locator('#c-alergias')).toHaveValue('Ninguna que refiera');
+  await expect(page.locator('#s-antecedentes details[open]')).toHaveCount(1);
+
+  const hoja = await page.locator('#c-alergias').evaluate(
+    (e) => Number((e.closest('[data-hoja]') as HTMLElement).dataset.hoja),
+  );
+  await page.locator(`[data-ir="${hoja}"]`).click();
   await expect(page.locator('#c-alergias')).toBeVisible();
   await expect(page.locator('.form__cab')).toContainText('Faltan 6 campos obligatorios');
 });
@@ -178,7 +201,7 @@ test('una atención cerrada no se puede editar', async ({ page }) => {
   // Se explica en la misma dirección en vez de devolver en silencio.
   await expect(page.getByRole('heading', { name: 'Esta atención ya está cerrada' })).toBeVisible();
   await expect(page.getByRole('link', { name: 'Ver la ficha del caso' })).toBeVisible();
-  await expect(page.getByRole('button', { name: 'Guardar borrador' })).toHaveCount(0);
+  await expect(page.getByRole('button', { name: 'Guardar y salir' })).toHaveCount(0);
   await expect(page.locator('#c-nombre')).toHaveCount(0);
 });
 

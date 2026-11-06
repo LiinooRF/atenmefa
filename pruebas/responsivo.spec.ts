@@ -117,7 +117,7 @@ test('la barra del panel y el pie de guardar caben sin desplazar', async ({ page
   await page.goto('/sistema/atencion/nueva');
 
   // La barra fija de arriba y la de guardar son las dos que pueden empujar.
-  for (const caja of ['.sis__barra-int', '.form__pie-int']) {
+  for (const caja of ['.sis__barra-int', '.pasos__pie-int']) {
     const medida = await page.locator(caja).evaluate((e) => ({
       ancho: e.scrollWidth,
       visible: e.clientWidth,
@@ -125,8 +125,12 @@ test('la barra del panel y el pie de guardar caben sin desplazar', async ({ page
     expect.soft(medida.ancho, `${caja} no cabe`).toBeLessThanOrEqual(medida.visible + 1);
   }
 
-  // Y los dos botones de guardar siguen alcanzables sin desplazar de lado.
-  await expect(page.getByRole('button', { name: 'Guardar borrador' })).toBeVisible();
+  /* Guardar y salir está en todos los pasos; cerrar solo en el último,
+     que es donde el médico termina. Los dos tienen que caber sin que el
+     teléfono se mueva de lado. */
+  await expect(page.getByRole('button', { name: 'Guardar y salir' })).toBeVisible();
+  const pasos = await page.locator('[data-ir]').count();
+  await page.locator(`[data-ir="${pasos - 1}"]`).click();
   await expect(page.getByRole('button', { name: 'Cerrar atención' })).toBeVisible();
 });
 

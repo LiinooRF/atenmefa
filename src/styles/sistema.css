@@ -176,6 +176,11 @@
 .sis-boton--suave { background: var(--papel); color: var(--azul); border-color: var(--linea); }
 .sis-boton--suave:hover { background: var(--panel); border-color: var(--azul-medio); }
 
+/* El atributo hidden oculta con display:none desde la hoja del navegador,
+   y el display:inline-flex de acá le gana. Sin esta línea, un botón que el
+   código marca como oculto se sigue viendo. */
+.sis-boton[hidden] { display: none; }
+
 .sis-boton:disabled,
 .sis-boton[aria-disabled='true'] {
   opacity: 0.5;

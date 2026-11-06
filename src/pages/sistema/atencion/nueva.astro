@@ -1,12 +1,12 @@
 ---
 import Sistema from '../../../layouts/Sistema.astro';
-import Seccion from '../../../components/sistema/Seccion.astro';
+import Pasos from '../../../components/sistema/Pasos.astro';
 import Icono from '../../../components/Icono.astro';
-import { historia } from '../../../sistema/historia';
 import { bd, esquema } from '../../../sistema/lib/base';
 import { exigir } from '../../../sistema/lib/guardia';
 import {
   limpiarDatos, faltantes, pacienteDe, anotar, hoyEnVenezuela, ahoraEnVenezuela,
+  guardarBorrador, esIdentificador,
 } from '../../../sistema/lib/atenciones';
 
 export const prerender = false;
@@ -25,6 +25,11 @@ let datos: Record<string, string> = {
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
   const cerrar = form.get('accion') === 'cerrar';
+
+  /* El guardado automático pudo haber creado ya la atención mientras el
+     médico escribía. Si llega su id, se termina ESA y no se crea otra:
+     redirigir sin guardar perdería el cierre que acaba de pedir. */
+  const yaCreada = String(form.get('id') ?? '').trim();
   datos = { ...datos, ...limpiarDatos(form) };
 
   const faltan = cerrar ? faltantes(datos) : [];
@@ -35,6 +40,16 @@ if (Astro.request.method === 'POST') {
     error = 'Para guardar hace falta al menos el nombre y la cédula del paciente.';
   } else {
     try {
+      if (yaCreada && esIdentificador(yaCreada)) {
+        const guardada = await guardarBorrador(yaCreada, datos, cerrar, usuario.id);
+        if (!guardada) {
+          error = 'La atención cambió de estado mientras escribía. Ábrala desde los borradores.';
+        } else {
+          await anotar(usuario.id, cerrar ? 'cerro' : 'edito', guardada.id, { numero: guardada.numero });
+          return Astro.redirect(`/sistema/atencion/${guardada.id}`);
+        }
+      }
+
       const paciente = await pacienteDe(datos);
       const [creada] = await bd
         .insert(esquema.atencion)
@@ -79,75 +94,16 @@ if (Astro.request.method === 'POST') {
         {error}
       </p>
     )}
-
-    <div class="form__bloques">
-      {historia.map((s) => <Seccion seccion={s} datos={datos} />)}
-    </div>
-
-    <div class="form__pie">
-      <div class="form__pie-int">
-        <span class="form__pie-nota">
-          <Icono nombre="reloj" tam={16} />
-          El borrador conserva todo lo escrito.
-        </span>
-        <div class="form__pie-acciones">
-          <!-- formnovalidate: un borrador es incompleto por definición, así que
-               no puede toparse con la validación nativa de los campos obligatorios. -->
-          <button type="submit" name="accion" value="borrador" formnovalidate
-                  class="sis-boton sis-boton--suave">
-            Guardar borrador
-          </button>
-          <button type="submit" name="accion" value="cerrar" class="sis-boton sis-boton--primario">
-            <Icono nombre="escudo" tam={18} />
-            Cerrar atención
-          </button>
-        </div>
-      </div>
-    </div>
+      <Pasos datos={datos} />
   </form>
 </Sistema>
 
 <style>
-  .form { padding-bottom: 92px; }
+  .form { padding-bottom: 0; }
 
   .form__cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
   .form__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 60ch; }
   .form__nota abbr { color: var(--rojo); text-decoration: none; font-weight: 700; }
 
   .form__error { margin-top: 18px; }
-  .form__bloques { display: grid; gap: 14px; margin-top: 20px; }
-
-  /* La barra de guardar queda fija: en una atención larga el médico no
-     debería desplazar hasta el final para guardar. */
-  .form__pie {
-    position: fixed;
-    left: 0; right: 0; bottom: 0;
-    z-index: 40;
-    background: var(--papel);
-    border-top: 1px solid var(--linea);
-    box-shadow: 0 -6px 20px -14px rgba(11, 15, 69, 0.4);
-    padding-bottom: env(safe-area-inset-bottom);
-  }
-  .form__pie-int {
-    max-width: 1320px;
-    margin-inline: auto;
-    padding: 12px 20px;
-    display: flex;
-    flex-wrap: wrap;
-    gap: 12px;
-    align-items: center;
-    justify-content: space-between;
-  }
-  .form__pie-nota {
-    display: none;
-    align-items: center;
-    gap: 8px;
-    font-size: var(--u-sm);
-    color: var(--tinta-tenue);
-  }
-  .form__pie-nota :global(svg) { color: var(--tinta-tenue); }
-  @media (min-width: 620px) { .form__pie-nota { display: flex; } }
-
-  .form__pie-acciones { display: flex; gap: 10px; margin-left: auto; }
-  .form__pie-acciones .sis-boton { min-height: 46px; }
 </style>

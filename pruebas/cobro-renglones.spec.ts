@@ -10,6 +10,7 @@
  * base ni se lo lleva por delante.
  */
 import { test, expect, type Page } from '@playwright/test';
+import { llenar } from './apoyo';
 import postgres from 'postgres';
 
 const SUFIJO = String(Date.now()).slice(-6);
@@ -81,10 +82,10 @@ test.beforeAll(async ({ browser }) => {
 
   // Un caso con seguro, para que el cobro proponga la aseguradora.
   await page.goto('/sistema/atencion/nueva');
-  await page.locator('#c-nombre').fill(PACIENTE);
-  await page.locator('#c-cedula').fill(CEDULA);
-  await page.locator('#c-aseguradora').fill('Seguros de prueba');
-  await page.getByRole('button', { name: 'Guardar borrador' }).click();
+  /* llenar() navega al paso de cada campo: la aseguradora vive en "El
+     caso", que es el segundo, y un campo oculto no se puede escribir. */
+  await llenar(page, { nombre: PACIENTE, cedula: CEDULA, aseguradora: 'Seguros de prueba' });
+  await page.getByRole('button', { name: 'Guardar y salir' }).click();
   await expect(page).toHaveURL(/\/sistema\/atencion\/[0-9a-f-]{36}$/);
   caso = page.url().split('/atencion/')[1];
 
