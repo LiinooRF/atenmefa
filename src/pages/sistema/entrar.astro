@@ -70,7 +70,7 @@ if (Astro.request.method === 'POST') {
           <label for="clave">Clave</label>
           <input id="clave" name="clave" type="password" autocomplete="current-password" required />
         </div>
-        <button type="submit" class="boton boton--rojo entrar__boton">Entrar</button>
+        <button type="submit" class="sis-boton sis-boton--primario entrar__boton">Entrar</button>
       </form>
     </div>
   </div>
@@ -92,7 +92,7 @@ if (Astro.request.method === 'POST') {
     max-width: 430px;
     background: var(--papel);
     border-radius: var(--radio);
-    padding: clamp(26px, 5vw, 40px);
+    padding: 34px;
     box-shadow: var(--flota-alta);
   }
 
@@ -108,9 +108,9 @@ if (Astro.request.method === 'POST') {
   }
   .entrar__marca small { font-size: 0.74rem; color: var(--tinta-tenue); }
 
-  .entrar h1 { font-size: 1.7rem; }
+  .entrar h1 { font-size: var(--u-2xl); }
   .entrar__nota { margin-top: 8px; font-size: 0.9rem; color: var(--tinta-tenue); }
   .sis-error { margin-top: 20px; }
   .entrar__form { display: grid; gap: 16px; margin-top: 24px; }
-  .entrar__boton { width: 100%; margin-top: 4px; }
+  .entrar__boton { width: 100%; min-height: 46px; margin-top: 4px; }
 </style>

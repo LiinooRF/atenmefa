@@ -61,7 +61,7 @@ const fechaCorta = (f: string) =>
         {mes && ` · ${mes}`}
       </p>
     </div>
-    <a class="boton boton--rojo cab__nueva" href="/sistema/atencion/nueva">
+    <a class="sis-boton sis-boton--primario cab__nueva" href="/sistema/atencion/nueva">
       <Icono nombre="mas" tam={19} />
       Nueva atención
     </a>
@@ -73,8 +73,8 @@ const fechaCorta = (f: string) =>
       <input type="search" name="q" value={busca} placeholder="Buscar por nombre o cédula" aria-label="Buscar" />
     </div>
     <input type="month" name="mes" value={mes} aria-label="Mes" />
-    <button type="submit" class="boton boton--azul">Filtrar</button>
-    {(busca || mes) && <a class="boton boton--contorno" href="/sistema">Limpiar</a>}
+    <button type="submit" class="sis-boton sis-boton--azul">Filtrar</button>
+    {(busca || mes) && <a class="sis-boton sis-boton--suave" href="/sistema">Limpiar</a>}
   </form>
 
   {casos.length === 0 ? (
@@ -86,7 +86,7 @@ const fechaCorta = (f: string) =>
           : 'Las atenciones aparecen acá cuando el médico las cierra.'}
       </p>
       {!busca && !mes && (
-        <a class="boton boton--rojo" href="/sistema/atencion/nueva">Registrar la primera</a>
+        <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">Registrar la primera</a>
       )}
     </div>
   ) : (
@@ -118,9 +118,9 @@ const fechaCorta = (f: string) =>
 
 <style>
   .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
-  .cab h1 { font-size: clamp(1.5rem, 3.5vw, 1.9rem); }
+  
   .cab__nota { margin-top: 5px; font-size: 0.88rem; color: var(--tinta-tenue); }
-  .cab__nueva { min-height: 46px; padding: 10px 20px; font-size: 0.93rem; }
+  
 
   .filtros { display: flex; flex-wrap: wrap; gap: 9px; margin: 22px 0 18px; }
   .filtros__busca {
@@ -144,12 +144,12 @@ const fechaCorta = (f: string) =>
     background: var(--papel);
     font: inherit;
   }
-  .filtros .boton { min-height: 48px; padding: 10px 20px; font-size: 0.93rem; }
+  
 
-  .vacio { text-align: center; padding-block: clamp(36px, 7vw, 64px); }
+  .vacio { text-align: center; padding-block: 56px; }
   .vacio h2 { font-size: 1.2rem; }
   .vacio p { margin-top: 9px; color: var(--tinta-tenue); }
-  .vacio .boton { margin-top: 20px; }
+  .vacio .sis-boton { margin-top: 22px; }
 
   /* Lista tipo chat: cada fila es un caso, con la fecha y quién paga. */
   .casos { list-style: none; margin: 0; padding: 0; background: var(--papel);

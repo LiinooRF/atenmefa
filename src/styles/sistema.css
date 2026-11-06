@@ -1,134 +1,218 @@
-/* ---------------------------------------------------------------
-   Sistema interno. Es una herramienta, no una página de marketing:
-   densidad alta, objetivos grandes para tablet, cero adorno.
-   --------------------------------------------------------------- */
+/* =================================================================
+   Sistema interno.
+   Es una herramienta, no una página de venta: una sola familia,
+   escala fija, densidad alta y controles que no sorprenden.
+   Hereda los colores de global.css y redefine todo lo tipográfico.
+   ================================================================= */
 
 .sis {
+  /* Una sola familia. El emparejado display + texto es de la web pública. */
+  --ui: 'Figtree Variable', 'Figtree', system-ui, -apple-system, 'Segoe UI', sans-serif;
+
+  /* Escala fija, razón 1.125. Nada de clamp: el usuario trabaja a un DPI
+     constante y un titular que encoge en un panel se ve peor, no mejor. */
+  --u-xs: 0.75rem;
+  --u-sm: 0.84rem;
+  --u-base: 0.95rem;
+  --u-md: 1.07rem;
+  --u-lg: 1.2rem;
+  --u-xl: 1.45rem;
+  --u-2xl: 1.75rem;
+
+  /* Segunda capa de neutros para barras y paneles. */
+  --panel: #eef1f8;
+
+  font-family: var(--ui);
+  font-size: var(--u-base);
+  line-height: 1.5;
   background: var(--bruma);
+  color: var(--tinta);
   padding-bottom: 0;
-  font-size: 16px;
 }
+
+/* La barra del navegador se deja como viene: personalizarla es reinventar
+   un control estándar, y acá la familiaridad es una función. */
+.sis ::-webkit-scrollbar { width: initial; height: initial; }
+.sis { scrollbar-color: auto; }
+
+.sis h1, .sis h2, .sis h3 {
+  font-family: var(--ui);
+  letter-spacing: -0.015em;
+  line-height: 1.2;
+  color: var(--azul);
+}
+.sis h1 { font-size: var(--u-2xl); font-weight: 700; }
+.sis h2 { font-size: var(--u-lg); font-weight: 700; }
+.sis h3 { font-size: var(--u-md); font-weight: 600; }
 
 /* La pantalla de entrar no lleva barra ni contenedor: el fondo llena todo. */
-.sis--desnuda { background: var(--azul-profundo); margin: 0; }
+.sis--desnuda { background: var(--azul-profundo); }
 
-.sis__barra {
-  position: sticky;
-  top: 0;
-  z-index: 50;
-  background: var(--azul-profundo);
-  color: #fff;
-}
+/* ---------- barra superior ---------- */
+
+.sis__barra { position: sticky; top: 0; z-index: 50; background: var(--azul-profundo); color: #fff; }
 
 .sis__barra-int {
   max-width: 1320px;
   margin-inline: auto;
-  padding: 0 clamp(14px, 3vw, 26px);
+  padding: 0 20px;
   display: flex;
   align-items: center;
-  gap: clamp(12px, 2.5vw, 28px);
-  min-height: 58px;
+  gap: 18px;
+  min-height: 56px;
 }
 
 .sis__marca { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #fff; }
 .sis__marca img { border-radius: 50%; }
-.sis__marca span { display: flex; flex-direction: column; line-height: 1.15; }
-.sis__marca span { font-family: var(--titulares); font-weight: 800; letter-spacing: -0.02em; }
-.sis__marca small { font-size: 0.66rem; font-weight: 400; color: rgba(255, 255, 255, 0.58); letter-spacing: 0; }
+.sis__marca span { display: flex; flex-direction: column; line-height: 1.15; font-weight: 700; letter-spacing: -0.015em; }
+.sis__marca small { font-size: var(--u-xs); font-weight: 400; color: rgba(255, 255, 255, 0.56); letter-spacing: 0; }
 
-.sis__nav { display: flex; gap: 4px; margin-right: auto; }
+.sis__nav { display: flex; gap: 3px; margin-right: auto; }
 .sis__nav a {
   display: inline-flex;
   align-items: center;
   gap: 8px;
-  min-height: 44px;
-  padding: 8px 14px;
-  border-radius: 999px;
-  color: rgba(255, 255, 255, 0.76);
+  min-height: 40px;
+  padding: 7px 13px;
+  border-radius: 8px;
+  color: rgba(255, 255, 255, 0.74);
   text-decoration: none;
-  font-family: var(--titulares);
-  font-size: 0.9rem;
+  font-size: var(--u-sm);
   font-weight: 600;
   transition: background-color 160ms ease, color 160ms ease;
 }
 .sis__nav a:hover { background: rgba(255, 255, 255, 0.1); color: #fff; }
+.sis__nav a:active { background: rgba(255, 255, 255, 0.16); }
 .sis__nav a[aria-current='page'] { background: var(--rojo); color: #fff; }
 
 .sis__quien { display: flex; align-items: center; gap: 12px; }
 .sis__quien span { display: none; flex-direction: column; line-height: 1.15; text-align: right; }
-.sis__quien strong { font-size: 0.88rem; font-weight: 600; }
-.sis__quien small { font-size: 0.68rem; color: rgba(255, 255, 255, 0.58); }
+.sis__quien strong { font-size: var(--u-sm); font-weight: 600; }
+.sis__quien small { font-size: var(--u-xs); color: rgba(255, 255, 255, 0.56); }
 @media (min-width: 680px) { .sis__quien span { display: flex; } }
 
 .sis__salir {
-  min-height: 40px;
-  padding: 7px 15px;
-  border-radius: 999px;
-  border: 1px solid rgba(255, 255, 255, 0.28);
+  min-height: 38px;
+  padding: 7px 14px;
+  border-radius: 8px;
+  border: 1px solid rgba(255, 255, 255, 0.26);
   background: transparent;
   color: #fff;
   font: inherit;
-  font-family: var(--titulares);
-  font-size: 0.85rem;
+  font-size: var(--u-sm);
   font-weight: 600;
   cursor: pointer;
   transition: background-color 160ms ease;
 }
-.sis__salir:hover { background: rgba(255, 255, 255, 0.14); }
+.sis__salir:hover { background: rgba(255, 255, 255, 0.13); }
+.sis__salir:active { background: rgba(255, 255, 255, 0.2); }
 
-.sis__cuerpo {
-  max-width: 1320px;
-  margin-inline: auto;
-  padding: clamp(20px, 3.5vw, 36px) clamp(14px, 3vw, 26px) 80px;
+.sis__cuerpo { max-width: 1320px; margin-inline: auto; padding: 28px 20px 80px; }
+
+/* ---------- controles ---------- */
+/* Un solo vocabulario: el mismo botón en todas las pantallas. */
+
+.sis-boton {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  min-height: 42px;
+  padding: 9px 17px;
+  border: 1px solid transparent;
+  border-radius: 8px;
+  font: inherit;
+  font-family: var(--ui);
+  font-size: var(--u-sm);
+  font-weight: 600;
+  text-decoration: none;
+  cursor: pointer;
+  transition: background-color 160ms ease, border-color 160ms ease, color 160ms ease;
 }
 
-/* ---------- piezas comunes ---------- */
+.sis-boton--primario { background: var(--rojo); color: #fff; }
+.sis-boton--primario:hover { background: var(--rojo-hondo); }
+.sis-boton--primario:active { background: #7f0d14; }
+
+.sis-boton--azul { background: var(--azul); color: #fff; }
+.sis-boton--azul:hover { background: var(--azul-medio); }
+
+.sis-boton--suave { background: var(--papel); color: var(--azul); border-color: var(--linea); }
+.sis-boton--suave:hover { background: var(--panel); border-color: var(--azul-medio); }
+
+.sis-boton:disabled,
+.sis-boton[aria-disabled='true'] {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* Cargando: el control se desactiva solo y avisa, sin cambiar de tamaño. */
+.sis-boton[data-cargando] { pointer-events: none; opacity: 0.75; }
+.sis-boton[data-cargando]::after {
+  content: '';
+  width: 14px;
+  height: 14px;
+  border: 2px solid currentColor;
+  border-right-color: transparent;
+  border-radius: 50%;
+  animation: sis-girar 700ms linear infinite;
+}
+@keyframes sis-girar { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .sis-boton[data-cargando]::after { animation: none; opacity: 0.6; }
+}
+
+/* ---------- piezas ---------- */
 
 .sis-tarjeta {
   background: var(--papel);
   border: 1px solid var(--linea);
-  border-radius: var(--radio);
-  padding: clamp(20px, 3vw, 30px);
+  border-radius: 10px;
+  padding: 22px;
 }
 
-.sis-campo { display: flex; flex-direction: column; gap: 7px; }
-.sis-campo label {
-  font-family: var(--titulares);
-  font-size: 0.8rem;
-  font-weight: 600;
-  color: var(--tinta-suave);
-}
+.sis-campo { display: flex; flex-direction: column; gap: 6px; }
+.sis-campo label { font-size: var(--u-sm); font-weight: 600; color: var(--tinta-suave); }
 .sis-campo input,
 .sis-campo select,
 .sis-campo textarea {
   width: 100%;
-  min-height: 48px;
-  padding: 11px 14px;
+  min-height: 42px;
+  padding: 9px 12px;
   border: 1px solid var(--linea);
-  border-radius: var(--radio-sm);
+  border-radius: 8px;
   background: var(--papel);
   color: var(--tinta);
   font: inherit;
-  font-size: 1rem;
+  font-family: var(--ui);
+  font-size: var(--u-base);
 }
-.sis-campo textarea { min-height: 96px; resize: vertical; line-height: 1.5; }
+.sis-campo textarea { min-height: 88px; resize: vertical; line-height: 1.5; }
+.sis-campo input:hover,
+.sis-campo select:hover,
+.sis-campo textarea:hover { border-color: #bcc7dd; }
 .sis-campo input:focus,
 .sis-campo select:focus,
 .sis-campo textarea:focus {
   outline: 2px solid var(--azul-medio);
-  outline-offset: 1px;
+  outline-offset: 0;
   border-color: var(--azul-medio);
 }
-.sis-campo .pista { font-size: 0.78rem; color: var(--tinta-tenue); }
+.sis-campo input:disabled,
+.sis-campo textarea:disabled { background: var(--panel); color: var(--tinta-tenue); cursor: not-allowed; }
+.sis-campo input[aria-invalid='true'],
+.sis-campo textarea[aria-invalid='true'] { border-color: var(--rojo); }
+.sis-campo .pista { font-size: var(--u-xs); color: var(--tinta-tenue); }
 
 .sis-error {
   display: flex;
   align-items: flex-start;
-  gap: 10px;
-  padding: 13px 16px;
-  border-radius: var(--radio-sm);
+  gap: 9px;
+  padding: 11px 14px;
+  border-radius: 8px;
   background: #fdeced;
   border: 1px solid #f3bfc2;
   color: #8f1017;
-  font-size: 0.92rem;
+  font-size: var(--u-sm);
 }
