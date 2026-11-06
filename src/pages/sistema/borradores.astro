@@ -1,0 +1,176 @@
+---
+/**
+ * Atenciones a medio llenar.
+ *
+ * Es la bandeja de pendientes del turno: el médico guarda un borrador
+ * cuando lo interrumpen y vuelve acá a terminarlo. Lo que manda en cada
+ * fila no es el dato clínico sino cuánto falta para poder cerrarla.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { borradoresAbiertos } from '../../sistema/lib/atenciones';
+
+export const prerender = false;
+
+const borradores = await borradoresAbiertos();
+const listos = borradores.filter((b) => b.faltan.length === 0).length;
+
+const fechaCorta = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
+
+/* Se nombran los primeros tres que faltan y el resto se cuenta: la lista
+   completa de catorce rótulos no dice más que el número. */
+const queFalta = (faltan: { rotulo: string }[]) => {
+  const nombres = faltan.slice(0, 3).map((c) => c.rotulo.toLowerCase());
+  const resto = faltan.length - nombres.length;
+  return resto > 0 ? `${nombres.join(', ')} y ${resto} más` : nombres.join(', ');
+};
+---
+
+<Sistema titulo="Borradores">
+  <div class="cab">
+    <div>
+      <h1>Atenciones sin cerrar</h1>
+      <p class="cab__nota">
+        {borradores.length === 0
+          ? 'Nada pendiente'
+          : `${borradores.length} ${borradores.length === 1 ? 'borrador' : 'borradores'}`}
+        {listos > 0 && ` · ${listos} ${listos === 1 ? 'listo para cerrar' : 'listos para cerrar'}`}
+      </p>
+    </div>
+    <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">
+      <Icono nombre="mas" tam={19} />
+      Nueva atención
+    </a>
+  </div>
+
+  {borradores.length === 0 ? (
+    <div class="vacio sis-tarjeta">
+      <h2>No hay borradores</h2>
+      <p>
+        Las atenciones aparecen acá mientras estén a medio llenar. Al cerrarlas
+        pasan a <a href="/sistema">la lista de casos</a>.
+      </p>
+      <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">Registrar una atención</a>
+    </div>
+  ) : (
+    <ul class="pend">
+      {borradores.map((b) => (
+        <li>
+          <a href={`/sistema/atencion/${b.id}/editar`}>
+            <span class="pend__num cifra">{b.numero}</span>
+
+            <span class="pend__cuerpo">
+              <span class="pend__linea">
+                <strong>{b.paciente}</strong>
+                <em class="cifra">{fechaCorta(b.fecha)}</em>
+              </span>
+              <span class="pend__linea pend__linea--baja">
+                <small>{b.idx || b.motivo || 'Sin motivo anotado'}</small>
+                <span class="pend__quien">{b.cedula}</span>
+              </span>
+            </span>
+
+            <span class="pend__falta">
+              {b.faltan.length === 0 ? (
+                <strong class="pend__falta-ok">Listo para cerrar</strong>
+              ) : (
+                <>
+                  <strong>
+                    Faltan {b.faltan.length} {b.faltan.length === 1 ? 'campo' : 'campos'}
+                  </strong>
+                  <small>{queFalta(b.faltan)}</small>
+                </>
+              )}
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )}
+</Sistema>
+
+<style>
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .vacio { text-align: center; padding-block: 56px; margin-top: 22px; }
+  .vacio h2 { font-size: var(--u-lg); }
+  .vacio p { margin-top: 9px; color: var(--tinta-tenue); }
+  .vacio a:not(.sis-boton) { color: var(--azul-medio); }
+  .vacio .sis-boton { margin-top: 22px; }
+
+  /* Misma fila que la lista de casos: el médico ya sabe leerla. */
+  .pend {
+    list-style: none;
+    margin: 22px 0 0;
+    padding: 0;
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio);
+    overflow: hidden;
+  }
+  .pend li + li { border-top: 1px solid var(--linea-tenue); }
+
+  .pend a {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr);
+    align-items: center;
+    gap: 14px;
+    padding: 13px 16px;
+    text-decoration: none;
+    color: var(--tinta);
+    transition: background-color 150ms ease;
+  }
+  .pend a:hover { background: var(--bruma); }
+  .pend a:focus-visible { outline: 2px solid var(--azul-medio); outline-offset: -2px; }
+  @media (min-width: 720px) { .pend a { grid-template-columns: auto minmax(0, 1fr) 230px; } }
+
+  .pend__num {
+    display: grid;
+    place-items: center;
+    min-width: 46px;
+    height: 46px;
+    padding: 0 8px;
+    border-radius: 12px;
+    background: #fdf0d9;
+    color: #7a5200;
+    font-weight: 700;
+    font-size: var(--u-sm);
+  }
+
+  .pend__cuerpo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .pend__linea { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .pend__linea strong {
+    font-size: var(--u-base);
+    font-weight: 600;
+    color: var(--azul);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pend__linea em { font-style: normal; font-size: var(--u-xs); color: var(--tinta-tenue); flex: none; }
+  .pend__linea--baja small {
+    font-size: var(--u-sm);
+    color: var(--tinta-suave);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .pend__quien { flex: none; font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  /* En móvil lo que falta va bajo el nombre; desde tablet, en su columna. */
+  .pend__falta {
+    grid-column: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-width: 0;
+  }
+  .pend__falta strong { font-size: var(--u-sm); font-weight: 600; color: var(--rojo-hondo); }
+  .pend__falta strong.pend__falta-ok { color: #15663f; }
+  .pend__falta small { font-size: var(--u-xs); color: var(--tinta-tenue); }
+  @media (min-width: 720px) {
+    .pend__falta { grid-column: 3; text-align: right; align-items: flex-end; }
+  }
+</style>

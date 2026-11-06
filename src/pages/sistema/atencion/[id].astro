@@ -3,13 +3,19 @@ import Sistema from '../../../layouts/Sistema.astro';
 import Icono from '../../../components/Icono.astro';
 import { historia } from '../../../sistema/historia';
 import { bd, esquema } from '../../../sistema/lib/base';
-import { anotar } from '../../../sistema/lib/atenciones';
+import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
+import { dinero, frasePagador, montoRenglon, renglonesDe, resumir } from '../../../sistema/lib/cobro';
 import { eq, desc, and, ne } from 'drizzle-orm';
 
 export const prerender = false;
 
 const { id } = Astro.params;
 const usuario = Astro.locals.usuario!;
+
+/* Un id que no tiene forma de uuid hace que Postgres rechace el cast y la
+   pantalla termina en error de servidor. Un enlace viejo o mal copiado se
+   contesta como lo que es: un caso que no está. */
+if (!id || !esIdentificador(id)) return Astro.redirect('/sistema');
 
 const [caso] = await bd
   .select({
@@ -33,18 +39,14 @@ const [caso] = await bd
   .from(esquema.atencion)
   .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
   .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
-  .where(eq(esquema.atencion.id, id!))
+  .where(eq(esquema.atencion.id, id))
   .limit(1);
 
 if (!caso) return Astro.redirect('/sistema');
 
 await anotar(usuario.id, 'vio', caso.id);
 
-const renglones = await bd
-  .select()
-  .from(esquema.renglon)
-  .where(eq(esquema.renglon.atencionId, caso.id))
-  .orderBy(esquema.renglon.creado);
+const renglones = await renglonesDe(caso.id);
 
 const previasCrudas = await bd
   .select({
@@ -68,9 +70,13 @@ const anteriores = previasCrudas.map((a) => ({
 }));
 
 const datos = (caso.datos ?? {}) as Record<string, string>;
-const total = renglones.reduce((s, r) => s + Number(r.precio) * Number(r.cantidad), 0);
 
-const dinero = (v: number) => new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2 }).format(v);
+/* Una cuenta por moneda, como en la pantalla de cobro. Dólares y bolívares
+   no se suman: el número que saldría de mezclarlos no se le puede pasar a
+   nadie. El desglose por pagador aparece cuando hay más de uno, que es el
+   caso que la metáfora de la bodega describe. */
+const cuentas = resumir(renglones);
+
 const fechaLarga = (f: string) =>
   new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
 
@@ -104,6 +110,16 @@ const etiqueta = {
       </p>
     </div>
     <div class="cab__acciones">
+      {caso.estado === 'borrador' && (
+        <a class="sis-boton sis-boton--primario" href={`/sistema/atencion/${caso.id}/editar`}>
+          <Icono nombre="flecha" tam={18} />
+          Continuar la atención
+        </a>
+      )}
+      <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}/cobro`}>
+        <Icono nombre="mas" tam={18} />
+        Cargar cobro
+      </a>
       <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}/documento`} target="_blank">
         <Icono nombre="laboratorio" tam={18} />
         Documento
@@ -135,29 +151,37 @@ const etiqueta = {
     <aside class="col__lado">
       <section class="ficha">
         <h2>Cobro</h2>
-        {renglones.length === 0 ? (
+        {cuentas.length === 0 ? (
           <p class="lado__vacio">Todavía no se cargó nada que cobrar.</p>
         ) : (
-          <ul class="renglones">
-            {renglones.map((r) => (
-              <li>
-                <span>
-                  <strong>{r.descripcion}</strong>
-                  <small>{r.paga === 'aseguradora' ? 'Lo paga el seguro' : r.paga === 'empresa' ? 'Lo paga la empresa' : 'Lo paga el paciente'}</small>
-                </span>
-                <em class="cifra">{dinero(Number(r.precio) * Number(r.cantidad))}</em>
+          cuentas.map((c) => (
+            <ul class="renglones">
+              {renglones.filter((r) => r.moneda === c.moneda).map((r) => (
+                <li>
+                  <span>
+                    <strong>{r.descripcion}</strong>
+                    <small>{frasePagador(r.paga)}</small>
+                  </span>
+                  <em class="cifra">{dinero(montoRenglon(r.cantidad, r.precio))}</em>
+                </li>
+              ))}
+              <li class="renglones__total">
+                <span><strong>Total {c.moneda}</strong></span>
+                <em class="cifra">{dinero(c.total)}</em>
               </li>
-            ))}
-            <li class="renglones__total">
-              <span><strong>Total</strong></span>
-              <em class="cifra">{dinero(total)}</em>
-            </li>
-          </ul>
+              {c.pagadores.length > 1 && c.pagadores.map((p) => (
+                <li class="renglones__parte">
+                  <span>{p.rotulo}</span>
+                  <em class="cifra">{dinero(p.monto)}</em>
+                </li>
+              ))}
+            </ul>
+          ))
         )}
         <p class="lado__quien">
           {caso.aseguradora
-            ? <>Se le cobra a <strong>{caso.aseguradora}</strong>{caso.poliza && <> · póliza {caso.poliza}</>}</>
-            : <>Lo paga el paciente directamente.</>}
+            ? <>El caso lo cubre <strong>{caso.aseguradora}</strong>{caso.poliza && <> · póliza {caso.poliza}</>}. Cada renglón dice quién lo paga.</>
+            : <>Nadie cubre el caso: lo que se cargue lo paga el paciente.</>}
         </p>
       </section>
 
@@ -208,7 +232,15 @@ const etiqueta = {
 
   .col { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 20px; }
   @media (min-width: 1000px) { .col { grid-template-columns: minmax(0, 1fr) 340px; align-items: start; } }
-  .col__principal, .col__lado { display: grid; gap: 14px; align-content: start; }
+  /* La columna declarada evita que un hijo ancho —una tabla con su propio
+     min-width— estire la rejilla más allá del teléfono. */
+  .col__principal, .col__lado {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    align-content: start;
+    min-width: 0;
+  }
 
   .ficha { background: var(--papel); border: 1px solid var(--linea); border-radius: 10px; padding: 18px; }
   .ficha h2 { font-size: var(--u-md); margin-bottom: 12px; }
@@ -230,8 +262,12 @@ const etiqueta = {
   .renglones strong { font-size: var(--u-sm); font-weight: 600; }
   .renglones small { font-size: var(--u-xs); color: var(--tinta-tenue); }
   .renglones em { font-style: normal; font-weight: 600; color: var(--azul); flex: none; }
+  .renglones + .renglones { margin-top: 16px; }
   .renglones__total { border-top: 2px solid var(--linea) !important; margin-top: 5px; padding-top: 11px !important; }
   .renglones__total em { font-size: var(--u-md); }
+  /* El reparto por pagador: es lectura de apoyo del total, no otro renglón. */
+  .renglones__parte span, .renglones__parte em { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .renglones__parte em { font-weight: 600; }
 
   .previas { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
   .previas a {

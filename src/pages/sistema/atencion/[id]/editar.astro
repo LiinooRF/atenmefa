@@ -1,0 +1,220 @@
+---
+/**
+ * Reabrir un borrador y terminarlo.
+ *
+ * Es el mismo formulario de nueva.astro —las mismas secciones y los mismos
+ * campos salen del modelo— con dos diferencias: los valores vienen de la
+ * atención guardada y el guardado actualiza esa fila en vez de crear otra,
+ * así el número de caso que ya vio el paciente no cambia.
+ */
+import Sistema from '../../../../layouts/Sistema.astro';
+import Seccion from '../../../../components/sistema/Seccion.astro';
+import Icono from '../../../../components/Icono.astro';
+import { historia } from '../../../../sistema/historia';
+import {
+  limpiarDatos, faltantes, anotar, atencionPara, guardarBorrador,
+} from '../../../../sistema/lib/atenciones';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const usuario = Astro.locals.usuario!;
+
+const caso = await atencionPara(id!);
+if (!caso) return Astro.redirect('/sistema');
+
+/* Una atención cerrada está firmada y una anulada quedó fuera de juego:
+   ninguna de las dos se toca. No se redirige en silencio, se explica. */
+const editable = caso.estado === 'borrador';
+
+/* Abrir el formulario es ver la historia completa, y eso se registra igual
+   que verla en la ficha. El POST no pasa por acá: deja su propio 'edito'. */
+if (Astro.request.method !== 'POST') await anotar(usuario.id, 'vio', caso.id);
+
+let error = '';
+let datos = (caso.datos ?? {}) as Record<string, string>;
+
+if (Astro.request.method === 'POST' && editable) {
+  const form = await Astro.request.formData();
+  const cerrar = form.get('accion') === 'cerrar';
+
+  /* Lo enviado reemplaza lo guardado en vez de mezclarse con él: si el
+     médico borró un campo tiene que quedar borrado. La fecha y el nombre
+     del médico van delante como red de seguridad: si llegan vacíos la fila
+     quedaría sin fecha, que es columna obligatoria en la base. */
+  datos = { fecha: caso.fecha, medico: usuario.name, ...limpiarDatos(form) };
+
+  const faltan = cerrar ? faltantes(datos) : [];
+
+  if (cerrar && faltan.length) {
+    error = `Falta completar: ${faltan.map((c) => c.rotulo.toLowerCase()).join(', ')}.`;
+  } else if (!datos.cedula || !datos.nombre) {
+    error = 'Para guardar hace falta al menos el nombre y la cédula del paciente.';
+  } else {
+    try {
+      const guardada = await guardarBorrador(caso.id, datos, cerrar);
+      if (!guardada) {
+        error = 'Esta atención dejó de ser un borrador mientras la editaba: vuelva a abrirla para ver cómo quedó.';
+      } else {
+        await anotar(usuario.id, cerrar ? 'cerro' : 'edito', caso.id, {
+          numero: guardada.numero,
+          faltan: faltantes(datos).length,
+        });
+        return Astro.redirect(`/sistema/atencion/${caso.id}`);
+      }
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'No se pudo guardar la atención.';
+    }
+  }
+}
+
+const faltanAhora = faltantes(datos);
+
+/* En un formulario nuevo las secciones largas arrancan plegadas, pero acá ya
+   hay historia escrita: una alergia anotada no puede quedar escondida detrás
+   de un título cerrado. La que tiene algo se abre. */
+const secciones = historia.map((s) =>
+  s.plegable && s.campos.some((c) => datos[c.clave]) ? { ...s, plegable: false } : s,
+);
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
+---
+
+<Sistema titulo={`Atención ${caso.numero}`}>
+  <nav class="miga">
+    <a href="/sistema">Casos</a> <span>/</span>
+    <a href="/sistema/borradores">Borradores</a> <span>/</span>
+    Atención {caso.numero}
+  </nav>
+
+  {!editable ? (
+    <section class="sis-tarjeta trabada">
+      <h1>{caso.estado === 'cerrada' ? 'Esta atención ya está cerrada' : 'Esta atención está anulada'}</h1>
+      <p>
+        {caso.estado === 'cerrada'
+          ? `La atención N° ${caso.numero} de ${caso.paciente} se cerró y quedó firmada: no se modifica. Si algo quedó mal, el camino es anularla con su motivo y registrar una nueva.`
+          : `La atención N° ${caso.numero} de ${caso.paciente} fue anulada${caso.anuladaMotivo ? ` (${caso.anuladaMotivo})` : ''}. Se conserva como está, por eso no se edita.`}
+      </p>
+      <div class="trabada__acciones">
+        <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}`}>Ver la ficha del caso</a>
+        <a class="sis-boton sis-boton--suave" href="/sistema/borradores">Ver los borradores</a>
+      </div>
+    </section>
+  ) : (
+    <form method="post" class="form">
+      <header class="form__cab">
+        <div>
+          <div class="form__linea">
+            <h1>Atención N° <span class="cifra">{caso.numero}</span></h1>
+            <span class="chapa">Borrador</span>
+          </div>
+          <p class="form__nota">
+            {caso.paciente} · {caso.cedula} · abierta el {fechaLarga(caso.fecha)}.
+            {faltanAhora.length === 0
+              ? ' Ya se puede cerrar.'
+              : ` Faltan ${faltanAhora.length} ${faltanAhora.length === 1 ? 'campo obligatorio' : 'campos obligatorios'} para poder cerrarla.`}
+          </p>
+        </div>
+        <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}`}>Dejar como está</a>
+      </header>
+
+      {error && (
+        <p class="sis-error form__error">
+          <Icono nombre="escudo" tam={18} />
+          {error}
+        </p>
+      )}
+
+      <div class="form__bloques">
+        {secciones.map((s) => <Seccion seccion={s} datos={datos} />)}
+      </div>
+
+      <div class="form__pie">
+        <div class="form__pie-int">
+          <span class="form__pie-nota">
+            <Icono nombre="reloj" tam={16} />
+            Se guarda sobre la misma atención N° {caso.numero}.
+          </span>
+          <div class="form__pie-acciones">
+            <!-- formnovalidate: un borrador es incompleto por definición, así que
+                 no puede toparse con la validación nativa de los obligatorios. -->
+            <button type="submit" name="accion" value="borrador" formnovalidate
+                    class="sis-boton sis-boton--suave">
+              Guardar borrador
+            </button>
+            <button type="submit" name="accion" value="cerrar" class="sis-boton sis-boton--primario">
+              <Icono nombre="escudo" tam={18} />
+              Cerrar atención
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+  )}
+</Sistema>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .trabada { max-width: 62ch; }
+  .trabada h1 { font-size: var(--u-xl); }
+  .trabada p { margin-top: 10px; color: var(--tinta-suave); }
+  .trabada__acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+
+  .form { padding-bottom: 92px; }
+
+  .form__cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+  .form__linea { display: flex; flex-wrap: wrap; align-items: center; gap: 11px; }
+  .form__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 60ch; }
+
+  .chapa {
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #fdf0d9;
+    color: #7a5200;
+  }
+
+  .form__error { margin-top: 18px; }
+  .form__bloques { display: grid; gap: 14px; margin-top: 20px; }
+
+  /* La barra de guardar queda fija, igual que en el formulario nuevo: en una
+     atención larga el médico no debería desplazar hasta el final. */
+  .form__pie {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 40;
+    background: var(--papel);
+    border-top: 1px solid var(--linea);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .form__pie-int {
+    max-width: 1320px;
+    margin-inline: auto;
+    padding: 12px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .form__pie-nota {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--u-sm);
+    color: var(--tinta-tenue);
+  }
+  .form__pie-nota :global(svg) { color: var(--tinta-tenue); }
+  @media (min-width: 620px) { .form__pie-nota { display: flex; } }
+
+  .form__pie-acciones { display: flex; gap: 10px; margin-left: auto; }
+  .form__pie-acciones .sis-boton { min-height: 46px; }
+</style>

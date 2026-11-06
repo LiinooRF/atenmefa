@@ -14,9 +14,12 @@ dist/
 .idea/
 # jetbrains setting folder
 # logs
+# lo que dejan las pruebas de extremo a extremo
 # macOS-specific files
 node_modules/
 npm-debug.log*
+playwright-report/
 pnpm-debug.log*
+test-results/
 yarn-debug.log*
 yarn-error.log*

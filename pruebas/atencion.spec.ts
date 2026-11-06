@@ -1,0 +1,213 @@
+/**
+ * Registrar una atención, guardarla a medias y terminarla después.
+ *
+ * Es el camino que hace el médico en la tablet: empieza la historia, lo
+ * interrumpen, guarda lo que tiene y vuelve a la bandeja de borradores a
+ * terminarla. Lo que se vigila acá es que el borrador se guarde incompleto
+ * a propósito, que una atención no se cierre sin lo obligatorio, que al
+ * terminarla no nazca un caso nuevo y que lo cerrado ya no se toque.
+ *
+ * Las pruebas van en serie porque comparten el mismo caso de principio a
+ * fin, igual que lo comparte el médico.
+ */
+import { test, expect } from '@playwright/test';
+import {
+  FICHA, abrirSeccion, borrarPacientes, cedulaDePrueba, crearAtencionCerrada, crearBorrador,
+  cuantasAtenciones, entrar, historiaMinima, llenar, numeroDelCaso,
+} from './apoyo';
+
+test.describe.configure({ mode: 'serial' });
+
+/** Un dígito por archivo de pruebas: el 1 es este. */
+const CEDULA_BORRADOR = cedulaDePrueba(1, 0);
+const CEDULA_CERRADA = cedulaDePrueba(1, 1);
+const CEDULA_SIN_GUARDAR = cedulaDePrueba(1, 2);
+
+const NOMBRE_BORRADOR = 'Ana Teresa Rangel de Prueba';
+const NOMBRE_CERRADA = 'Pedro José Oliveros de Prueba';
+
+/** Se llenan en el camino y las usan las pruebas que vienen después. */
+let borrador = '';
+let numeroBorrador = '';
+let cerrada = '';
+
+test.afterAll(async () => {
+  await borrarPacientes(CEDULA_BORRADOR, CEDULA_CERRADA, CEDULA_SIN_GUARDAR);
+});
+
+test('un borrador se guarda con solo el nombre y la cédula', async ({ page }) => {
+  await entrar(page);
+
+  borrador = await crearBorrador(page, {
+    nombre: NOMBRE_BORRADOR,
+    cedula: CEDULA_BORRADOR,
+  });
+  numeroBorrador = await numeroDelCaso(page);
+
+  await expect(page.locator('.chapa')).toHaveText('Borrador');
+  await expect(page.locator('.cab__linea')).toContainText(NOMBRE_BORRADOR);
+  expect(numeroBorrador).not.toBe('');
+});
+
+test('la bandeja de borradores dice cuánto falta para poder cerrar', async ({ page }) => {
+  await entrar(page);
+  await page.goto('/sistema/borradores');
+
+  const fila = page.locator('.pend li', { hasText: NOMBRE_BORRADOR });
+  await expect(fila).toContainText(CEDULA_BORRADOR);
+
+  /* Del borrador solo se escribieron el nombre y la cédula; la fecha, la
+     hora de inicio y el médico los precarga el formulario. De los doce
+     campos obligatorios del modelo quedan siete, y la pantalla nombra los
+     tres primeros y cuenta el resto. */
+  await expect(fila).toContainText('Faltan 7 campos');
+  await expect(fila).toContainText('edad, sexo, lugar de atención y 4 más');
+
+  // La fila entra directo a la edición, no a la ficha.
+  await fila.getByRole('link').click();
+  await expect(page).toHaveURL(`/sistema/atencion/${borrador}/editar`);
+});
+
+test('sin los campos obligatorios el navegador no deja cerrar', async ({ page }) => {
+  await entrar(page);
+  await page.goto('/sistema/atencion/nueva');
+
+  await llenar(page, { nombre: 'Nadie de Prueba', cedula: CEDULA_SIN_GUARDAR });
+  await page.getByRole('button', { name: 'Cerrar atención' }).click();
+
+  /* El botón de cerrar no lleva formnovalidate, al revés que el de
+     borrador, así que la validación del propio navegador lo detiene en el
+     primer obligatorio vacío: la edad. Seguimos en el formulario con lo
+     tecleado delante; si hubiera cerrado, esto ya sería una ficha. */
+  await expect(page.locator('#c-edad:invalid')).toHaveCount(1);
+  await expect(page.locator('#c-nombre')).toHaveValue('Nadie de Prueba');
+  await expect(page).toHaveURL(/\/sistema\/atencion\/nueva$/);
+
+  // Y lo que importa: no quedó nada guardado.
+  expect(await cuantasAtenciones(CEDULA_SIN_GUARDAR)).toBe(0);
+});
+
+test('el servidor tampoco cierra un borrador incompleto', async ({ page, baseURL }) => {
+  await entrar(page);
+
+  /* La validación del navegador se puede saltar —un formulario viejo en una
+     pestaña dormida, una tablet con JavaScript a medias— así que el guardia
+     de verdad está en el servidor. Se envía el formulario a mano.
+     La cabecera Origin hace falta: Astro rechaza el POST sin ella. */
+  const respuesta = await page.request.post(`/sistema/atencion/${borrador}/editar`, {
+    headers: { origin: baseURL! },
+    form: { accion: 'cerrar', nombre: NOMBRE_BORRADOR, cedula: CEDULA_BORRADOR },
+  });
+
+  expect(respuesta.ok()).toBe(true);
+  expect(await respuesta.text()).toContain('Falta completar');
+
+  // Sigue siendo un borrador.
+  await page.goto(`/sistema/atencion/${borrador}`);
+  await expect(page.locator('.chapa')).toHaveText('Borrador');
+});
+
+test('cerrar con todo completo crea el caso y aparece en la lista', async ({ page }) => {
+  await entrar(page);
+
+  cerrada = await crearAtencionCerrada(page, {
+    nombre: NOMBRE_CERRADA,
+    cedula: CEDULA_CERRADA,
+    sexo: 'Masculino',
+  });
+  const numero = await numeroDelCaso(page);
+
+  await expect(page.locator('.chapa')).toHaveText('Cerrada');
+  await expect(page.locator('.ficha', { has: page.getByRole('heading', { name: 'Evaluación' }) }))
+    .toContainText(historiaMinima.motivo);
+
+  await page.goto(`/sistema?q=${encodeURIComponent(CEDULA_CERRADA)}`);
+  const fila = page.locator('ul.casos li', { hasText: NOMBRE_CERRADA });
+  await expect(fila).toBeVisible();
+  await expect(fila).toContainText(numero);
+  await expect(fila).toContainText(historiaMinima.idx);
+});
+
+test('un borrador no aparece en la lista de casos', async ({ page }) => {
+  await entrar(page);
+
+  // La lista es de casos atendidos: solo las cerradas entran.
+  await page.goto(`/sistema?q=${encodeURIComponent(CEDULA_BORRADOR)}`);
+
+  await expect(page.getByRole('heading', { name: 'Ningún caso coincide' })).toBeVisible();
+  await expect(page.getByText(NOMBRE_BORRADOR)).toHaveCount(0);
+});
+
+test('reabrir un borrador trae lo que se había escrito', async ({ page }) => {
+  await entrar(page);
+  await page.goto(`/sistema/atencion/${borrador}/editar`);
+
+  await expect(page.locator('#c-nombre')).toHaveValue(NOMBRE_BORRADOR);
+  await expect(page.locator('#c-cedula')).toHaveValue(CEDULA_BORRADOR);
+  // La cabecera dice sobre qué caso se está escribiendo.
+  await expect(page.locator('.form__cab')).toContainText(numeroBorrador);
+  await expect(page.locator('.form__cab')).toContainText('Faltan 7 campos obligatorios');
+});
+
+test('lo que se agrega al borrador se guarda sobre el mismo caso', async ({ page }) => {
+  await entrar(page);
+  await page.goto(`/sistema/atencion/${borrador}/editar`);
+
+  // "Hábitos y antecedentes" es plegable: hay que abrirla para escribir.
+  await abrirSeccion(page, 'antecedentes');
+  await llenar(page, { alergias: 'Ninguna que refiera', edad: '33' });
+  await page.getByRole('button', { name: 'Guardar borrador' }).click();
+  await expect(page).toHaveURL(FICHA);
+
+  // Se actualizó la misma fila: ni un caso nuevo ni un número nuevo.
+  expect(await cuantasAtenciones(CEDULA_BORRADOR)).toBe(1);
+  expect(await numeroDelCaso(page)).toBe(numeroBorrador);
+
+  /* Y al volver a abrirlo, la sección plegable ya viene abierta: una
+     alergia anotada no puede quedar escondida detrás de un título. */
+  await page.goto(`/sistema/atencion/${borrador}/editar`);
+  await expect(page.locator('#c-alergias')).toHaveValue('Ninguna que refiera');
+  await expect(page.locator('#c-alergias')).toBeVisible();
+  await expect(page.locator('.form__cab')).toContainText('Faltan 6 campos obligatorios');
+});
+
+test('una atención cerrada no se puede editar', async ({ page }) => {
+  await entrar(page);
+  await page.goto(`/sistema/atencion/${cerrada}/editar`);
+
+  // Se explica en la misma dirección en vez de devolver en silencio.
+  await expect(page.getByRole('heading', { name: 'Esta atención ya está cerrada' })).toBeVisible();
+  await expect(page.getByRole('link', { name: 'Ver la ficha del caso' })).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Guardar borrador' })).toHaveCount(0);
+  await expect(page.locator('#c-nombre')).toHaveCount(0);
+});
+
+test('solo el borrador ofrece continuar la atención desde la ficha', async ({ page }) => {
+  await entrar(page);
+
+  await page.goto(`/sistema/atencion/${borrador}`);
+  await expect(page.getByRole('link', { name: 'Continuar la atención' })).toBeVisible();
+
+  await page.goto(`/sistema/atencion/${cerrada}`);
+  await expect(page.getByRole('link', { name: 'Continuar la atención' })).toHaveCount(0);
+});
+
+test('terminar el borrador lo cierra y le deja el mismo número', async ({ page }) => {
+  await entrar(page);
+  await page.goto(`/sistema/atencion/${borrador}/editar`);
+
+  await llenar(page, historiaMinima);
+  await page.getByRole('button', { name: 'Cerrar atención' }).click();
+  await expect(page).toHaveURL(`/sistema/atencion/${borrador}`);
+
+  await expect(page.locator('.chapa')).toHaveText('Cerrada');
+  expect(await numeroDelCaso(page)).toBe(numeroBorrador);
+  expect(await cuantasAtenciones(CEDULA_BORRADOR)).toBe(1);
+
+  // Ya no está en la bandeja de pendientes y sí en la lista de casos.
+  await page.goto('/sistema/borradores');
+  await expect(page.getByText(NOMBRE_BORRADOR)).toHaveCount(0);
+
+  await page.goto(`/sistema?q=${encodeURIComponent(CEDULA_BORRADOR)}`);
+  await expect(page.locator('ul.casos li', { hasText: NOMBRE_BORRADOR })).toBeVisible();
+});

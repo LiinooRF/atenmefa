@@ -1,0 +1,208 @@
+---
+/**
+ * Editar un servicio del catálogo.
+ *
+ * Corregir el precio acá cambia lo que se cobrará de ahora en adelante y
+ * nada de lo ya cargado: el renglón se quedó con la copia del precio del
+ * día. Por eso la pantalla dice en cuántos renglones está metido.
+ */
+import Sistema from '../../../layouts/Sistema.astro';
+import Icono from '../../../components/Icono.astro';
+import { bd, esquema } from '../../../sistema/lib/base';
+import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
+import {
+  CATEGORIAS, MONEDAS, activarServicio, dinero, guardarServicio, rotuloCategoria,
+} from '../../../sistema/lib/cobro';
+import { eq, sql } from 'drizzle-orm';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const usuario = Astro.locals.usuario!;
+
+/* Un id sin forma de uuid hace que Postgres rechace el cast y la pantalla
+   termina en error de servidor. Un enlace viejo se contesta volviendo a la
+   lista, que es lo que la persona quería ver. */
+if (!id || !esIdentificador(id)) return Astro.redirect('/sistema/servicios');
+
+let error = '';
+/* Lo que la persona tenía escrito cuando el guardado falló. Se guarda acá
+   porque el cuerpo del pedido se lee una sola vez. */
+let tecleado: Record<string, string> | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const accion = String(form.get('accion') ?? 'guardar');
+
+  try {
+    if (accion === 'desactivar' || accion === 'reactivar') {
+      const cambiado = await activarServicio(id, accion === 'reactivar');
+      await anotar(usuario.id, 'servicio', undefined, { accion, servicio: cambiado.nombre });
+    } else {
+      tecleado = {
+        nombre: String(form.get('nombre') ?? ''),
+        categoria: String(form.get('categoria') ?? ''),
+        precio: String(form.get('precio') ?? ''),
+        moneda: String(form.get('moneda') ?? ''),
+      };
+      const guardado = await guardarServicio(id, tecleado);
+      await anotar(usuario.id, 'servicio', undefined, { accion: 'edito', servicio: guardado.nombre });
+    }
+    return Astro.redirect('/sistema/servicios');
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo guardar el servicio.';
+  }
+}
+
+const [servicio] = await bd
+  .select()
+  .from(esquema.servicio)
+  .where(eq(esquema.servicio.id, id))
+  .limit(1);
+
+if (!servicio) return Astro.redirect('/sistema/servicios');
+
+/* Cuántos renglones lo nombran. Es el argumento de por qué un servicio se
+   desactiva en lugar de borrarse. */
+const [cuenta] = await bd
+  .select({ n: sql<number>`count(*)` })
+  .from(esquema.renglon)
+  .where(eq(esquema.renglon.servicioId, servicio.id));
+const usos = Number(cuenta?.n ?? 0);
+
+/* Si el guardado falló se muestra lo tecleado, no lo que está en la base:
+   de otro modo se le borra la corrección a quien la escribió. */
+const valor = (clave: 'nombre' | 'categoria' | 'moneda') =>
+  tecleado?.[clave] ?? String(servicio[clave]);
+
+/* El precio se muestra como se escribe acá —35,00, no 35.00— que es como lo
+   devuelve la columna numeric y como lo lee de vuelta montoDe(). */
+const precioVista = tecleado?.precio ?? dinero(servicio.precio);
+---
+
+<Sistema titulo={servicio.nombre}>
+  <nav class="miga">
+    <a href="/sistema">Casos</a> <span>/</span>
+    <a href="/sistema/servicios">Servicios</a> <span>/</span>
+    {servicio.nombre}
+  </nav>
+
+  <header class="cab">
+    <div>
+      <div class="cab__linea">
+        <h1>{servicio.nombre}</h1>
+        {!servicio.activo && <span class="chapa">Desactivado</span>}
+      </div>
+      <p class="cab__meta">
+        {rotuloCategoria(servicio.categoria)} ·
+        {usos === 0
+          ? 'todavía no se cargó en ninguna atención'
+          : `cargado en ${usos} ${usos === 1 ? 'renglón' : 'renglones'}`}
+      </p>
+    </div>
+  </header>
+
+  {error && (
+    <p class="sis-error edita__error">
+      <Icono nombre="escudo" tam={18} />
+      {error}
+    </p>
+  )}
+
+  <form method="post" class="edita sis-tarjeta">
+    <div class="edita__campos">
+      <div class="sis-campo edita__nombre">
+        <label for="nombre">Servicio</label>
+        <input id="nombre" name="nombre" value={valor('nombre')} required autocomplete="off" />
+      </div>
+
+      <div class="sis-campo">
+        <label for="categoria">Categoría</label>
+        <select id="categoria" name="categoria">
+          {CATEGORIAS.map((c) => (
+            <option value={c.clave} selected={valor('categoria') === c.clave}>{c.rotulo}</option>
+          ))}
+        </select>
+      </div>
+
+      <div class="sis-campo">
+        <label for="precio">Precio</label>
+        <input id="precio" name="precio" value={precioVista} required
+               inputmode="decimal" autocomplete="off" />
+        <span class="pista">Lo ya cargado conserva el precio del día.</span>
+      </div>
+
+      <div class="sis-campo">
+        <label for="moneda">Moneda</label>
+        <select id="moneda" name="moneda">
+          {MONEDAS.map((m) => (
+            <option value={m} selected={valor('moneda') === m}>{m}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+
+    <div class="edita__pie">
+      <p class="edita__nota">
+        Un servicio no se borra: se desactiva y deja de aparecer en el
+        selector de cobro, pero sigue nombrado en los renglones ya cargados.
+      </p>
+      <div class="edita__acciones">
+        <a class="sis-boton sis-boton--suave" href="/sistema/servicios">Volver</a>
+        <button type="submit" name="accion" value={servicio.activo ? 'desactivar' : 'reactivar'}
+                formnovalidate class="sis-boton sis-boton--suave">
+          {servicio.activo ? 'Desactivar' : 'Reactivar'}
+        </button>
+        <button type="submit" name="accion" value="guardar" class="sis-boton sis-boton--primario">
+          <Icono nombre="escudo" tam={18} />
+          Guardar cambios
+        </button>
+      </div>
+    </div>
+  </form>
+</Sistema>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+  .cab__linea { display: flex; flex-wrap: wrap; align-items: center; gap: 11px; }
+  .cab__meta { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .chapa {
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--panel);
+    color: var(--tinta-tenue);
+  }
+
+  .edita__error { margin-top: 18px; }
+
+  .edita { margin-top: 20px; max-width: 760px; padding: 20px; }
+  .edita__campos { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; }
+  @media (min-width: 720px) {
+    .edita__campos { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+    .edita__nombre { grid-column: 1 / -1; }
+  }
+
+  .edita__pie {
+    margin-top: 20px;
+    padding-top: 16px;
+    border-top: 1px solid var(--linea-tenue);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 14px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .edita__nota { font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 46ch; }
+  .edita__acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-left: auto; }
+  .edita__acciones .sis-boton { min-height: 44px; }
+</style>

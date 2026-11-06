@@ -1,0 +1,598 @@
+---
+/**
+ * Carga del cobro de una atención: qué se le hizo al paciente y a quién se
+ * le cobra cada cosa.
+ *
+ * El cliente lo explicó así: fue a la bodega por carne, pero el médico
+ * mandó también sal y adobo, y hay que saber quién paga la sal. De ahí que
+ * el pagador vaya en el renglón y no en la atención: el seguro cubre la
+ * consulta y el paciente paga el material, en el mismo caso.
+ *
+ * Se puede cargar con la atención cerrada, porque el cobro lo arma
+ * administración después de que el médico cierra la historia. Lo único que
+ * no admite renglones es una atención anulada.
+ */
+import Sistema from '../../../../layouts/Sistema.astro';
+import Icono from '../../../../components/Icono.astro';
+import { bd, esquema } from '../../../../sistema/lib/base';
+import { anotar, esIdentificador } from '../../../../sistema/lib/atenciones';
+import {
+  MONEDAS, PAGADORES, cantidadVista, cargarDelCatalogo, cargarLibre, catalogo,
+  dinero, frasePagador, montoRenglon, pagadorSugerido, porCategoria, quitarRenglon,
+  renglonesDe, resumir,
+} from '../../../../sistema/lib/cobro';
+import { eq } from 'drizzle-orm';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const usuario = Astro.locals.usuario!;
+
+/* Un id que no tiene forma de uuid hace que Postgres rechace el cast y la
+   pantalla termina en error de servidor. Un enlace viejo o mal copiado se
+   contesta como lo que es: un caso que no está. */
+if (!id || !esIdentificador(id)) return Astro.redirect('/sistema');
+
+const [caso] = await bd
+  .select({
+    id: esquema.atencion.id,
+    numero: esquema.atencion.numero,
+    estado: esquema.atencion.estado,
+    fecha: esquema.atencion.fecha,
+    aseguradora: esquema.atencion.aseguradora,
+    poliza: esquema.atencion.poliza,
+    casoNumero: esquema.atencion.casoNumero,
+    paciente: esquema.paciente.nombre,
+    cedula: esquema.paciente.cedula,
+    medico: esquema.user.name,
+  })
+  .from(esquema.atencion)
+  .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+  .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
+  .where(eq(esquema.atencion.id, id))
+  .limit(1);
+
+if (!caso) return Astro.redirect('/sistema');
+
+const anulada = caso.estado === 'anulada';
+const sugerido = pagadorSugerido(caso.aseguradora);
+
+let error = '';
+/* Lo tecleado vuelve a la pantalla si la carga falla: el cuerpo del pedido
+   se lee una sola vez, así que se conserva acá. */
+let libre = { descripcion: '', cantidad: '1', precio: '', moneda: 'USD', paga: sugerido as string };
+let abrirLibre = false;
+
+if (Astro.request.method === 'POST' && !anulada) {
+  const form = await Astro.request.formData();
+  const accion = String(form.get('accion') ?? '');
+
+  try {
+    if (accion === 'quitar') {
+      const quitado = await quitarRenglon(caso.id, form.get('renglon'));
+      // El renglón se borra, pero el rastro de que existió no.
+      await anotar(usuario.id, 'cobro', caso.id, {
+        accion: 'quito',
+        descripcion: quitado.descripcion,
+        cantidad: quitado.cantidad,
+        precio: quitado.precio,
+        moneda: quitado.moneda,
+        paga: quitado.paga,
+      });
+    } else if (accion === 'libre') {
+      libre = {
+        descripcion: String(form.get('descripcion') ?? ''),
+        cantidad: String(form.get('cantidad') ?? '1'),
+        precio: String(form.get('precio') ?? ''),
+        moneda: String(form.get('moneda') ?? 'USD'),
+        paga: String(form.get('paga') ?? sugerido),
+      };
+      abrirLibre = true;
+      const cargado = await cargarLibre({ atencionId: caso.id, ...libre });
+      await anotar(usuario.id, 'cobro', caso.id, {
+        accion: 'agrego',
+        origen: 'a mano',
+        descripcion: cargado.descripcion,
+        cantidad: cargado.cantidad,
+        precio: cargado.precio,
+        moneda: cargado.moneda,
+        paga: cargado.paga,
+      });
+    } else {
+      const cargado = await cargarDelCatalogo({
+        atencionId: caso.id,
+        servicioId: form.get('servicio'),
+        cantidad: form.get('cantidad'),
+        paga: form.get('paga'),
+      });
+      await anotar(usuario.id, 'cobro', caso.id, {
+        accion: 'agrego',
+        origen: 'catalogo',
+        servicio: cargado.servicioId,
+        descripcion: cargado.descripcion,
+        cantidad: cargado.cantidad,
+        precio: cargado.precio,
+        moneda: cargado.moneda,
+        paga: cargado.paga,
+      });
+    }
+    // Redirigir después de escribir: recargar no vuelve a cargar el renglón.
+    return Astro.redirect(`/sistema/atencion/${caso.id}/cobro`);
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo cargar el renglón.';
+  }
+}
+
+const renglones = await renglonesDe(caso.id);
+const servicios = await catalogo();
+const grupos = porCategoria(servicios);
+const cuentas = resumir(renglones);
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
+
+const etiqueta = {
+  borrador: { texto: 'Borrador', clase: 'borrador' },
+  cerrada: { texto: 'Cerrada', clase: 'cerrada' },
+  anulada: { texto: 'Anulada', clase: 'anulada' },
+}[caso.estado];
+---
+
+<Sistema titulo={`Cobro de la atención ${caso.numero}`}>
+  <nav class="miga">
+    <a href="/sistema">Casos</a> <span>/</span>
+    <a href={`/sistema/atencion/${caso.id}`}>Atención {caso.numero}</a> <span>/</span>
+    Cobro
+  </nav>
+
+  <header class="cab">
+    <div>
+      <div class="cab__linea">
+        <h1>Cobro de la atención N° {caso.numero}</h1>
+        <span class:list={['chapa', `chapa--${etiqueta.clase}`]}>{etiqueta.texto}</span>
+      </div>
+      <p class="cab__meta">
+        {caso.paciente} · {caso.cedula} · {fechaLarga(caso.fecha)} ·
+        {caso.aseguradora ? `cubre ${caso.aseguradora}` : 'paga el paciente'}
+      </p>
+    </div>
+    <div class="cab__acciones">
+      <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}`}>Volver a la ficha</a>
+    </div>
+  </header>
+
+  {anulada && (
+    <p class="sis-error aviso">
+      <Icono nombre="escudo" tam={18} />
+      La atención está anulada: no se le cargan ni se le quitan renglones. Lo que ya tenía queda como registro.
+    </p>
+  )}
+
+  {error && (
+    <p class="sis-error aviso">
+      <Icono nombre="escudo" tam={18} />
+      {error}
+    </p>
+  )}
+
+  <div class="col">
+    <div class="col__principal">
+      {!anulada && (
+        <section class="caja">
+          <h2>Agregar del catálogo</h2>
+
+          {servicios.length === 0 ? (
+            <p class="caja__vacio">
+              El catálogo todavía está vacío.
+              <a href="/sistema/servicios">Cargue los servicios</a> o escriba el renglón a mano acá abajo.
+            </p>
+          ) : (
+            <form method="post" class="carga">
+              <div class="sis-campo carga__servicio">
+                <label for="servicio">Servicio</label>
+                <select id="servicio" name="servicio" required>
+                  <option value="">Elija del catálogo</option>
+                  {grupos.map((g) => (
+                    <optgroup label={g.rotulo}>
+                      {g.servicios.map((s) => (
+                        <option value={s.id} data-precio={s.precio} data-moneda={s.moneda}>
+                          {s.nombre} · {dinero(s.precio)} {s.moneda}
+                        </option>
+                      ))}
+                    </optgroup>
+                  ))}
+                </select>
+              </div>
+
+              <div class="sis-campo carga__cantidad">
+                <label for="cantidad">Cantidad</label>
+                <input id="cantidad" name="cantidad" value="1" inputmode="decimal" autocomplete="off" required />
+              </div>
+
+              <div class="sis-campo carga__paga">
+                <label for="paga">Quién paga</label>
+                <select id="paga" name="paga">
+                  {PAGADORES.map((p) => (
+                    <option value={p.clave} selected={p.clave === sugerido}>{p.rotulo}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button type="submit" name="accion" value="catalogo" class="sis-boton sis-boton--primario carga__boton">
+                <Icono nombre="mas" tam={18} />
+                Cargar
+              </button>
+
+              <p class="carga__pie">
+                <output id="monto" class="carga__monto cifra"></output>
+                <span>
+                  {caso.aseguradora
+                    ? `El caso vino por ${caso.aseguradora}, así que se propone el seguro. Cámbielo en el renglón que pague otro.`
+                    : 'Nadie cubre el caso, así que se propone el paciente. Cámbielo en el renglón que pague otro.'}
+                </span>
+              </p>
+            </form>
+          )}
+
+          <details class="mano" open={abrirLibre}>
+            <summary>
+              <span>Renglón escrito a mano</span>
+              <span class="mano__signo" aria-hidden="true"></span>
+            </summary>
+
+            <form method="post" class="carga carga--mano">
+              <div class="sis-campo carga__servicio">
+                <label for="descripcion">Qué se le hizo</label>
+                <input id="descripcion" name="descripcion" value={libre.descripcion}
+                       placeholder="Material de sutura" autocomplete="off" required />
+              </div>
+
+              <div class="sis-campo carga__cantidad">
+                <label for="cantidad-libre">Cantidad</label>
+                <input id="cantidad-libre" name="cantidad" value={libre.cantidad}
+                       inputmode="decimal" autocomplete="off" required />
+              </div>
+
+              <div class="sis-campo carga__cantidad">
+                <label for="precio-libre">Precio</label>
+                <input id="precio-libre" name="precio" value={libre.precio}
+                       inputmode="decimal" placeholder="12,00" autocomplete="off" required />
+              </div>
+
+              <div class="sis-campo carga__moneda">
+                <label for="moneda-libre">Moneda</label>
+                <select id="moneda-libre" name="moneda">
+                  {MONEDAS.map((m) => (
+                    <option value={m} selected={libre.moneda === m}>{m}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div class="sis-campo carga__paga">
+                <label for="paga-libre">Quién paga</label>
+                <select id="paga-libre" name="paga">
+                  {PAGADORES.map((p) => (
+                    <option value={p.clave} selected={libre.paga === p.clave}>{p.rotulo}</option>
+                  ))}
+                </select>
+              </div>
+
+              <button type="submit" name="accion" value="libre" class="sis-boton sis-boton--azul carga__boton">
+                <Icono nombre="mas" tam={18} />
+                Cargar
+              </button>
+
+              <p class="carga__pie">
+                <span>Para lo que no está en la lista. Queda con su precio propio, sin tocar el catálogo.</span>
+              </p>
+            </form>
+          </details>
+        </section>
+      )}
+
+      <section class="caja">
+        <h2>Lo cargado</h2>
+
+        {renglones.length === 0 ? (
+          <p class="caja__vacio">Todavía no se cargó nada que cobrar en esta atención.</p>
+        ) : (
+          <div class="tabla">
+            <table>
+              <caption class="oculto">Renglones cargados con su pagador y su monto</caption>
+              <thead>
+                <tr>
+                  <th scope="col">Renglón</th>
+                  <th scope="col">Quién paga</th>
+                  <th scope="col" class="num">Cant.</th>
+                  <th scope="col" class="num">Precio</th>
+                  <th scope="col" class="num">Monto</th>
+                  {!anulada && <th scope="col"><span class="oculto">Quitar</span></th>}
+                </tr>
+              </thead>
+              <tbody>
+                {renglones.map((r) => (
+                  <tr>
+                    <td>
+                      <strong>{r.descripcion}</strong>
+                      {!r.servicioId && <span class="fila__mano">a mano</span>}
+                    </td>
+                    <td class="fila__paga">{frasePagador(r.paga)}</td>
+                    <td class="num cifra">{cantidadVista(r.cantidad)}</td>
+                    <td class="num cifra">{dinero(r.precio)} <small>{r.moneda}</small></td>
+                    <td class="num cifra fila__monto">{dinero(montoRenglon(r.cantidad, r.precio))}</td>
+                    {!anulada && (
+                      <td class="fila__quitar">
+                        <form method="post">
+                          <input type="hidden" name="renglon" value={r.id} />
+                          <button type="submit" name="accion" value="quitar" class="sis-boton sis-boton--suave">
+                            Quitar
+                          </button>
+                        </form>
+                      </td>
+                    )}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        )}
+      </section>
+    </div>
+
+    <aside class="col__lado">
+      <section class="caja">
+        <h2>La cuenta</h2>
+
+        {cuentas.length === 0 ? (
+          <p class="caja__vacio">Sin renglones, no hay nada que sumar.</p>
+        ) : (
+          cuentas.map((c) => (
+            <div class="cuenta">
+              <p class="cuenta__total">
+                <span>Total {c.moneda}</span>
+                <strong class="cifra">{dinero(c.total)}</strong>
+              </p>
+              <ul class="cuenta__pagadores">
+                {c.pagadores.map((p) => (
+                  <li>
+                    <span>{p.rotulo}</span>
+                    <em class="cifra">{dinero(p.monto)}</em>
+                  </li>
+                ))}
+              </ul>
+            </div>
+          ))
+        )}
+
+        {cuentas.length > 1 && (
+          <p class="cuenta__nota">
+            Hay renglones en dos monedas y no se suman entre ellas: cada una lleva su cuenta.
+          </p>
+        )}
+      </section>
+
+      <section class="caja">
+        <h2>Quién cubre el caso</h2>
+        <dl class="datos">
+          <div>
+            <dt>Seguro o red</dt>
+            <dd>{caso.aseguradora ?? 'Ninguno: paga el paciente'}</dd>
+          </div>
+          {caso.poliza && (
+            <div>
+              <dt>Póliza</dt>
+              <dd>{caso.poliza}</dd>
+            </div>
+          )}
+          {caso.casoNumero && (
+            <div>
+              <dt>N° de caso</dt>
+              <dd>{caso.casoNumero}</dd>
+            </div>
+          )}
+          <div>
+            <dt>Atendió</dt>
+            <dd>{caso.medico}</dd>
+          </div>
+        </dl>
+        <p class="datos__pie">
+          <a href="/sistema/servicios">Catálogo de servicios</a>
+        </p>
+      </section>
+    </aside>
+  </div>
+</Sistema>
+
+<script>
+  /* Adelanto de lo que se va a cargar. Es una comodidad: si no corre el
+     script, la pantalla sigue funcionando igual y el monto se ve al cargar. */
+  const servicio = document.getElementById('servicio');
+  const cantidad = document.getElementById('cantidad');
+  const salida = document.getElementById('monto');
+
+  if (servicio && cantidad && salida) {
+    const formato = new Intl.NumberFormat('es-VE', {
+      minimumFractionDigits: 2,
+      maximumFractionDigits: 2,
+    });
+
+    const pintar = () => {
+      const elegido = servicio.selectedOptions[0];
+      const precio = Number(elegido?.dataset?.precio);
+      // Acá se teclea con coma decimal tanto como con punto.
+      const cuantos = Number(String(cantidad.value).replace(',', '.'));
+      salida.textContent =
+        precio > 0 && cuantos > 0
+          ? `Se cargará ${formato.format(precio * cuantos)} ${elegido.dataset.moneda}`
+          : '';
+    };
+
+    servicio.addEventListener('change', pintar);
+    cantidad.addEventListener('input', pintar);
+    pintar();
+  }
+</script>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+  .cab__linea { display: flex; flex-wrap: wrap; align-items: center; gap: 11px; }
+  .cab__meta { margin-top: 7px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .chapa {
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+  }
+  .chapa--borrador { background: #fdf0d9; color: #7a5200; }
+  .chapa--cerrada  { background: #e4f2ea; color: #15663f; }
+  .chapa--anulada  { background: #fdeced; color: #8f1017; }
+
+  .aviso { margin-top: 16px; }
+
+  .oculto {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .col { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 20px; }
+  @media (min-width: 1040px) { .col { grid-template-columns: minmax(0, 1fr) 320px; align-items: start; } }
+  /* La columna declarada no es decoración: sin minmax(0, …) la rejilla toma
+     el ancho mínimo de su contenido y la tabla de renglones —que tiene su
+     propio min-width y se desplaza sola— arrastra toda la pantalla a 698px
+     de ancho en un teléfono. */
+  .col__principal, .col__lado {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    align-content: start;
+    min-width: 0;
+  }
+
+  .caja { background: var(--papel); border: 1px solid var(--linea); border-radius: 10px; padding: 18px; }
+  .caja h2 { font-size: var(--u-md); margin-bottom: 14px; }
+  .caja__vacio { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .caja__vacio a { color: var(--azul); }
+
+  /* Una sola fila de carga: servicio, cuántos, quién paga y listo. En
+     pantalla angosta se apila sin cambiar el orden. */
+  .carga { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; align-items: end; }
+  @media (min-width: 760px) {
+    .carga { grid-template-columns: minmax(0, 1fr) 104px 170px auto; }
+    .carga--mano { grid-template-columns: minmax(0, 1fr) 96px 104px 92px 160px auto; }
+    .carga__pie { grid-column: 1 / -1; }
+  }
+  .carga__boton { min-height: 44px; }
+
+  .carga__pie {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 4px 12px;
+    align-items: baseline;
+    font-size: var(--u-sm);
+    color: var(--tinta-tenue);
+  }
+  .carga__monto { font-weight: 700; color: var(--azul); }
+  .carga__monto:empty { display: none; }
+
+  /* El renglón a mano es la excepción, así que arranca plegado. */
+  .mano { margin-top: 18px; padding-top: 16px; border-top: 1px solid var(--linea-tenue); }
+  .mano summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    min-height: 44px;
+    font-size: var(--u-sm);
+    font-weight: 600;
+    color: var(--azul);
+    user-select: none;
+  }
+  .mano summary::-webkit-details-marker { display: none; }
+  .mano summary:hover { color: var(--azul-medio); }
+  .mano__signo {
+    width: 8px; height: 8px;
+    border-right: 2px solid currentColor;
+    border-bottom: 2px solid currentColor;
+    transform: rotate(45deg) translate(-2px, -2px);
+    transition: transform 160ms ease;
+  }
+  .mano[open] .mano__signo { transform: rotate(-135deg) translate(-2px, -2px); }
+  .mano .carga { margin-top: 14px; }
+
+  /* El position: relative no es decoración: los rótulos que solo leen los
+     lectores de pantalla van absolutos, y sin un bloque contenedor acá se
+     posicionan contra la página entera, se escapan del desplazamiento de la
+     tabla y arrastran el ancho del documento a 611px en un teléfono. */
+  .tabla { overflow-x: auto; position: relative; }
+  table { width: 100%; border-collapse: collapse; min-width: 640px; }
+  thead th {
+    text-align: left;
+    padding: 0 12px 9px;
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--tinta-tenue);
+    border-bottom: 1px solid var(--linea);
+    white-space: nowrap;
+  }
+  thead th:first-child, tbody td:first-child { padding-left: 0; }
+  thead th:last-child, tbody td:last-child { padding-right: 0; }
+  tbody td { padding: 10px 12px; border-bottom: 1px solid var(--linea-tenue); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: 0; padding-bottom: 0; }
+
+  .num { text-align: right; }
+  tbody td.num { white-space: nowrap; }
+  tbody td.num small { color: var(--tinta-tenue); font-size: var(--u-xs); }
+  .fila__monto { font-weight: 700; color: var(--azul); }
+  .fila__paga { font-size: var(--u-sm); color: var(--tinta-suave); }
+  .fila__mano {
+    margin-left: 8px;
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--tinta-tenue);
+  }
+  .fila__quitar { text-align: right; }
+  .fila__quitar .sis-boton { min-height: 44px; padding: 6px 14px; }
+
+  .cuenta + .cuenta { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--linea-tenue); }
+  .cuenta__total { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .cuenta__total span { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .cuenta__total strong { font-size: var(--u-xl); font-weight: 700; color: var(--azul); }
+
+  .cuenta__pagadores { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 1px; }
+  .cuenta__pagadores li {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 8px 0;
+    border-top: 1px solid var(--linea-tenue);
+    font-size: var(--u-sm);
+  }
+  .cuenta__pagadores span { color: var(--tinta-suave); }
+  .cuenta__pagadores em { font-style: normal; font-weight: 600; }
+  .cuenta__nota { margin-top: 14px; font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  .datos { margin: 0; display: grid; gap: 1px; }
+  .datos div { display: flex; flex-wrap: wrap; gap: 4px 14px; justify-content: space-between; padding: 8px 0; border-top: 1px solid var(--linea-tenue); }
+  .datos div:first-child { border-top: 0; padding-top: 0; }
+  .datos dt { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .datos dd { margin: 0; font-size: var(--u-sm); font-weight: 600; text-align: right; }
+  .datos__pie { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--linea-tenue); font-size: var(--u-sm); }
+  .datos__pie a { color: var(--azul); }
+</style>

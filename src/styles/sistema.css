@@ -107,6 +107,28 @@
 .sis__salir:hover { background: rgba(255, 255, 255, 0.13); }
 .sis__salir:active { background: rgba(255, 255, 255, 0.2); }
 
+/* En un teléfono la fila no alcanza: la barra pide 475 px y la pantalla
+   tiene 390, así que el nombre quedaba recortado y la página entera se
+   arrastraba de lado en todas las vistas. Pasa a dos filas y el menú toma
+   la segunda completa, con los tres destinos a la vista. */
+@media (max-width: 560px) {
+  .sis__barra-int { flex-wrap: wrap; gap: 0 12px; padding: 6px 14px; }
+  .sis__marca { margin-right: auto; }
+
+  /* Va al final para caer en la segunda fila: en el HTML está antes de
+     quién entró, que tiene que quedar arriba a la derecha. */
+  .sis__nav { order: 3; width: 100%; margin-right: 0; padding-bottom: 6px; }
+  .sis__nav a { flex: 1; justify-content: center; min-height: 44px; padding-inline: 8px; }
+
+  /* Tres destinos con icono no entran en 390 px sin partir los rótulos en
+     dos líneas. El icono acompaña, el rótulo es el que nombra: en el
+     teléfono se va el icono y el nombre queda entero. */
+  .sis__nav a svg { display: none; }
+
+  /* En el teléfono es el único control de la barra: le toca el mínimo. */
+  .sis__salir { min-height: 44px; }
+}
+
 .sis__cuerpo { max-width: 1320px; margin-inline: auto; padding: 28px 20px 80px; }
 
 /* ---------- controles ---------- */
@@ -117,7 +139,9 @@
   align-items: center;
   justify-content: center;
   gap: 8px;
-  min-height: 42px;
+  /* 44 px es el mínimo de la casa para lo que se toca con el dedo: el panel
+     se usa de pie, con la tablet en una mano. */
+  min-height: 44px;
   padding: 9px 17px;
   border: 1px solid transparent;
   border-radius: 8px;
@@ -178,7 +202,8 @@
 .sis-campo select,
 .sis-campo textarea {
   width: 100%;
-  min-height: 42px;
+  /* Igual que el botón: un campo también se toca con el dedo. */
+  min-height: 44px;
   padding: 9px 12px;
   border: 1px solid var(--linea);
   border-radius: 8px;

@@ -1,0 +1,342 @@
+---
+/**
+ * Cierre del mes.
+ *
+ * "Se guarda por mes, de manera que cuando llegue el mes se sepa qué se
+ * hizo y qué cobrar". La pantalla está armada en ese orden: arriba a quién
+ * hay que cobrarle y cuánto, abajo el detalle caso por caso que sostiene
+ * cada cifra.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { consolidadoDelMes, mesPedido, type MontoPorMoneda } from '../../sistema/lib/cierre';
+
+export const prerender = false;
+
+const mes = mesPedido(Astro.url.searchParams.get('mes'));
+const pedido = (Astro.url.searchParams.get('cobrar_a') ?? '').trim();
+
+const cierre = await consolidadoDelMes(mes);
+const grupo = pedido ? cierre.grupos.find((g) => g.clave === pedido) ?? null : null;
+const sinEsePagador = Boolean(pedido) && !grupo;
+const aMostrar = grupo ? [grupo] : cierre.grupos;
+
+const dinero = (monto: number) =>
+  new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(monto);
+
+/**
+ * Cada moneda con su monto y su nombre. Nunca se juntan en una sola cifra:
+ * el centro cotiza en dólares y cobra en bolívares por taquilla, y un total
+ * mezclado no se le puede pasar a nadie a cobrar.
+ */
+const montos = (totales: MontoPorMoneda[]) =>
+  totales.length ? totales.map((m) => `${dinero(m.total)} ${m.moneda}`) : ['0,00'];
+
+const fechaCorta = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
+
+const mesEnLetras = new Date(`${mes}-01T12:00:00`)
+  .toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+
+const descarga = (clave?: string) =>
+  `/sistema/cierre/exportar?mes=${mes}${clave ? `&cobrar_a=${clave}` : ''}`;
+
+const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno : varios}`;
+---
+
+<Sistema titulo="Cierre del mes">
+  <header class="cab">
+    <div>
+      <h1>Cierre del mes</h1>
+      <p class="cab__meta">
+        {mesEnLetras} ·
+        {plural(cierre.casosCerrados, 'caso cerrado', 'casos cerrados')} ·
+        {plural(cierre.renglones, 'renglón', 'renglones')} ·
+        <strong class="cifra">{montos(cierre.totales).join(' y ')}</strong> por cobrar
+      </p>
+    </div>
+    {cierre.renglones > 0 && (
+      <a class="sis-boton sis-boton--azul cab__baja" href={descarga()}>
+        <Icono nombre="laboratorio" tam={18} />
+        Descargar el mes
+      </a>
+    )}
+  </header>
+
+  <form class="mes" method="get">
+    <div class="sis-campo mes__campo">
+      <label for="mes">Mes a cerrar</label>
+      <input type="month" id="mes" name="mes" value={mes} />
+    </div>
+    <button type="submit" class="sis-boton sis-boton--suave">Ver el mes</button>
+    {grupo && <a class="sis-boton sis-boton--suave" href={`/sistema/cierre?mes=${mes}`}>Ver todos los pagadores</a>}
+  </form>
+
+  {sinEsePagador && (
+    <p class="sis-error">
+      <Icono nombre="escudo" tam={18} />
+      En {mesEnLetras} no hay nada cerrado para ese pagador. Abajo está el mes completo.
+    </p>
+  )}
+
+  {cierre.renglones === 0 ? (
+    <div class="vacio sis-tarjeta">
+      <h2>
+        {cierre.casosCerrados === 0
+          ? 'No hay atenciones cerradas en este mes'
+          : 'Las atenciones del mes no tienen nada cargado'}
+      </h2>
+      <p>
+        {cierre.casosCerrados === 0
+          ? 'Al cierre entran solo las atenciones cerradas: los borradores y las anuladas quedan fuera. Pruebe con otro mes.'
+          : `Hay ${plural(cierre.casosCerrados, 'atención cerrada', 'atenciones cerradas')} sin un solo renglón de cobro, así que no hay nada que facturar todavía.`}
+      </p>
+      <a class="sis-boton sis-boton--suave" href="/sistema">Ir a los casos</a>
+    </div>
+  ) : (
+    <>
+      <div class="tabla">
+        <table class="resumen">
+          <thead>
+            <tr>
+              <th scope="col">A quién se le cobra</th>
+              <th scope="col" class="num">Casos</th>
+              <th scope="col" class="num">Renglones</th>
+              <th scope="col" class="num">Total</th>
+              <th scope="col"><span class="solo-lectores">Descarga</span></th>
+            </tr>
+          </thead>
+          <tbody>
+            {cierre.grupos.map((g) => (
+              <tr aria-current={g.clave === grupo?.clave ? 'true' : undefined}>
+                <th scope="row">
+                  <a href={`/sistema/cierre?mes=${mes}&cobrar_a=${g.clave}`}>{g.nombre}</a>
+                </th>
+                <td class="num cifra">{g.casos}</td>
+                <td class="num cifra">{g.renglones}</td>
+                <td class="num plata">
+                  {montos(g.totales).map((m) => <span class="cifra">{m}</span>)}
+                </td>
+                <td class="baja">
+                  <a class="sis-boton sis-boton--suave" href={descarga(g.clave)}>Descargar</a>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+          <tfoot>
+            <tr>
+              {/* Acá van las atenciones distintas que dejaron algo que cobrar.
+                  La columna de arriba puede sumar más, porque una atención
+                  repartida entre dos pagadores se cuenta en los dos; el aviso
+                  de abajo lo dice cuando pasa. */}
+              <th scope="row">Total del mes</th>
+              <td class="num cifra">{cierre.casosConCobro}</td>
+              <td class="num cifra">{cierre.renglones}</td>
+              <td class="num plata">
+                {montos(cierre.totales).map((m) => <span class="cifra">{m}</span>)}
+              </td>
+              <td></td>
+            </tr>
+          </tfoot>
+        </table>
+      </div>
+
+      {cierre.casosSinCobro > 0 && (
+        <p class="aviso">
+          {plural(cierre.casosSinCobro, 'atención cerrada', 'atenciones cerradas')} del mes
+          {cierre.casosSinCobro === 1 ? ' no tiene' : ' no tienen'} renglones cargados, así que
+          {cierre.casosSinCobro === 1 ? ' no aparece' : ' no aparecen'} en el detalle.
+        </p>
+      )}
+
+      {cierre.casosRepartidos > 0 && (
+        <p class="aviso">
+          {plural(cierre.casosRepartidos, 'atención', 'atenciones')} del mes
+          {cierre.casosRepartidos === 1 ? ' se reparte' : ' se reparten'} entre más de un pagador
+          y {cierre.casosRepartidos === 1 ? 'se cuenta' : 'se cuentan'} en cada uno: por eso la
+          columna de casos suma más que {cierre.casosConCobro === 1 ? 'la' : 'las'}
+          {' '}{plural(cierre.casosConCobro, 'atención', 'atenciones')} del total.
+        </p>
+      )}
+
+      {aMostrar.map((g) => (
+        <section class="grupo">
+          <header class="grupo__cab">
+            <div>
+              <h2>{g.nombre}</h2>
+              <p class="grupo__meta">
+                {plural(g.casos, 'caso', 'casos')} ·
+                {plural(g.renglones, 'renglón', 'renglones')} ·
+                <strong class="cifra">{montos(g.totales).join(' y ')}</strong>
+              </p>
+            </div>
+            <a class="sis-boton sis-boton--suave" href={descarga(g.clave)}>
+              <Icono nombre="laboratorio" tam={17} />
+              Excel de este pagador
+            </a>
+          </header>
+
+          <ul class="casos">
+            {g.detalle.map((caso) => (
+              <li class="caso">
+                <div class="caso__cab">
+                  <a class="caso__quien" href={`/sistema/atencion/${caso.id}`}>
+                    <strong class="cifra">N° {caso.numero}</strong>
+                    <span>{caso.paciente}</span>
+                  </a>
+                  <span class="caso__datos">
+                    {fechaCorta(caso.fecha)} · {caso.cedula}
+                    {caso.poliza && ` · póliza ${caso.poliza}`}
+                    {caso.casoNumero && ` · caso ${caso.casoNumero}`}
+                    {` · ${caso.medico}`}
+                  </span>
+                  <em class="caso__total">
+                    {montos(caso.totales).map((m) => <span class="cifra">{m}</span>)}
+                  </em>
+                </div>
+                <ul class="lineas">
+                  {caso.lineas.map((l) => (
+                    <li>
+                      <span class="lineas__que">{l.descripcion}</span>
+                      <small class="lineas__cuenta cifra">{l.cantidad} × {dinero(l.precio)}</small>
+                      <em class="cifra">{dinero(l.total)} {l.moneda}</em>
+                    </li>
+                  ))}
+                </ul>
+              </li>
+            ))}
+          </ul>
+        </section>
+      ))}
+    </>
+  )}
+</Sistema>
+
+<style>
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+  .cab__meta { margin-top: 7px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .cab__meta strong { color: var(--azul); }
+  .cab__baja { min-height: 44px; }
+
+  .mes { display: flex; flex-wrap: wrap; gap: 10px; align-items: flex-end; margin: 20px 0 18px; }
+  .mes__campo { flex: 0 1 220px; }
+  .mes__campo input { min-height: 46px; }
+  .mes .sis-boton { min-height: 46px; }
+
+  .sis-error { margin-bottom: 18px; }
+
+  .vacio { text-align: center; padding-block: 52px; }
+  .vacio h2 { font-size: var(--u-lg); }
+  .vacio p { margin: 9px auto 0; max-width: 56ch; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .vacio .sis-boton { margin-top: 20px; min-height: 44px; }
+
+  /* El resumen es una tabla y no tarjetas: son cifras comparables en
+     columna, y así se leen de un barrido. */
+  /* position para que lo que esté en absoluto adentro (el rótulo que solo
+     leen los lectores de pantalla) quede anclado acá y lo recorte el
+     scroll, en vez de estirar la página entera. */
+  .tabla { position: relative; overflow-x: auto; background: var(--papel); border: 1px solid var(--linea); border-radius: 10px; }
+  .resumen { width: 100%; border-collapse: collapse; min-width: 560px; }
+  .resumen th, .resumen td { padding: 11px 16px; text-align: left; }
+  .resumen thead th {
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--tinta-tenue);
+    border-bottom: 1px solid var(--linea);
+    white-space: nowrap;
+  }
+  .resumen tbody tr + tr th,
+  .resumen tbody tr + tr td { border-top: 1px solid var(--linea-tenue); }
+  .resumen tbody tr[aria-current] { background: var(--azul-tenue); }
+  .resumen tbody th { font-size: var(--u-base); font-weight: 600; }
+  .resumen tbody th a { color: var(--azul); text-decoration: none; }
+  .resumen tbody th a:hover { text-decoration: underline; }
+  .resumen .num { text-align: right; white-space: nowrap; }
+  .resumen .plata { font-weight: 600; color: var(--azul); }
+  /* Cada moneda en su renglón: no se leen como una suma. */
+  .resumen .plata span { display: block; }
+  .resumen .baja { text-align: right; }
+  .resumen .baja .sis-boton { min-height: 44px; }
+  .resumen tfoot th, .resumen tfoot td {
+    border-top: 2px solid var(--linea);
+    font-weight: 700;
+    color: var(--azul);
+  }
+  .aviso { margin-top: 12px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .grupo { margin-top: 24px; }
+  .grupo__cab {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: flex-end;
+    justify-content: space-between;
+    padding-bottom: 10px;
+    border-bottom: 2px solid var(--linea);
+  }
+  .grupo__meta { margin-top: 4px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .grupo__meta strong { color: var(--azul); }
+  .grupo__cab .sis-boton { min-height: 44px; }
+
+  .casos { list-style: none; margin: 0; padding: 0; }
+  .caso { padding: 14px 0; border-bottom: 1px solid var(--linea-tenue); }
+
+  .caso__cab {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 14px;
+    align-items: baseline;
+  }
+  .caso__quien { display: inline-flex; align-items: baseline; gap: 9px; min-width: 0; text-decoration: none; }
+  .caso__quien strong { font-size: var(--u-sm); color: var(--tinta-tenue); flex: none; }
+  .caso__quien span {
+    font-size: var(--u-md);
+    font-weight: 600;
+    color: var(--azul);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .caso__quien:hover span { text-decoration: underline; }
+  .caso__datos { grid-column: 1; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .caso__total {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    font-style: normal;
+    font-size: var(--u-md);
+    font-weight: 700;
+    color: var(--azul);
+    text-align: right;
+  }
+  .caso__total span { display: block; }
+
+  .lineas { list-style: none; margin: 9px 0 0; padding: 0; }
+  .lineas li {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 2px 12px;
+    padding: 6px 0 6px 14px;
+    border-left: 2px solid var(--linea);
+  }
+  .lineas li + li { margin-top: 2px; }
+  .lineas__que { font-size: var(--u-sm); }
+  .lineas__cuenta { grid-column: 1; font-size: var(--u-xs); color: var(--tinta-tenue); }
+  .lineas em {
+    grid-column: 2;
+    grid-row: 1 / span 2;
+    align-self: center;
+    font-style: normal;
+    font-size: var(--u-sm);
+    font-weight: 600;
+    color: var(--tinta-suave);
+  }
+
+  @media (min-width: 720px) {
+    .lineas li { grid-template-columns: minmax(0, 1fr) 160px 120px; align-items: baseline; }
+    .lineas__cuenta { grid-column: 2; text-align: right; }
+    .lineas em { grid-column: 3; grid-row: 1; text-align: right; }
+  }
+</style>

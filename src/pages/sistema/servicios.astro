@@ -1,0 +1,279 @@
+---
+/**
+ * El catálogo de servicios: la lista de la que sale cada renglón de cobro.
+ *
+ * Nada se borra. Un servicio que deja de prestarse se desactiva: sigue
+ * nombrado en los renglones ya cargados y en los cierres de mes viejos.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { anotar } from '../../sistema/lib/atenciones';
+import {
+  CATEGORIAS, MONEDAS, catalogo, crearServicio, activarServicio,
+  dinero, porCategoria, rotuloCategoria,
+} from '../../sistema/lib/cobro';
+
+export const prerender = false;
+
+const usuario = Astro.locals.usuario!;
+const verTodos = Astro.url.searchParams.get('todos') === 'si';
+
+let error = '';
+/* Lo tipeado vuelve a la pantalla si el alta falla: nadie quiere escribir
+   el mismo servicio dos veces. */
+let nuevo = { nombre: '', categoria: 'consulta', precio: '', moneda: 'USD' };
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const accion = form.get('accion');
+
+  try {
+    if (accion === 'desactivar' || accion === 'reactivar') {
+      const cambiado = await activarServicio(String(form.get('id') ?? ''), accion === 'reactivar');
+      await anotar(usuario.id, 'servicio', undefined, { accion, servicio: cambiado.nombre });
+      /* Al desactivar se muestran también los apagados: si la fila
+         desapareciera sin más, parecería que el servicio se borró. */
+      return Astro.redirect(
+        accion === 'desactivar' ? '/sistema/servicios?todos=si' : `/sistema/servicios${verTodos ? '?todos=si' : ''}`,
+      );
+    } else {
+      nuevo = {
+        nombre: String(form.get('nombre') ?? ''),
+        categoria: String(form.get('categoria') ?? 'consulta'),
+        precio: String(form.get('precio') ?? ''),
+        moneda: String(form.get('moneda') ?? 'USD'),
+      };
+      const creado = await crearServicio(nuevo);
+      await anotar(usuario.id, 'servicio', undefined, { accion: 'creo', servicio: creado.nombre });
+      // Redirigir después de guardar: así recargar no vuelve a dar de alta.
+      return Astro.redirect(`/sistema/servicios${verTodos ? '?todos=si' : ''}`);
+    }
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo guardar el servicio.';
+  }
+}
+
+const servicios = await catalogo(true);
+const activos = servicios.filter((s) => s.activo);
+const visibles = verTodos ? servicios : activos;
+const grupos = porCategoria(visibles);
+const apagados = servicios.length - activos.length;
+---
+
+<Sistema titulo="Servicios">
+  <nav class="miga"><a href="/sistema">Casos</a> <span>/</span> Servicios</nav>
+
+  <header class="cab">
+    <div>
+      <h1>Catálogo de servicios</h1>
+      <p class="cab__nota">
+        {activos.length} {activos.length === 1 ? 'servicio activo' : 'servicios activos'}
+        {apagados > 0 && ` · ${apagados} desactivado${apagados > 1 ? 's' : ''}`}.
+        El precio se copia al renglón cuando se carga el cobro, así que
+        cambiarlo acá no mueve lo ya facturado.
+      </p>
+    </div>
+    {servicios.length > 0 && (
+      <a class="sis-boton sis-boton--suave" href={verTodos ? '/sistema/servicios' : '/sistema/servicios?todos=si'}>
+        {verTodos ? 'Ver solo los activos' : 'Ver los desactivados'}
+      </a>
+    )}
+  </header>
+
+  {error && (
+    <p class="sis-error alta__error">
+      <Icono nombre="escudo" tam={18} />
+      {error}
+    </p>
+  )}
+
+  <form method="post" class="alta sis-tarjeta">
+    <div class="alta__campos">
+      <div class="sis-campo alta__nombre">
+        <label for="nombre">Servicio</label>
+        <input id="nombre" name="nombre" value={nuevo.nombre} required
+               placeholder="Consulta de emergencia" autocomplete="off" />
+      </div>
+
+      <div class="sis-campo alta__cat">
+        <label for="categoria">Categoría</label>
+        <select id="categoria" name="categoria">
+          {CATEGORIAS.map((c) => (
+            <option value={c.clave} selected={nuevo.categoria === c.clave}>{c.rotulo}</option>
+          ))}
+        </select>
+      </div>
+
+      <div class="sis-campo alta__precio">
+        <label for="precio">Precio</label>
+        <input id="precio" name="precio" value={nuevo.precio} required
+               inputmode="decimal" placeholder="35,00" autocomplete="off" />
+      </div>
+
+      <div class="sis-campo alta__moneda">
+        <label for="moneda">Moneda</label>
+        <select id="moneda" name="moneda">
+          {MONEDAS.map((m) => (
+            <option value={m} selected={nuevo.moneda === m}>{m}</option>
+          ))}
+        </select>
+      </div>
+    </div>
+
+    <button type="submit" class="sis-boton sis-boton--primario alta__boton">
+      <Icono nombre="mas" tam={18} />
+      Agregar al catálogo
+    </button>
+  </form>
+
+  {visibles.length === 0 ? (
+    <div class="vacio sis-tarjeta">
+      <h2>El catálogo está vacío</h2>
+      <p>Agregue el primer servicio con el formulario de arriba. Después se carga en cada atención.</p>
+    </div>
+  ) : (
+    <div class="tabla">
+      <table>
+        <caption class="oculto">Servicios del catálogo con su categoría y su precio</caption>
+        <thead>
+          <tr>
+            <th scope="col">Servicio</th>
+            <th scope="col" class="num">Precio</th>
+            <th scope="col">Moneda</th>
+            <th scope="col"><span class="oculto">Acciones</span></th>
+          </tr>
+        </thead>
+        {grupos.map((g) => (
+          <tbody>
+            <tr class="grupo">
+              <th scope="colgroup" colspan="4">{g.rotulo}</th>
+            </tr>
+            {g.servicios.map((s) => (
+              <tr class:list={[!s.activo && 'fila--apagada']}>
+                <td>
+                  <a class="fila__nombre" href={`/sistema/servicios/${s.id}`}>{s.nombre}</a>
+                  {!s.activo && <span class="fila__apagado">Desactivado</span>}
+                </td>
+                <td class="num cifra">{dinero(s.precio)}</td>
+                <td class="moneda">{s.moneda}</td>
+                <td class="acciones">
+                  <a class="sis-boton sis-boton--suave" href={`/sistema/servicios/${s.id}`}>Editar</a>
+                  <form method="post">
+                    <input type="hidden" name="id" value={s.id} />
+                    <button type="submit" name="accion" value={s.activo ? 'desactivar' : 'reactivar'}
+                            class="sis-boton sis-boton--suave">
+                      {s.activo ? 'Desactivar' : 'Reactivar'}
+                    </button>
+                  </form>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        ))}
+      </table>
+    </div>
+  )}
+
+  <p class="pie">
+    Lo que no está en la lista se puede cargar igual, escrito a mano, en la
+    pantalla de cobro de cada atención. Las categorías son {CATEGORIAS.map((c) => rotuloCategoria(c.clave).toLowerCase()).join(', ')}.
+  </p>
+</Sistema>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+  .cab__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 68ch; }
+
+  .oculto {
+    position: absolute;
+    width: 1px; height: 1px;
+    overflow: hidden;
+    clip-path: inset(50%);
+    white-space: nowrap;
+  }
+
+  .alta__error { margin-top: 18px; }
+
+  /* El alta vive arriba de la lista: se agregan varios de corrido. */
+  .alta { margin-top: 20px; display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; padding: 18px; }
+  .alta__campos { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 12px; flex: 1 1 420px; }
+  .alta__nombre { grid-column: 1 / -1; }
+  @media (min-width: 860px) {
+    .alta__campos { grid-template-columns: minmax(0, 1fr) 190px 130px 104px; }
+    .alta__nombre { grid-column: auto; }
+  }
+  .alta__boton { min-height: 44px; }
+
+  .vacio { margin-top: 18px; text-align: center; padding-block: 48px; }
+  .vacio h2 { font-size: var(--u-lg); }
+  .vacio p { margin-top: 8px; color: var(--tinta-tenue); }
+
+  /* Precios y categorías son datos tabulares: se leen en columnas, no en
+     tarjetas. En pantalla angosta la tabla se desplaza sola. */
+  .tabla {
+    margin-top: 18px;
+    overflow-x: auto;
+    /* Bloque contenedor de los rótulos absolutos (.oculto): sin él se
+       posicionan contra la página y se llevan el ancho del documento. */
+    position: relative;
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: 10px;
+  }
+  table { width: 100%; border-collapse: collapse; min-width: 620px; }
+
+  thead th {
+    text-align: left;
+    padding: 11px 16px;
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--tinta-tenue);
+    border-bottom: 1px solid var(--linea);
+    white-space: nowrap;
+  }
+
+  .grupo th {
+    text-align: left;
+    padding: 9px 16px;
+    background: var(--bruma);
+    border-bottom: 1px solid var(--linea-tenue);
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    color: var(--tinta-suave);
+  }
+
+  tbody td { padding: 9px 16px; border-bottom: 1px solid var(--linea-tenue); vertical-align: middle; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover td { background: var(--bruma); }
+
+  .fila__nombre { font-weight: 600; color: var(--azul); text-decoration: none; }
+  .fila__nombre:hover { text-decoration: underline; }
+  .fila--apagada .fila__nombre { color: var(--tinta-tenue); }
+  .fila__apagado {
+    margin-left: 9px;
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--tinta-tenue);
+  }
+
+  .num { text-align: right; }
+  td.num { font-weight: 600; white-space: nowrap; }
+  .moneda { font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .acciones { display: flex; justify-content: flex-end; gap: 8px; }
+  /* Objetivo táctil completo: esta tabla se usa desde el teléfono. */
+  .acciones .sis-boton { min-height: 44px; padding: 6px 14px; }
+
+  .pie { margin-top: 16px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 72ch; }
+</style>

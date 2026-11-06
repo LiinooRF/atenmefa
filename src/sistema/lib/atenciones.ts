@@ -2,7 +2,7 @@
  * Guardado de atenciones. Vive aparte de la pantalla porque lo usan tanto
  * el formulario como la API de autoguardado.
  */
-import { eq, sql } from 'drizzle-orm';
+import { and, desc, eq, sql } from 'drizzle-orm';
 import { bd, esquema } from './base';
 import { historia, exigidos } from '../historia';
 
@@ -101,4 +101,121 @@ export function ahoraEnVenezuela() {
     timeZone: 'America/Caracas',
     hour: '2-digit', minute: '2-digit', hour12: false,
   }).format(new Date());
+}
+
+/* ------------------------------------------------------------------
+   Borradores: reabrirlos, terminarlos y saber qué les falta.
+   ------------------------------------------------------------------ */
+
+/**
+ * Un id que no tiene forma de uuid revienta la consulta antes de buscar:
+ * Postgres rechaza el cast y el error sale como falla del servidor. Se
+ * filtra acá para poder contestar "no existe" con tranquilidad.
+ */
+export const esIdentificador = (t: string) =>
+  /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(t);
+
+/** La atención con su paciente al lado, como la pide la pantalla de edición. */
+export async function atencionPara(id: string) {
+  if (!esIdentificador(id)) return null;
+
+  const [fila] = await bd
+    .select({
+      id: esquema.atencion.id,
+      numero: esquema.atencion.numero,
+      estado: esquema.atencion.estado,
+      fecha: esquema.atencion.fecha,
+      datos: esquema.atencion.datos,
+      creada: esquema.atencion.creada,
+      anuladaMotivo: esquema.atencion.anuladaMotivo,
+      paciente: esquema.paciente.nombre,
+      cedula: esquema.paciente.cedula,
+    })
+    .from(esquema.atencion)
+    .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+    .where(eq(esquema.atencion.id, id))
+    .limit(1);
+
+  return fila ?? null;
+}
+
+/**
+ * Escribe los cambios de un borrador. No inserta: actualiza la misma fila,
+ * así el número de caso no se mueve.
+ *
+ * El estado va en el WHERE a propósito. Si alguien cerró o anuló la
+ * atención desde otra pestaña mientras esta estaba abierta, la escritura no
+ * encuentra fila y devuelve null en vez de revivir un caso ya firmado.
+ */
+export async function guardarBorrador(
+  id: string,
+  datos: Record<string, string>,
+  cerrar: boolean,
+) {
+  /* Se mira el estado antes de tocar al paciente. pacienteDe corrige nombre
+     y teléfono en la ficha del paciente, que es compartida: si el guardado
+     va a rebotar porque la atención ya se cerró, ese arreglo no puede quedar
+     escrito igual mientras la pantalla dice que no se guardó nada. */
+  const [antes] = await bd
+    .select({ estado: esquema.atencion.estado })
+    .from(esquema.atencion)
+    .where(eq(esquema.atencion.id, id))
+    .limit(1);
+
+  if (antes?.estado !== 'borrador') return null;
+
+  const paciente = await pacienteDe(datos);
+
+  const [guardada] = await bd
+    .update(esquema.atencion)
+    .set({
+      // Si corrigieron la cédula, el caso pasa al paciente correcto.
+      pacienteId: paciente.id,
+      estado: cerrar ? 'cerrada' : 'borrador',
+      fecha: datos.fecha,
+      aseguradora: datos.aseguradora ?? null,
+      poliza: datos.poliza ?? null,
+      casoNumero: datos.caso_numero ?? null,
+      datos,
+      cerrada: cerrar ? new Date() : null,
+    })
+    .where(and(eq(esquema.atencion.id, id), eq(esquema.atencion.estado, 'borrador')))
+    .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
+
+  return guardada ?? null;
+}
+
+/**
+ * Los borradores sin terminar, del más reciente al más viejo, con la lista
+ * de campos que todavía impiden cerrarlos.
+ */
+export async function borradoresAbiertos(limite = 100) {
+  const filas = await bd
+    .select({
+      id: esquema.atencion.id,
+      numero: esquema.atencion.numero,
+      fecha: esquema.atencion.fecha,
+      creada: esquema.atencion.creada,
+      aseguradora: esquema.atencion.aseguradora,
+      datos: esquema.atencion.datos,
+      paciente: esquema.paciente.nombre,
+      cedula: esquema.paciente.cedula,
+    })
+    .from(esquema.atencion)
+    .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+    .where(eq(esquema.atencion.estado, 'borrador'))
+    .orderBy(desc(esquema.atencion.creada))
+    .limit(limite);
+
+  /* El diagnóstico y los faltantes se calculan acá y no en la pantalla:
+     un genérico dentro del JSX de Astro se parsea como etiqueta. */
+  return filas.map(({ datos, ...caso }) => {
+    const campos = (datos ?? {}) as Record<string, string>;
+    return {
+      ...caso,
+      idx: campos.idx ?? '',
+      motivo: campos.motivo ?? '',
+      faltan: faltantes(campos),
+    };
+  });
 }
