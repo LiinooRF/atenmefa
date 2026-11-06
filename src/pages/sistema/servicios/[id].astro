@@ -14,8 +14,12 @@ import {
   CATEGORIAS, MONEDAS, activarServicio, dinero, guardarServicio, rotuloCategoria,
 } from '../../../sistema/lib/cobro';
 import { eq, sql } from 'drizzle-orm';
+import { exigir } from '../../../sistema/lib/guardia';
 
 export const prerender = false;
+
+const corte = exigir(Astro, 'editar_catalogo');
+if (corte) return corte;
 
 const { id } = Astro.params;
 const usuario = Astro.locals.usuario!;

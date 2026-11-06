@@ -100,6 +100,14 @@ export const CUENTAS = {
     nombre: 'Médico de Prueba',
     rol: 'Médico',
   },
+  /* Segundo médico: sin él no se puede probar que un borrador lo termina
+     quien lo abrió, porque con una sola cuenta médica todo es propio. */
+  medico2: {
+    correo: 'medico2@atenmefa.local',
+    clave: 'clave-de-prueba-3',
+    nombre: 'Segundo Médico',
+    rol: 'Médico',
+  },
   administracion: {
     correo: 'admin@atenmefa.local',
     clave: 'clave-de-prueba-2',

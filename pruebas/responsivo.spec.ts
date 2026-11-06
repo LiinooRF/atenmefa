@@ -32,7 +32,7 @@ test.beforeAll(async ({ browser }) => {
      cómo se ven las pantallas, no si se pueden llenar en el teléfono. */
   const contexto = await browser.newContext({ viewport: { width: 1280, height: 900 } });
   const page = await contexto.newPage();
-  await entrar(page, 'administracion');
+  await entrar(page, 'medico');
 
   const cerrada = await crearAtencionCerrada(page, {
     nombre: 'Josefina Mercedes Álvarez de Prueba',
@@ -50,14 +50,19 @@ test.beforeAll(async ({ browser }) => {
     cedula: CEDULA_BORRADOR,
   });
 
-  // Un servicio propio para poder abrir la pantalla de edición del catálogo.
-  await page.goto('/sistema/servicios');
-  await page.getByLabel('Servicio').fill(SERVICIO);
-  await page.getByLabel('Precio').fill('21,00');
-  await page.getByRole('button', { name: 'Agregar al catálogo' }).click();
-  await page.getByRole('link', { name: SERVICIO }).first().click();
-  await expect(page).toHaveURL(/\/sistema\/servicios\/[0-9a-f-]{36}$/);
-  const servicio = new URL(page.url()).pathname;
+  /* El catálogo es de administración: hace falta su sesión. El médico que
+     viene llenando las historias no puede abrirlo, y está bien que no pueda. */
+  const deAdmin = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const admin = await deAdmin.newPage();
+  await entrar(admin, 'administracion');
+  await admin.goto('/sistema/servicios');
+  await admin.getByLabel('Servicio').fill(SERVICIO);
+  await admin.getByLabel('Precio').fill('21,00');
+  await admin.getByRole('button', { name: 'Agregar al catálogo' }).click();
+  await admin.getByRole('link', { name: SERVICIO }).first().click();
+  await expect(admin).toHaveURL(/\/sistema\/servicios\/[0-9a-f-]{36}$/);
+  const servicio = new URL(admin.url()).pathname;
+  await deAdmin.close();
 
   const mes = await mesDeLaAtencion(cerrada);
 
@@ -107,7 +112,8 @@ test('ninguna pantalla del panel desborda a 390 px', async ({ page }) => {
 });
 
 test('la barra del panel y el pie de guardar caben sin desplazar', async ({ page }) => {
-  await entrar(page, 'administracion');
+  // El formulario es del médico: administración no escribe historias.
+  await entrar(page, 'medico');
   await page.goto('/sistema/atencion/nueva');
 
   // La barra fija de arriba y la de guardar son las dos que pueden empujar.

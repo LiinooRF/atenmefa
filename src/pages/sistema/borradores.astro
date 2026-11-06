@@ -9,8 +9,12 @@
 import Sistema from '../../layouts/Sistema.astro';
 import Icono from '../../components/Icono.astro';
 import { borradoresAbiertos } from '../../sistema/lib/atenciones';
+import { exigir } from '../../sistema/lib/guardia';
 
 export const prerender = false;
+
+const corte = exigir(Astro, 'escribir_historia');
+if (corte) return corte;
 
 const borradores = await borradoresAbiertos();
 const listos = borradores.filter((b) => b.faltan.length === 0).length;

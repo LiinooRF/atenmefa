@@ -4,11 +4,15 @@ import Seccion from '../../../components/sistema/Seccion.astro';
 import Icono from '../../../components/Icono.astro';
 import { historia } from '../../../sistema/historia';
 import { bd, esquema } from '../../../sistema/lib/base';
+import { exigir } from '../../../sistema/lib/guardia';
 import {
   limpiarDatos, faltantes, pacienteDe, anotar, hoyEnVenezuela, ahoraEnVenezuela,
 } from '../../../sistema/lib/atenciones';
 
 export const prerender = false;
+
+const corte = exigir(Astro, 'escribir_historia');
+if (corte) return corte;
 
 const usuario = Astro.locals.usuario!;
 let error = '';

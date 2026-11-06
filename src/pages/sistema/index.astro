@@ -3,8 +3,12 @@ import Sistema from '../../layouts/Sistema.astro';
 import Icono from '../../components/Icono.astro';
 import { bd, esquema } from '../../sistema/lib/base';
 import { desc, eq, sql, and, ilike, or } from 'drizzle-orm';
+import { exigir } from '../../sistema/lib/guardia';
 
 export const prerender = false;
+
+const corte = exigir(Astro, 'ver_casos');
+if (corte) return corte;
 
 const busca = (Astro.url.searchParams.get('q') ?? '').trim();
 const mes = Astro.url.searchParams.get('mes') ?? '';

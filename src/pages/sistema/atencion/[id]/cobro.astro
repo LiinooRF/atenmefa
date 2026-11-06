@@ -22,8 +22,12 @@ import {
   renglonesDe, resumir,
 } from '../../../../sistema/lib/cobro';
 import { eq } from 'drizzle-orm';
+import { exigir } from '../../../../sistema/lib/guardia';
 
 export const prerender = false;
+
+const corte = exigir(Astro, 'cargar_cobro');
+if (corte) return corte;
 
 const { id } = Astro.params;
 const usuario = Astro.locals.usuario!;

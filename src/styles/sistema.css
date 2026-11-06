@@ -241,3 +241,7 @@
   color: #8f1017;
   font-size: var(--u-sm);
 }
+
+/* Anular es destructivo aunque no borre: el control se distingue sin gritar. */
+.sis-boton.anular { color: var(--rojo); border-color: #f0c4c7; }
+.sis-boton.anular:hover { background: #fdeced; border-color: var(--rojo); }

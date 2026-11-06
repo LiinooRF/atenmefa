@@ -10,8 +10,12 @@
 import Sistema from '../../layouts/Sistema.astro';
 import Icono from '../../components/Icono.astro';
 import { consolidadoDelMes, mesPedido, type MontoPorMoneda } from '../../sistema/lib/cierre';
+import { exigir } from '../../sistema/lib/guardia';
 
 export const prerender = false;
+
+const corte = exigir(Astro, 'ver_cierre');
+if (corte) return corte;
 
 const mes = mesPedido(Astro.url.searchParams.get('mes'));
 const pedido = (Astro.url.searchParams.get('cobrar_a') ?? '').trim();

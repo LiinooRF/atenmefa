@@ -31,10 +31,21 @@ async function elegirServicio(page: Page, nombre: string) {
   await page.locator('#servicio').selectOption(valor!);
 }
 
-async function entrar(page: Page) {
+/** Administración: la necesita todo lo que toca precios. */
+async function entrarComoAdmin(page: Page) {
   await page.goto('/sistema/entrar');
   await page.getByLabel('Correo').fill('admin@atenmefa.local');
   await page.getByLabel('Clave').fill('clave-de-prueba-2');
+  await page.getByRole('button', { name: 'Entrar' }).click();
+  await expect(page).toHaveURL(/\/sistema$/);
+}
+
+/* Entra como médico: este archivo arma historias clínicas, y eso no lo
+   hace administración. El cobro sí lo pueden cargar los dos roles. */
+async function entrar(page: Page) {
+  await page.goto('/sistema/entrar');
+  await page.getByLabel('Correo').fill('medico@atenmefa.local');
+  await page.getByLabel('Clave').fill('clave-de-prueba-1');
   await page.getByRole('button', { name: 'Entrar' }).click();
   await expect(page).toHaveURL(/\/sistema$/);
 }
@@ -45,18 +56,28 @@ test.beforeAll(async ({ browser }) => {
   const page = await browser.newPage();
   await entrar(page);
 
+  /* El catálogo lo maneja administración, no el médico: hace falta su sesión. */
+  const deAdmin = await browser.newContext();
+  const admin = await deAdmin.newPage();
+  await admin.goto('/sistema/entrar');
+  await admin.getByLabel('Correo').fill('admin@atenmefa.local');
+  await admin.getByLabel('Clave').fill('clave-de-prueba-2');
+  await admin.getByRole('button', { name: 'Entrar' }).click();
+  await expect(admin).toHaveURL(/\/sistema$/);
+
   // Dos servicios del catálogo, uno de consulta y uno de laboratorio.
   for (const [nombre, categoria, precio] of [
     [CONSULTA, 'Consulta', '40,00'],
     [LABORATORIO, 'Laboratorio', '18,50'],
   ]) {
-    await page.goto('/sistema/servicios');
-    await page.getByLabel('Servicio').fill(nombre);
-    await page.getByLabel('Categoría').selectOption({ label: categoria });
-    await page.getByLabel('Precio').fill(precio);
-    await page.getByRole('button', { name: 'Agregar al catálogo' }).click();
-    await expect(page.getByRole('link', { name: nombre })).toBeVisible();
+    await admin.goto('/sistema/servicios');
+    await admin.getByLabel('Servicio').fill(nombre);
+    await admin.getByLabel('Categoría').selectOption({ label: categoria });
+    await admin.getByLabel('Precio').fill(precio);
+    await admin.getByRole('button', { name: 'Agregar al catálogo' }).click();
+    await expect(admin.getByRole('link', { name: nombre })).toBeVisible();
   }
+  await deAdmin.close();
 
   // Un caso con seguro, para que el cobro proponga la aseguradora.
   await page.goto('/sistema/atencion/nueva');
@@ -139,7 +160,8 @@ test('la ficha del caso muestra el total cargado', async ({ page }) => {
 });
 
 test('subir el precio del catálogo no mueve lo ya cargado', async ({ page }) => {
-  await entrar(page);
+  // Tocar precios es de administración; el médico no abre el catálogo.
+  await entrarComoAdmin(page);
   await page.goto('/sistema/servicios');
   await page.getByRole('link', { name: CONSULTA }).click();
 
@@ -154,7 +176,9 @@ test('subir el precio del catálogo no mueve lo ya cargado', async ({ page }) =>
 });
 
 test('un servicio desactivado sale del selector pero no de lo cargado', async ({ page }) => {
-  await entrar(page);
+  /* Desactivar es tocar el catálogo: administración. Después se mira el
+     cobro, que sí puede ver cualquiera de los dos roles. */
+  await entrarComoAdmin(page);
   await page.goto('/sistema/servicios');
   await page
     .locator('tr', { has: page.getByRole('link', { name: LABORATORIO }) })

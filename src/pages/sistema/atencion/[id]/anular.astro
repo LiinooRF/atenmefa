@@ -1,0 +1,194 @@
+---
+/**
+ * Anular una atención cerrada.
+ *
+ * Es la única salida ante un error, porque en este sistema nada se borra.
+ * La atención queda guardada tal como está; lo que cambia es que deja de
+ * contar: no entra en el cierre del mes y la ficha la muestra tachada.
+ *
+ * Exige motivo escrito. Un registro clínico que desaparece sin explicación
+ * es exactamente lo que una auditoría va a preguntar.
+ */
+import Sistema from '../../../../layouts/Sistema.astro';
+import Icono from '../../../../components/Icono.astro';
+import { bd, esquema } from '../../../../sistema/lib/base';
+import { anotar, esIdentificador } from '../../../../sistema/lib/atenciones';
+import { exigir } from '../../../../sistema/lib/guardia';
+import { eq, and } from 'drizzle-orm';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'anular_atencion');
+if (corte) return corte;
+
+const { id } = Astro.params;
+const usuario = Astro.locals.usuario!;
+
+if (!esIdentificador(id ?? '')) return Astro.redirect('/sistema');
+
+const [caso] = await bd
+  .select({
+    id: esquema.atencion.id,
+    numero: esquema.atencion.numero,
+    estado: esquema.atencion.estado,
+    fecha: esquema.atencion.fecha,
+    aseguradora: esquema.atencion.aseguradora,
+    datos: esquema.atencion.datos,
+    anuladaMotivo: esquema.atencion.anuladaMotivo,
+    paciente: esquema.paciente.nombre,
+    cedula: esquema.paciente.cedula,
+    medico: esquema.user.name,
+  })
+  .from(esquema.atencion)
+  .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+  .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
+  .where(eq(esquema.atencion.id, id!))
+  .limit(1);
+
+if (!caso) return Astro.redirect('/sistema');
+
+let error = '';
+/* Lo tecleado se devuelve a la pantalla: si rebota por el número, nadie
+   debería tener que volver a escribir el motivo entero. */
+let motivoEscrito = '';
+let confirmaEscrito = '';
+const yaAnulada = caso.estado === 'anulada';
+
+if (Astro.request.method === 'POST' && !yaAnulada) {
+  const form = await Astro.request.formData();
+  const motivo = String(form.get('motivo') ?? '').trim();
+  const confirma = String(form.get('confirma') ?? '').trim();
+  motivoEscrito = motivo;
+  confirmaEscrito = confirma;
+
+  if (motivo.length < 10) {
+    error = 'Escriba el motivo con un poco más de detalle: lo va a leer alguien que no estuvo acá.';
+  } else if (confirma !== String(caso.numero)) {
+    error = `Para confirmar, escriba el número de la atención: ${caso.numero}.`;
+  } else {
+    /* El estado va en el WHERE: si otro la anuló mientras esta pantalla
+       estaba abierta, no se pisa el motivo del primero. */
+    const [hecha] = await bd
+      .update(esquema.atencion)
+      .set({ estado: 'anulada', anuladaPor: usuario.id, anuladaMotivo: motivo })
+      .where(and(eq(esquema.atencion.id, caso.id), eq(esquema.atencion.estado, 'cerrada')))
+      .returning({ id: esquema.atencion.id });
+
+    if (!hecha) {
+      error = 'La atención cambió de estado mientras esta pantalla estaba abierta. Vuelva a la ficha y revise.';
+    } else {
+      await anotar(usuario.id, 'anulo', caso.id, { numero: caso.numero, motivo });
+      return Astro.redirect(`/sistema/atencion/${caso.id}`);
+    }
+  }
+}
+
+const d = (caso.datos ?? {}) as Record<string, string>;
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
+---
+
+<Sistema titulo={`Anular atención ${caso.numero}`}>
+  <nav class="miga">
+    <a href="/sistema">Casos</a> <span>/</span>
+    <a href={`/sistema/atencion/${caso.id}`}>Atención {caso.numero}</a> <span>/</span>
+    Anular
+  </nav>
+
+  {yaAnulada ? (
+    <section class="sis-tarjeta aviso">
+      <h1>Esta atención ya está anulada</h1>
+      <p>Motivo registrado: {caso.anuladaMotivo}</p>
+      <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}`}>Ver la ficha</a>
+    </section>
+  ) : caso.estado === 'borrador' ? (
+    <section class="sis-tarjeta aviso">
+      <h1>Esta atención todavía es un borrador</h1>
+      <p>
+        Un borrador no hace falta anularlo: no entra en el cierre del mes ni se
+        entregó a nadie. Solo se anulan las atenciones ya cerradas.
+      </p>
+      <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}`}>Ver la ficha</a>
+    </section>
+  ) : (
+    <div class="anular">
+      <h1>Anular la atención N° <span class="cifra">{caso.numero}</span></h1>
+
+      <section class="sis-tarjeta resumen">
+        <dl>
+          <div><dt>Paciente</dt><dd>{caso.paciente} · {caso.cedula}</dd></div>
+          <div><dt>Fecha</dt><dd>{fechaLarga(caso.fecha)}</dd></div>
+          <div><dt>Atendió</dt><dd>{caso.medico}</dd></div>
+          <div><dt>Diagnóstico</dt><dd>{d.idx ?? 'Sin diagnóstico'}</dd></div>
+          <div><dt>Se cobra a</dt><dd>{caso.aseguradora ?? 'El paciente'}</dd></div>
+        </dl>
+      </section>
+
+      <section class="sis-tarjeta que-pasa">
+        <h2>Qué pasa al anularla</h2>
+        <ul>
+          <li><Icono nombre="escudo" tam={17} />La historia clínica <strong>se conserva completa</strong>. No se borra nada.</li>
+          <li><Icono nombre="escudo" tam={17} />Deja de contar en el <strong>cierre del mes</strong> y no se le cobra a nadie.</li>
+          <li><Icono nombre="escudo" tam={17} />La ficha queda marcada como anulada, con su motivo y con quién la anuló.</li>
+          <li><Icono nombre="escudo" tam={17} />Si hace falta, se registra una atención nueva. <strong>Esto no se deshace.</strong></li>
+        </ul>
+      </section>
+
+      {error && <p class="sis-error"><Icono nombre="escudo" tam={18} />{error}</p>}
+
+      <form method="post" class="sis-tarjeta formulario">
+        <div class="sis-campo">
+          <label for="motivo">Motivo de la anulación</label>
+          <textarea id="motivo" name="motivo" required minlength="10" rows="3"
+                    placeholder="Por ejemplo: se registró con la cédula equivocada, la atención correcta es la N° 118."
+          >{motivoEscrito}</textarea>
+          <span class="pista">Queda en la ficha y en la bitácora. Lo va a leer alguien que no estuvo acá.</span>
+        </div>
+
+        <div class="sis-campo">
+          <label for="confirma">Escriba el número de la atención para confirmar</label>
+          <input id="confirma" name="confirma" inputmode="numeric" autocomplete="off"
+                 required placeholder={String(caso.numero)} value={confirmaEscrito} />
+          <span class="pista">Es la atención N° {caso.numero}.</span>
+        </div>
+
+        <div class="formulario__acciones">
+          <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}`}>No anular</a>
+          <button type="submit" class="sis-boton sis-boton--primario">
+            <Icono nombre="escudo" tam={18} />
+            Anular la atención
+          </button>
+        </div>
+      </form>
+    </div>
+  )}
+</Sistema>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .aviso { max-width: 560px; display: grid; gap: 11px; justify-items: start; }
+  .aviso h1 { font-size: var(--u-xl); }
+  .aviso p { color: var(--tinta-suave); }
+
+  .anular { max-width: 620px; display: grid; gap: 14px; }
+  .anular h1 { font-size: var(--u-xl); }
+
+  .resumen dl { margin: 0; display: grid; gap: 1px; }
+  .resumen div { display: grid; grid-template-columns: 110px minmax(0, 1fr); gap: 14px; padding: 7px 0; border-top: 1px solid var(--linea-tenue); }
+  .resumen div:first-child { border-top: 0; padding-top: 0; }
+  .resumen dt { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .resumen dd { margin: 0; }
+
+  .que-pasa h2 { font-size: var(--u-md); margin-bottom: 11px; }
+  .que-pasa ul { list-style: none; margin: 0; padding: 0; display: grid; gap: 9px; }
+  .que-pasa li { display: flex; align-items: flex-start; gap: 9px; font-size: var(--u-sm); color: var(--tinta-suave); }
+  .que-pasa :global(svg) { color: var(--rojo); flex: none; margin-top: 2px; }
+
+  .formulario { display: grid; gap: 16px; }
+  .formulario__acciones { display: flex; flex-wrap: wrap; gap: 10px; justify-content: flex-end; }
+  .formulario__acciones .sis-boton { min-height: 46px; }
+</style>

@@ -13,6 +13,7 @@ import type { APIRoute } from 'astro';
 // ("Named export 'Workbook' not found"). Tiene que entrar por el default.
 import ExcelJS from 'exceljs';
 import { anotar } from '../../../sistema/lib/atenciones';
+import { exigirEnApi } from '../../../sistema/lib/guardia';
 import {
   consolidadoDelMes, formatoPara, lineasDe, mesPedido, ordenarMonedas,
   type ColumnaExcel, type LineaDeCobro,
@@ -54,6 +55,9 @@ function celda(columna: ColumnaExcel, linea: LineaDeCobro) {
 }
 
 export const GET: APIRoute = async (ctx) => {
+  const corte = exigirEnApi(ctx, 'exportar_cierre');
+  if (corte) return corte;
+
   const usuario = ctx.locals.usuario!;
   const mes = mesPedido(ctx.url.searchParams.get('mes'));
   const pedido = (ctx.url.searchParams.get('cobrar_a') ?? '').trim();

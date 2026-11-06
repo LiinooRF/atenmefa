@@ -11,8 +11,12 @@ import { bd, esquema } from '../../../../sistema/lib/base';
 import { anotar } from '../../../../sistema/lib/atenciones';
 import { clinica } from '../../../../data/clinica';
 import { eq } from 'drizzle-orm';
+import { exigir } from '../../../../sistema/lib/guardia';
 
 export const prerender = false;
+
+const corte = exigir(Astro, 'imprimir_documento');
+if (corte) return corte;
 
 const { id } = Astro.params;
 const usuario = Astro.locals.usuario!;

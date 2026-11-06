@@ -31,7 +31,7 @@ let caso = '';
 
 test.beforeAll(async ({ browser }) => {
   const page = await browser.newPage();
-  await entrar(page, 'administracion');
+  await entrar(page, 'medico');
 
   // Un caso con seguro: así mover un renglón al seguro significa algo.
   caso = await crearAtencionCerrada(page, { nombre: NOMBRE, cedula: CEDULA, aseguradora: SEGURO });

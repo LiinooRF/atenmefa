@@ -6,8 +6,13 @@ import { bd, esquema } from '../../../sistema/lib/base';
 import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
 import { dinero, frasePagador, montoRenglon, renglonesDe, resumir } from '../../../sistema/lib/cobro';
 import { eq, desc, and, ne } from 'drizzle-orm';
+import { exigir } from '../../../sistema/lib/guardia';
+import { puede, puedeEditarAtencion } from '../../../sistema/lib/permisos';
 
 export const prerender = false;
+
+const corte = exigir(Astro, 'ver_historia');
+if (corte) return corte;
 
 const { id } = Astro.params;
 const usuario = Astro.locals.usuario!;
@@ -33,6 +38,7 @@ const [caso] = await bd
     paciente: esquema.paciente.nombre,
     cedula: esquema.paciente.cedula,
     telefono: esquema.paciente.telefono,
+    medicoId: esquema.atencion.medicoId,
     medico: esquema.user.name,
     colegiatura: esquema.user.colegiatura,
   })
@@ -110,16 +116,23 @@ const etiqueta = {
       </p>
     </div>
     <div class="cab__acciones">
-      {caso.estado === 'borrador' && (
+      {puedeEditarAtencion(usuario, caso) && (
         <a class="sis-boton sis-boton--primario" href={`/sistema/atencion/${caso.id}/editar`}>
           <Icono nombre="flecha" tam={18} />
           Continuar la atención
         </a>
       )}
-      <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}/cobro`}>
-        <Icono nombre="mas" tam={18} />
-        Cargar cobro
-      </a>
+      {puede(usuario.rol as string, 'cargar_cobro') && (
+        <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}/cobro`}>
+          <Icono nombre="mas" tam={18} />
+          Cargar cobro
+        </a>
+      )}
+      {caso.estado === 'cerrada' && puede(usuario.rol as string, 'anular_atencion') && (
+        <a class="sis-boton sis-boton--suave anular" href={`/sistema/atencion/${caso.id}/anular`}>
+          Anular
+        </a>
+      )}
       <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}/documento`} target="_blank">
         <Icono nombre="laboratorio" tam={18} />
         Documento

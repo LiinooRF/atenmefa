@@ -130,9 +130,14 @@ export async function atencionPara(id: string) {
       anuladaMotivo: esquema.atencion.anuladaMotivo,
       paciente: esquema.paciente.nombre,
       cedula: esquema.paciente.cedula,
+      /* Hacen falta para saber si quien mira es el dueño del borrador y,
+         si no lo es, poder decirle de quién es. */
+      medicoId: esquema.atencion.medicoId,
+      medico: esquema.user.name,
     })
     .from(esquema.atencion)
     .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+    .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
     .where(eq(esquema.atencion.id, id))
     .limit(1);
 
@@ -151,18 +156,23 @@ export async function guardarBorrador(
   id: string,
   datos: Record<string, string>,
   cerrar: boolean,
+  /* Quién está guardando. Va en el WHERE, no solo comprobado en la
+     pantalla: un POST armado a mano contra el borrador de otro médico tiene
+     que rebotar en la base, no depender de que la vista lo haya mirado. */
+  medicoId: string,
 ) {
   /* Se mira el estado antes de tocar al paciente. pacienteDe corrige nombre
      y teléfono en la ficha del paciente, que es compartida: si el guardado
      va a rebotar porque la atención ya se cerró, ese arreglo no puede quedar
      escrito igual mientras la pantalla dice que no se guardó nada. */
   const [antes] = await bd
-    .select({ estado: esquema.atencion.estado })
+    .select({ estado: esquema.atencion.estado, medicoId: esquema.atencion.medicoId })
     .from(esquema.atencion)
     .where(eq(esquema.atencion.id, id))
     .limit(1);
 
   if (antes?.estado !== 'borrador') return null;
+  if (antes.medicoId !== medicoId) return null;
 
   const paciente = await pacienteDe(datos);
 
@@ -179,7 +189,11 @@ export async function guardarBorrador(
       datos,
       cerrada: cerrar ? new Date() : null,
     })
-    .where(and(eq(esquema.atencion.id, id), eq(esquema.atencion.estado, 'borrador')))
+    .where(and(
+      eq(esquema.atencion.id, id),
+      eq(esquema.atencion.estado, 'borrador'),
+      eq(esquema.atencion.medicoId, medicoId),
+    ))
     .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
 
   return guardada ?? null;

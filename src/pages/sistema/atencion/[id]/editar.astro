@@ -11,11 +11,16 @@ import Sistema from '../../../../layouts/Sistema.astro';
 import Seccion from '../../../../components/sistema/Seccion.astro';
 import Icono from '../../../../components/Icono.astro';
 import { historia } from '../../../../sistema/historia';
+import { exigir } from '../../../../sistema/lib/guardia';
+import { puedeEditarAtencion } from '../../../../sistema/lib/permisos';
 import {
   limpiarDatos, faltantes, anotar, atencionPara, guardarBorrador,
 } from '../../../../sistema/lib/atenciones';
 
 export const prerender = false;
+
+const corte = exigir(Astro, 'escribir_historia');
+if (corte) return corte;
 
 const { id } = Astro.params;
 const usuario = Astro.locals.usuario!;
@@ -24,8 +29,11 @@ const caso = await atencionPara(id!);
 if (!caso) return Astro.redirect('/sistema');
 
 /* Una atención cerrada está firmada y una anulada quedó fuera de juego:
-   ninguna de las dos se toca. No se redirige en silencio, se explica. */
-const editable = caso.estado === 'borrador';
+   ninguna de las dos se toca. No se redirige en silencio, se explica.
+   Y un borrador lo termina quien lo abrió: nadie escribe una historia
+   clínica en nombre de otro médico. */
+const editable = puedeEditarAtencion(usuario, caso);
+const ajeno = caso.estado === 'borrador' && caso.medicoId !== usuario.id;
 
 /* Abrir el formulario es ver la historia completa, y eso se registra igual
    que verla en la ficha. El POST no pasa por acá: deja su propio 'edito'. */
@@ -52,7 +60,7 @@ if (Astro.request.method === 'POST' && editable) {
     error = 'Para guardar hace falta al menos el nombre y la cédula del paciente.';
   } else {
     try {
-      const guardada = await guardarBorrador(caso.id, datos, cerrar);
+      const guardada = await guardarBorrador(caso.id, datos, cerrar, usuario.id);
       if (!guardada) {
         error = 'Esta atención dejó de ser un borrador mientras la editaba: vuelva a abrirla para ver cómo quedó.';
       } else {
@@ -90,11 +98,19 @@ const fechaLarga = (f: string) =>
 
   {!editable ? (
     <section class="sis-tarjeta trabada">
-      <h1>{caso.estado === 'cerrada' ? 'Esta atención ya está cerrada' : 'Esta atención está anulada'}</h1>
+      <h1>
+        {ajeno
+          ? 'Este borrador lo abrió otro médico'
+          : caso.estado === 'cerrada'
+            ? 'Esta atención ya está cerrada'
+            : 'Esta atención está anulada'}
+      </h1>
       <p>
-        {caso.estado === 'cerrada'
-          ? `La atención N° ${caso.numero} de ${caso.paciente} se cerró y quedó firmada: no se modifica. Si algo quedó mal, el camino es anularla con su motivo y registrar una nueva.`
-          : `La atención N° ${caso.numero} de ${caso.paciente} fue anulada${caso.anuladaMotivo ? ` (${caso.anuladaMotivo})` : ''}. Se conserva como está, por eso no se edita.`}
+        {ajeno
+          ? `La atención N° ${caso.numero} de ${caso.paciente} la empezó ${caso.medico}. Una historia clínica la termina y la firma quien la abrió: nadie escribe en nombre de otro. Si ${caso.medico} no va a volver al caso, administración puede anularla y se registra una nueva.`
+          : caso.estado === 'cerrada'
+            ? `La atención N° ${caso.numero} de ${caso.paciente} se cerró y quedó firmada: no se modifica. Si algo quedó mal, el camino es anularla con su motivo y registrar una nueva.`
+            : `La atención N° ${caso.numero} de ${caso.paciente} fue anulada${caso.anuladaMotivo ? ` (${caso.anuladaMotivo})` : ''}. Se conserva como está, por eso no se edita.`}
       </p>
       <div class="trabada__acciones">
         <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}`}>Ver la ficha del caso</a>

@@ -49,7 +49,10 @@ test.beforeAll(async ({ browser }) => {
   desde = await ahoraEnLaBase();
 
   const page = await browser.newPage();
-  await entrar(page, 'administracion');
+  /* Las historias las escribe el médico: administración no firma
+     diagnósticos. Las pruebas de abajo sí entran como administración,
+     porque el cierre del mes es suyo. */
+  await entrar(page, 'medico');
 
   /* Un caso repartido: la consulta la cubre el seguro y el insumo que el
      médico agregó encima lo paga el paciente. Es la sal del adobo. */

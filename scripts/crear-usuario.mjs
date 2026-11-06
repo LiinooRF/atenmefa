@@ -5,6 +5,13 @@
  *
  * rol: medico | administracion
  *
+ * Las pruebas de extremo a extremo esperan tres cuentas:
+ *   medico@atenmefa.local   clave-de-prueba-1   medico
+ *   medico2@atenmefa.local  clave-de-prueba-3   medico
+ *   admin@atenmefa.local    clave-de-prueba-2   administracion
+ * La segunda cuenta médica no es un capricho: sin ella no se puede probar
+ * que un borrador lo termina quien lo abrió.
+ *
  * El registro público está cerrado a propósito (`disableSignUp`), así que
  * esto escribe las filas directo usando el hasher de Better Auth: la clave
  * queda en el mismo formato que valida el login.

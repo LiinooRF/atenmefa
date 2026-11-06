@@ -8,12 +8,16 @@
 import Sistema from '../../layouts/Sistema.astro';
 import Icono from '../../components/Icono.astro';
 import { anotar } from '../../sistema/lib/atenciones';
+import { exigir } from '../../sistema/lib/guardia';
 import {
   CATEGORIAS, MONEDAS, catalogo, crearServicio, activarServicio,
   dinero, porCategoria, rotuloCategoria,
 } from '../../sistema/lib/cobro';
 
 export const prerender = false;
+
+const corte = exigir(Astro, 'editar_catalogo');
+if (corte) return corte;
 
 const usuario = Astro.locals.usuario!;
 const verTodos = Astro.url.searchParams.get('todos') === 'si';

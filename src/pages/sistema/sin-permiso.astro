@@ -1,0 +1,47 @@
+---
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { nombreDelRol } from '../../sistema/lib/permisos';
+
+export const prerender = false;
+
+const usuario = Astro.locals.usuario!;
+const motivo = Astro.url.searchParams.get('motivo') ?? 'Su usuario no tiene acceso a esa pantalla.';
+---
+
+<Sistema titulo="Sin permiso">
+  <div class="corte sis-tarjeta">
+    <Icono nombre="escudo" tam={30} />
+    <h1>No tiene permiso para eso</h1>
+    <p class="corte__motivo">{motivo}</p>
+    <p class="corte__quien">
+      Entró como <strong>{usuario.name}</strong>, con el rol de
+      <strong>{nombreDelRol(usuario.rol as string)}</strong>.
+      Si necesita este acceso, pídalo a administración.
+    </p>
+    <a class="sis-boton sis-boton--azul" href="/sistema">Volver a los casos</a>
+  </div>
+</Sistema>
+
+<style>
+  .corte {
+    max-width: 520px;
+    margin: 40px auto 0;
+    text-align: center;
+    display: grid;
+    justify-items: center;
+    gap: 12px;
+    padding: 36px 30px;
+  }
+  .corte :global(svg) { color: var(--rojo); }
+  .corte h1 { font-size: var(--u-xl); }
+  .corte__motivo { color: var(--tinta-suave); }
+  .corte__quien {
+    font-size: var(--u-sm);
+    color: var(--tinta-tenue);
+    padding-top: 13px;
+    border-top: 1px solid var(--linea-tenue);
+    width: 100%;
+  }
+  .corte .sis-boton { margin-top: 6px; }
+</style>

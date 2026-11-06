@@ -10,6 +10,7 @@ import '@fontsource/noto-sans/latin-600.css';
 import '../styles/global.css';
 import '../styles/sistema.css';
 import Icono from '../components/Icono.astro';
+import { puede, nombreDelRol, type Permiso } from '../sistema/lib/permisos';
 
 interface Props {
   titulo: string;
@@ -19,12 +20,16 @@ interface Props {
 const { titulo, desnuda = false } = Astro.props;
 const usuario = Astro.locals.usuario;
 
-const enlaces = [
-  { href: '/sistema', texto: 'Casos', icono: 'latido' as const },
-  { href: '/sistema/atencion/nueva', texto: 'Nueva atención', icono: 'mas' as const },
-  { href: '/sistema/borradores', texto: 'Borradores', icono: 'reloj' as const },
-  { href: '/sistema/cierre', texto: 'Cierre del mes', icono: 'laboratorio' as const },
+/* El menú solo muestra lo que el rol puede abrir: una puerta visible que
+   lleva a "no tiene permiso" es peor que no mostrarla. */
+const todos: { href: string; texto: string; icono: 'latido' | 'mas' | 'reloj' | 'laboratorio' | 'escudo'; permiso: Permiso }[] = [
+  { href: '/sistema', texto: 'Casos', icono: 'latido', permiso: 'ver_casos' },
+  { href: '/sistema/atencion/nueva', texto: 'Nueva atención', icono: 'mas', permiso: 'escribir_historia' },
+  { href: '/sistema/borradores', texto: 'Borradores', icono: 'reloj', permiso: 'escribir_historia' },
+  { href: '/sistema/cierre', texto: 'Cierre del mes', icono: 'laboratorio', permiso: 'ver_cierre' },
+  { href: '/sistema/servicios', texto: 'Servicios', icono: 'escudo', permiso: 'editar_catalogo' },
 ];
+const enlaces = todos.filter((e) => puede(usuario?.rol as string, e.permiso));
 ---
 
 <!doctype html>
@@ -59,7 +64,7 @@ const enlaces = [
           <div class="sis__quien">
             <span>
               <strong>{usuario.name}</strong>
-              <small>{usuario.rol === 'medico' ? 'Médico' : 'Administración'}</small>
+              <small>{nombreDelRol(usuario.rol as string)}</small>
             </span>
             <form method="post" action="/sistema/salir">
               <button type="submit" class="sis__salir">Salir</button>
