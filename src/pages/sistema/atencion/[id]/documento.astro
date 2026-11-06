@@ -98,7 +98,18 @@ const vitales = [
   <body>
     <div class="acciones">
       <a href={`/sistema/atencion/${caso.id}`}>← Volver a la atención</a>
-      <button type="button" onclick="window.print()">Imprimir o guardar en PDF</button>
+      <div class="acciones__grupo">
+        <span class="acciones__rotulo" id="papel-rotulo">Papel</span>
+        <div class="papel" role="radiogroup" aria-labelledby="papel-rotulo">
+          <button type="button" role="radio" data-papel="carta" aria-checked="true">
+            Carta <em>21,6 × 27,9 cm</em>
+          </button>
+          <button type="button" role="radio" data-papel="oficio" aria-checked="false">
+            Oficio <em>21,6 × 33 cm</em>
+          </button>
+        </div>
+        <button type="button" class="acciones__imprimir">Imprimir o guardar en PDF</button>
+      </div>
     </div>
 
     {caso.estado !== 'cerrada' && (
@@ -110,6 +121,25 @@ const vitales = [
 
     <!-- ===== Página 1: informe de atención ===== -->
     <article class="hoja">
+     <table class="corrida">
+      <!-- Se repite al pie de CADA hoja impresa. Un <tfoot> es la única
+           manera fiable: el navegador lo vuelve a dibujar en cada página y,
+           a diferencia de position:fixed, además le reserva el sitio, así que
+           nunca se le monta encima del texto. Sin esto, de un informe de tres
+           hojas las dos últimas salían sin nada que dijera de quién son. -->
+      <tfoot>
+        <tr>
+          <td>
+            <div class="pie">
+              <span><strong>Atenmefa</strong> · Informe de atención N.° {caso.numero}</span>
+              <span>{caso.paciente} · {caso.cedula} · {fechaLarga(caso.fecha)}</span>
+            </div>
+          </td>
+        </tr>
+      </tfoot>
+      <tbody>
+       <tr>
+        <td>
       <header class="enc">
         <img src="/logo.png" width="62" height="62" alt="" />
         <div class="enc__marca">
@@ -194,11 +224,34 @@ const vitales = [
           <em>Firma del paciente o familiar</em>
         </div>
       </footer>
+        </td>
+       </tr>
+      </tbody>
+     </table>
     </article>
 
     <!-- ===== Página 2: récipe ===== -->
     {hayRecipe && (
       <article class="hoja hoja--recipe">
+       <table class="corrida">
+      <!-- Se repite al pie de CADA hoja impresa. Un <tfoot> es la única
+           manera fiable: el navegador lo vuelve a dibujar en cada página y,
+           a diferencia de position:fixed, además le reserva el sitio, así que
+           nunca se le monta encima del texto. Sin esto, de un informe de tres
+           hojas las dos últimas salían sin nada que dijera de quién son. -->
+      <tfoot>
+        <tr>
+          <td>
+            <div class="pie">
+              <span><strong>Atenmefa</strong> · Récipe N.° {caso.numero}</span>
+              <span>{caso.paciente} · {caso.cedula} · {fechaLarga(caso.fecha)}</span>
+            </div>
+          </td>
+        </tr>
+      </tfoot>
+        <tbody>
+         <tr>
+          <td>
         <header class="enc">
           <img src="/logo.png" width="62" height="62" alt="" />
           <div class="enc__marca">
@@ -244,6 +297,10 @@ const vitales = [
             <em>Médico</em>
           </div>
         </footer>
+          </td>
+         </tr>
+        </tbody>
+       </table>
       </article>
     )}
 
@@ -276,7 +333,36 @@ const vitales = [
       }
       .acciones a { color: var(--azul); font-size: 10pt; text-decoration: none; }
       .acciones a:hover { text-decoration: underline; }
-      .acciones button {
+      .acciones__grupo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+      .acciones__rotulo { font-size: 9pt; color: var(--gris); font-weight: 600; }
+
+      .papel {
+        display: inline-flex;
+        border: 1px solid #bcc4d6;
+        border-radius: 7px;
+        overflow: hidden;
+        background: #fff;
+      }
+      .papel button {
+        display: flex;
+        flex-direction: column;
+        gap: 1px;
+        padding: 7px 14px;
+        border: 0;
+        background: transparent;
+        color: var(--gris);
+        font: inherit;
+        font-size: 9.5pt;
+        font-weight: 600;
+        line-height: 1.25;
+        text-align: left;
+        cursor: pointer;
+      }
+      .papel button + button { border-left: 1px solid #bcc4d6; }
+      .papel button em { font-style: normal; font-size: 7.5pt; font-weight: 400; opacity: 0.75; }
+      .papel button[aria-checked='true'] { background: var(--azul); color: #fff; }
+
+      .acciones__imprimir {
         padding: 10px 20px;
         border: 0;
         border-radius: 7px;
@@ -286,6 +372,10 @@ const vitales = [
         font-size: 10pt;
         font-weight: 600;
         cursor: pointer;
+      }
+
+      @media (max-width: 760px) {
+        .acciones { flex-direction: column; align-items: flex-start; }
       }
 
       .aviso {
@@ -299,17 +389,21 @@ const vitales = [
         font-size: 10pt;
       }
 
-      /* Carta: 215.9 × 279.4 mm, que es lo que usan en Venezuela. */
+      /* El relleno de acá es el MISMO margen que @page le da al papel, para
+         que lo que se ve en pantalla sea lo que sale impreso. Si se cambian,
+         se cambian los dos. El alto lo pone el script según el papel elegido. */
       .hoja {
         width: 215mm;
-        min-height: 279mm;
+        min-height: var(--alto-papel, 279mm);
         margin: 0 auto 20px;
-        padding: 14mm 15mm;
+        padding: 13mm 14mm;
         background: #fff;
         box-shadow: 0 2px 14px rgba(0, 0, 0, 0.14);
       }
 
       .enc {
+        break-inside: avoid;
+        break-after: avoid;
         display: grid;
         grid-template-columns: auto 1fr auto;
         gap: 12px;
@@ -327,11 +421,11 @@ const vitales = [
       .enc__titulo strong { font-size: 15pt; color: var(--azul); font-weight: 800; }
       .enc__titulo small { font-size: 9pt; color: var(--gris); }
 
-      .cabecera { width: 100%; border-collapse: collapse; margin-top: 12px; }
+      .cabecera { width: 100%; border-collapse: collapse; margin-top: 12px; break-inside: avoid; }
       .cabecera th, .cabecera td { border: 1px solid var(--linea); padding: 5px 8px; font-size: 9.5pt; text-align: left; }
       .cabecera th { width: 88px; background: #f2f4f9; color: var(--gris); font-weight: 600; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.03em; }
 
-      .vitales { margin-top: 14px; }
+      .vitales { margin-top: 14px; break-inside: avoid; }
       .vitales ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--linea); }
       .vitales li { flex: 1 1 auto; min-width: 80px; padding: 6px 10px; border-right: 1px solid var(--linea); display: flex; flex-direction: column; }
       .vitales li:last-child { border-right: 0; }
@@ -340,6 +434,7 @@ const vitales = [
       .vitales em { font-style: normal; font-size: 8pt; font-weight: 400; color: var(--gris); }
 
       h2 {
+        break-after: avoid; /* el título no se queda solo al pie de la hoja */
         margin: 0 0 6px;
         font-size: 9pt;
         text-transform: uppercase;
@@ -348,13 +443,25 @@ const vitales = [
         font-weight: 700;
       }
 
-      .bloque { margin-top: 13px; break-inside: avoid; }
+      /* El bloque entero NO lleva break-inside: avoid. Lo tenía, y es lo que
+         hacía que el corte saliera mal: un bloque con un diagnóstico largo no
+         cabe en lo que queda de hoja, el navegador lo empuja completo a la
+         siguiente y deja media página en blanco. Lo que no se puede partir es
+         cada renglón y el título junto a lo que titula; el resto fluye. */
+      .bloque { margin-top: 13px; }
       .bloque dl { margin: 0; border-top: 1px solid var(--linea); }
-      .bloque dl > div { display: grid; grid-template-columns: 150px 1fr; gap: 10px; padding: 4px 0; border-bottom: 1px solid #eee; }
+      .bloque dl > div {
+        display: grid;
+        grid-template-columns: 150px 1fr;
+        gap: 10px;
+        padding: 4px 0;
+        border-bottom: 1px solid #eee;
+        break-inside: avoid;
+      }
       .bloque dt { font-size: 8.5pt; color: var(--gris); }
       .bloque dd { margin: 0; font-size: 9.5pt; white-space: pre-wrap; }
 
-      .receta { margin-top: 18px; }
+      .receta { margin-top: 18px; break-inside: avoid; }
       .receta p {
         margin: 0;
         min-height: 60mm;
@@ -367,7 +474,9 @@ const vitales = [
       .receta + .receta p { min-height: 40mm; }
 
       .firma {
-        margin-top: 26mm;
+        /* Eran 26 mm. Con el hueco tan grande, un informe que termina cerca
+           del pie de la hoja se llevaba las firmas solas a la hoja siguiente. */
+        margin-top: 16mm;
         display: grid;
         grid-template-columns: 1fr 1fr;
         gap: 30px;
@@ -381,21 +490,107 @@ const vitales = [
 
       .cifra { font-variant-numeric: tabular-nums; }
 
+      /* La tabla no se ve: es solo el andamio que repite el pie en cada hoja.
+         table-layout fijo para que la columna no se encoja al contenido. */
+      .corrida { width: 100%; border-collapse: collapse; table-layout: fixed; }
+      .corrida > tbody > tr > td,
+      .corrida > tfoot > tr > td { padding: 0; border: 0; vertical-align: top; }
+
+      /* En pantalla el pie sobra: la hoja ya se ve entera y con su membrete. */
+      .pie { display: none; }
+
+
       /* ---------- impresión ---------- */
-      @page { size: letter; margin: 0; }
+      /* El margen del papel va en @page, no en el relleno de .hoja.
+         Antes era @page { margin: 0 }: el navegador armaba la página de borde
+         a borde y el margen de verdad se lo acababa poniendo la impresora, que
+         no recorta lo mismo arriba que abajo. De ahí el corte descentrado.
+         La regla @page vive en su propia hoja de estilo (#papel) porque no se
+         puede cambiar con una clase: para elegir carta u oficio hay que
+         reescribirla. */
 
       @media print {
         body { background: #fff; padding: 0; }
+        /* Que no quede un renglón suelto de un lado del corte. */
+        .hoja { orphans: 3; widows: 3; }
+        /* Los grises de las tablas son parte del formulario, no decoración:
+           sin esto se pierden si la impresora trae los fondos apagados. */
+        .cabecera th, .vitales { print-color-adjust: exact; -webkit-print-color-adjust: exact; }
         .acciones, .aviso { display: none; }
         .hoja {
           width: auto;
           min-height: auto;
           margin: 0;
-          padding: 12mm 14mm;
+          padding: 0; /* el margen ya lo da @page */
           box-shadow: none;
         }
         .hoja--recipe { break-before: page; }
+
+        .pie {
+          display: flex;
+          justify-content: space-between;
+          gap: 10mm;
+          padding: 2mm 0 0;
+          margin-top: 6mm;
+          border-top: 1px solid var(--linea);
+          color: var(--gris);
+          font-size: 7.5pt;
+        }
+        .pie strong { color: var(--azul); }
       }
     </style>
+
+    <!-- La regla @page la reescribe el script, así que esta hoja tiene que
+         seguir siendo un elemento del HTML: sin is:inline Astro se la lleva al
+         CSS empaquetado, el id desaparece y el script no encuentra nada.
+         El valor de acá es el que vale si el navegador no corre JavaScript:
+         carta, que es el caso normal. -->
+    <style id="papel" is:inline>@page { size: letter; margin: 13mm 14mm; }</style>
+
+    <script>
+      /* Carta u oficio. En Venezuela el oficio es de 21,6 × 33 cm, que no es
+         el "legal" de 21,6 × 35,6 cm del que hablan los navegadores: hay que
+         darlo en milímetros o el PDF sale del tamaño equivocado. */
+      const PAPELES = {
+        carta: { medida: 'letter', alto: '279mm' },
+        oficio: { medida: '216mm 330mm', alto: '330mm' },
+      };
+      const MARGEN = '13mm 14mm'; // el mismo relleno que .hoja en pantalla
+      const RECUERDO = 'atenmefa:papel';
+
+      const estilo = document.getElementById('papel');
+      const botones = Array.from(document.querySelectorAll('[data-papel]'));
+
+      function elegir(cual) {
+        const papel = PAPELES[cual];
+        estilo.textContent = `@page { size: ${papel.medida}; margin: ${MARGEN}; }`;
+        document.body.style.setProperty('--alto-papel', papel.alto);
+        for (const boton of botones) {
+          boton.setAttribute('aria-checked', String(boton.dataset.papel === cual));
+        }
+        try {
+          localStorage.setItem(RECUERDO, cual);
+        } catch {
+          /* navegación privada: se queda con lo elegido en esta visita */
+        }
+      }
+
+      for (const boton of botones) {
+        boton.addEventListener('click', () => elegir(boton.dataset.papel));
+      }
+
+      document
+        .querySelector('.acciones__imprimir')
+        .addEventListener('click', () => window.print());
+
+      let guardado = null;
+      try {
+        guardado = localStorage.getItem(RECUERDO);
+      } catch {
+        /* sin localStorage no hay nada que recordar */
+      }
+      /* hasOwn y no `in`: `in` también acierta con 'constructor' y compañía. */
+      elegir(guardado && Object.hasOwn(PAPELES, guardado) ? guardado : 'carta');
+    </script>
   </body>
 </html>

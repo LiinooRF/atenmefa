@@ -112,3 +112,55 @@ test('la ficha del caso enlaza al documento', async ({ page }) => {
   // Se abre aparte para no perder la ficha que el médico está mirando.
   await expect(enlace).toHaveAttribute('target', '_blank');
 });
+
+/* ------------------------------------------------------------------
+   Carta u oficio.
+   ------------------------------------------------------------------ */
+
+test('el documento deja elegir entre carta y oficio, y arranca en carta', async ({ page }) => {
+  await entrar(page, 'medico');
+  await page.goto(`/sistema/atencion/${conRecipe}/documento`);
+
+  await expect(page.getByRole('radio', { name: /Carta/ })).toHaveAttribute('aria-checked', 'true');
+  await expect(page.getByRole('radio', { name: /Oficio/ })).toHaveAttribute('aria-checked', 'false');
+});
+
+test('elegir oficio cambia el tamaño con el que se pagina', async ({ page }) => {
+  await entrar(page, 'medico');
+  await page.goto(`/sistema/atencion/${conRecipe}/documento`);
+
+  const regla = () => page.locator('#papel').textContent();
+
+  // 21,6 × 33 cm. El "legal" de los navegadores mide 35,6 de alto y no sirve.
+  await page.getByRole('radio', { name: /Oficio/ }).click();
+  expect(await regla()).toContain('216mm 330mm');
+
+  await page.getByRole('radio', { name: /Carta/ }).click();
+  expect(await regla()).toContain('letter');
+});
+
+test('el papel elegido sigue puesto al volver a abrir el documento', async ({ page }) => {
+  await entrar(page, 'medico');
+  await page.goto(`/sistema/atencion/${conRecipe}/documento`);
+  await page.getByRole('radio', { name: /Oficio/ }).click();
+
+  await page.goto(`/sistema/atencion/${sinRecipe}/documento`);
+  await expect(page.getByRole('radio', { name: /Oficio/ })).toHaveAttribute('aria-checked', 'true');
+  expect(await page.locator('#papel').textContent()).toContain('216mm 330mm');
+});
+
+test('cada hoja impresa lleva de quién es, no solo la primera', async ({ page }) => {
+  await entrar(page, 'medico');
+  await page.goto(`/sistema/atencion/${conRecipe}/documento`);
+
+  /* El pie va en un <tfoot>, que el navegador repite al pie de cada página
+     impresa. En pantalla sobra, porque la hoja se ve entera y con membrete. */
+  const pies = page.locator('.corrida > tfoot .pie');
+  await expect(pies).toHaveCount(2); // informe y récipe
+  await expect(pies.first()).toBeHidden();
+
+  await page.emulateMedia({ media: 'print' });
+  await expect(pies.first()).toBeVisible();
+  await expect(pies.first()).toContainText(NOMBRE_CON_RECIPE);
+  await expect(pies.first()).toContainText(`N.° ${numeroConRecipe}`);
+});
