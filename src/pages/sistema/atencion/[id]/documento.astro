@@ -1,0 +1,397 @@
+---
+/**
+ * El "2 en 1": informe de atención y récipe, en un solo documento.
+ *
+ * No hay librería de PDF. Es HTML con una hoja de impresión: el médico
+ * toca Imprimir y el navegador saca el PDF. Sale idéntico en pantalla y en
+ * papel, y no hay plantilla aparte que se desincronice del formulario.
+ */
+import { historia } from '../../../../sistema/historia';
+import { bd, esquema } from '../../../../sistema/lib/base';
+import { anotar } from '../../../../sistema/lib/atenciones';
+import { clinica } from '../../../../data/clinica';
+import { eq } from 'drizzle-orm';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+const usuario = Astro.locals.usuario!;
+
+const [caso] = await bd
+  .select({
+    id: esquema.atencion.id,
+    numero: esquema.atencion.numero,
+    estado: esquema.atencion.estado,
+    fecha: esquema.atencion.fecha,
+    aseguradora: esquema.atencion.aseguradora,
+    poliza: esquema.atencion.poliza,
+    casoNumero: esquema.atencion.casoNumero,
+    datos: esquema.atencion.datos,
+    paciente: esquema.paciente.nombre,
+    cedula: esquema.paciente.cedula,
+    telefono: esquema.paciente.telefono,
+    medico: esquema.user.name,
+    colegiatura: esquema.user.colegiatura,
+    msds: esquema.user.msds,
+  })
+  .from(esquema.atencion)
+  .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+  .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
+  .where(eq(esquema.atencion.id, id!))
+  .limit(1);
+
+if (!caso) return Astro.redirect('/sistema');
+
+await anotar(usuario.id, 'imprimio', caso.id);
+
+const d = (caso.datos ?? {}) as Record<string, string>;
+
+/* Lo que ya sale en la cabecera o en la fila de signos vitales no se
+   repite abajo: en papel la repetición hace parecer que falta algo. */
+const yaArriba = new Set([
+  'nombre', 'cedula', 'edad', 'sexo', 'telefono', 'titular', 'direccion',
+  'ciudad', 'aseguradora', 'poliza', 'fecha', 'caso_numero',
+  'ta', 'fc', 'fr', 'temperatura', 'glicemia', 'glasgow', 'saturacion', 'hora_signos',
+]);
+
+const formatear = (clave: string, valor: string) => {
+  const campo = historia.flatMap((s) => s.campos).find((c) => c.clave === clave);
+  if (campo?.tipo === 'fecha') {
+    return new Date(`${valor}T12:00:00`).toLocaleDateString('es-VE', {
+      day: '2-digit', month: '2-digit', year: 'numeric',
+    });
+  }
+  return valor;
+};
+
+/* El récipe es la segunda página: no se repite en el informe. */
+const bloques = historia
+  .filter((s) => s.clave !== 'recipe' && s.clave !== 'signos')
+  .map((s) => ({ ...s, campos: s.campos.filter((c) => d[c.clave] && !yaArriba.has(c.clave)) }))
+  .filter((s) => s.campos.length > 0);
+
+const hayRecipe = Boolean(d.recipe || d.indicaciones);
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit', year: 'numeric' });
+
+const vitales = [
+  ['T/A', d.ta, 'mmHg'], ['FC', d.fc, 'lpm'], ['FR', d.fr, 'rpm'],
+  ['Temp', d.temperatura, '°C'], ['Glicemia', d.glicemia, 'mg/dL'],
+  ['Glasgow', d.glasgow, ''], ['Sat O₂', d.saturacion, '%'],
+].filter(([, v]) => v);
+---
+
+<!doctype html>
+<html lang="es-VE">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Atención {caso.numero} · {caso.paciente}</title>
+    <meta name="robots" content="noindex, nofollow" />
+  </head>
+
+  <body>
+    <div class="acciones">
+      <a href={`/sistema/atencion/${caso.id}`}>← Volver a la atención</a>
+      <button type="button" onclick="window.print()">Imprimir o guardar en PDF</button>
+    </div>
+
+    {caso.estado !== 'cerrada' && (
+      <p class="aviso">
+        Esta atención está en <strong>{caso.estado}</strong>. El documento definitivo
+        se imprime una vez cerrada.
+      </p>
+    )}
+
+    <!-- ===== Página 1: informe de atención ===== -->
+    <article class="hoja">
+      <header class="enc">
+        <img src="/logo.png" width="62" height="62" alt="" />
+        <div class="enc__marca">
+          <strong>Atenmefa</strong>
+          <span>Atención médica familiar</span>
+          <small>{clinica.direccion.calle} · {clinica.direccion.ciudad}, estado {clinica.direccion.estado}</small>
+          <small>{clinica.contacto.whatsapp.visible}{clinica.contacto.segundo && ` · ${clinica.contacto.segundo.visible}`}</small>
+        </div>
+        <div class="enc__titulo">
+          <span>Informe de atención médica</span>
+          <strong class="cifra">N° {caso.numero}</strong>
+          <small>{fechaLarga(caso.fecha)}</small>
+        </div>
+      </header>
+
+      <table class="cabecera">
+        <tbody>
+          <tr>
+            <th>Paciente</th><td colspan="3">{caso.paciente}</td>
+          </tr>
+          <tr>
+            <th>Cédula</th><td>{caso.cedula}</td>
+            <th>Edad</th><td>{d.edad ? `${d.edad} años` : '—'}{d.sexo && ` · ${d.sexo}`}</td>
+          </tr>
+          <tr>
+            <th>Seguro</th><td>{caso.aseguradora ?? 'Paga el paciente'}</td>
+            <th>Póliza</th><td>{caso.poliza ?? '—'}</td>
+          </tr>
+          {(d.hora_inicio || d.hora_fin) && (
+            <tr>
+              <th>Atención</th>
+              <td>{d.hora_inicio ? `Inicio ${d.hora_inicio}` : '—'}{d.hora_fin && ` · cierre ${d.hora_fin}`}</td>
+              <th>Lugar</th><td>{d.lugar ?? '—'}</td>
+            </tr>
+          )}
+          {(d.direccion || caso.telefono) && (
+            <tr>
+              <th>Dirección</th><td>{d.direccion ?? '—'}</td>
+              <th>Teléfono</th><td>{caso.telefono ?? d.telefono ?? '—'}</td>
+            </tr>
+          )}
+        </tbody>
+      </table>
+
+      {vitales.length > 0 && (
+        <section class="vitales">
+          <h2>Signos vitales</h2>
+          <ul>
+            {vitales.map(([r, v, u]) => (
+              <li><span>{r}</span><strong class="cifra">{v}{u && <em> {u}</em>}</strong></li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {bloques.map((s) => (
+        <section class="bloque">
+          <h2>{s.titulo}</h2>
+          <dl>
+            {s.campos.map((c) => (
+              <div>
+                <dt>{c.rotulo}</dt>
+                <dd>{formatear(c.clave, d[c.clave])}{c.unidad && ` ${c.unidad}`}</dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      ))}
+
+      <footer class="firma">
+        <div class="firma__linea">
+          <span>{caso.medico}</span>
+          <small>
+            {caso.colegiatura && `C.M. ${caso.colegiatura}`}
+            {caso.msds && ` · M.S.D.S. ${caso.msds}`}
+          </small>
+          <em>Médico que atiende</em>
+        </div>
+        <div class="firma__linea">
+          <span>&nbsp;</span>
+          <small>&nbsp;</small>
+          <em>Firma del paciente o familiar</em>
+        </div>
+      </footer>
+    </article>
+
+    <!-- ===== Página 2: récipe ===== -->
+    {hayRecipe && (
+      <article class="hoja hoja--recipe">
+        <header class="enc">
+          <img src="/logo.png" width="62" height="62" alt="" />
+          <div class="enc__marca">
+            <strong>Atenmefa</strong>
+            <span>Atención médica familiar</span>
+            <small>{clinica.direccion.calle} · {clinica.direccion.ciudad}</small>
+          </div>
+          <div class="enc__titulo">
+            <span>Récipe</span>
+            <strong class="cifra">N° {caso.numero}</strong>
+            <small>{fechaLarga(caso.fecha)}</small>
+          </div>
+        </header>
+
+        <table class="cabecera">
+          <tbody>
+            <tr><th>Paciente</th><td colspan="3">{caso.paciente}</td></tr>
+            <tr><th>Cédula</th><td>{caso.cedula}</td><th>Edad</th><td>{d.edad ? `${d.edad} años` : '—'}</td></tr>
+          </tbody>
+        </table>
+
+        {d.recipe && (
+          <section class="receta">
+            <h2>Récipe</h2>
+            <p>{d.recipe}</p>
+          </section>
+        )}
+
+        {d.indicaciones && (
+          <section class="receta">
+            <h2>Indicaciones</h2>
+            <p>{d.indicaciones}</p>
+          </section>
+        )}
+
+        <footer class="firma firma--una">
+          <div class="firma__linea">
+            <span>{caso.medico}</span>
+            <small>
+              {caso.colegiatura && `C.M. ${caso.colegiatura}`}
+              {caso.msds && ` · M.S.D.S. ${caso.msds}`}
+            </small>
+            <em>Médico</em>
+          </div>
+        </footer>
+      </article>
+    )}
+
+    <style is:global>
+      :root {
+        --azul: #111663;
+        --rojo: #d31c24;
+        --tinta: #1a1a1a;
+        --gris: #666;
+        --linea: #c9c9c9;
+      }
+
+      * { box-sizing: border-box; }
+
+      body {
+        margin: 0;
+        padding: 26px 16px 60px;
+        background: #e9ecf3;
+        color: var(--tinta);
+        font: 11pt/1.4 'Noto Sans', system-ui, sans-serif;
+      }
+
+      .acciones {
+        max-width: 215mm;
+        margin: 0 auto 18px;
+        display: flex;
+        gap: 12px;
+        align-items: center;
+        justify-content: space-between;
+      }
+      .acciones a { color: var(--azul); font-size: 10pt; text-decoration: none; }
+      .acciones a:hover { text-decoration: underline; }
+      .acciones button {
+        padding: 10px 20px;
+        border: 0;
+        border-radius: 7px;
+        background: var(--rojo);
+        color: #fff;
+        font: inherit;
+        font-size: 10pt;
+        font-weight: 600;
+        cursor: pointer;
+      }
+
+      .aviso {
+        max-width: 215mm;
+        margin: 0 auto 14px;
+        padding: 10px 14px;
+        border-radius: 7px;
+        background: #fdf0d9;
+        border: 1px solid #e8c98a;
+        color: #7a5200;
+        font-size: 10pt;
+      }
+
+      /* Carta: 215.9 × 279.4 mm, que es lo que usan en Venezuela. */
+      .hoja {
+        width: 215mm;
+        min-height: 279mm;
+        margin: 0 auto 20px;
+        padding: 14mm 15mm;
+        background: #fff;
+        box-shadow: 0 2px 14px rgba(0, 0, 0, 0.14);
+      }
+
+      .enc {
+        display: grid;
+        grid-template-columns: auto 1fr auto;
+        gap: 12px;
+        align-items: center;
+        padding-bottom: 10px;
+        border-bottom: 2.5px solid var(--azul);
+      }
+      .enc img { border-radius: 50%; }
+      .enc__marca { display: flex; flex-direction: column; line-height: 1.25; }
+      .enc__marca strong { font-size: 16pt; font-weight: 800; color: var(--azul); letter-spacing: -0.02em; }
+      .enc__marca span { font-size: 9pt; color: var(--rojo); font-weight: 600; }
+      .enc__marca small { font-size: 7.5pt; color: var(--gris); }
+      .enc__titulo { display: flex; flex-direction: column; align-items: flex-end; line-height: 1.3; }
+      .enc__titulo span { font-size: 9pt; text-transform: uppercase; letter-spacing: 0.05em; color: var(--gris); font-weight: 600; }
+      .enc__titulo strong { font-size: 15pt; color: var(--azul); font-weight: 800; }
+      .enc__titulo small { font-size: 9pt; color: var(--gris); }
+
+      .cabecera { width: 100%; border-collapse: collapse; margin-top: 12px; }
+      .cabecera th, .cabecera td { border: 1px solid var(--linea); padding: 5px 8px; font-size: 9.5pt; text-align: left; }
+      .cabecera th { width: 88px; background: #f2f4f9; color: var(--gris); font-weight: 600; font-size: 8pt; text-transform: uppercase; letter-spacing: 0.03em; }
+
+      .vitales { margin-top: 14px; }
+      .vitales ul { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; gap: 0; border: 1px solid var(--linea); }
+      .vitales li { flex: 1 1 auto; min-width: 80px; padding: 6px 10px; border-right: 1px solid var(--linea); display: flex; flex-direction: column; }
+      .vitales li:last-child { border-right: 0; }
+      .vitales span { font-size: 7.5pt; text-transform: uppercase; letter-spacing: 0.04em; color: var(--gris); font-weight: 600; }
+      .vitales strong { font-size: 11pt; color: var(--azul); }
+      .vitales em { font-style: normal; font-size: 8pt; font-weight: 400; color: var(--gris); }
+
+      h2 {
+        margin: 0 0 6px;
+        font-size: 9pt;
+        text-transform: uppercase;
+        letter-spacing: 0.06em;
+        color: var(--azul);
+        font-weight: 700;
+      }
+
+      .bloque { margin-top: 13px; break-inside: avoid; }
+      .bloque dl { margin: 0; border-top: 1px solid var(--linea); }
+      .bloque dl > div { display: grid; grid-template-columns: 150px 1fr; gap: 10px; padding: 4px 0; border-bottom: 1px solid #eee; }
+      .bloque dt { font-size: 8.5pt; color: var(--gris); }
+      .bloque dd { margin: 0; font-size: 9.5pt; white-space: pre-wrap; }
+
+      .receta { margin-top: 18px; }
+      .receta p {
+        margin: 0;
+        min-height: 60mm;
+        padding: 10px 12px;
+        border: 1px solid var(--linea);
+        font-size: 11pt;
+        line-height: 1.7;
+        white-space: pre-wrap;
+      }
+      .receta + .receta p { min-height: 40mm; }
+
+      .firma {
+        margin-top: 26mm;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 30px;
+        break-inside: avoid;
+      }
+      .firma--una { grid-template-columns: 1fr; max-width: 70mm; }
+      .firma__linea { display: flex; flex-direction: column; align-items: center; text-align: center; }
+      .firma__linea span { font-size: 10pt; font-weight: 600; padding-bottom: 3px; }
+      .firma__linea small { font-size: 8pt; color: var(--gris); padding-bottom: 5px; border-bottom: 1px solid var(--tinta); width: 100%; }
+      .firma__linea em { font-style: normal; font-size: 8pt; color: var(--gris); padding-top: 4px; }
+
+      .cifra { font-variant-numeric: tabular-nums; }
+
+      /* ---------- impresión ---------- */
+      @page { size: letter; margin: 0; }
+
+      @media print {
+        body { background: #fff; padding: 0; }
+        .acciones, .aviso { display: none; }
+        .hoja {
+          width: auto;
+          min-height: auto;
+          margin: 0;
+          padding: 12mm 14mm;
+          box-shadow: none;
+        }
+        .hoja--recipe { break-before: page; }
+      }
+    </style>
+  </body>
+</html>

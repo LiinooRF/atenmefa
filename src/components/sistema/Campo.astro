@@ -1,0 +1,109 @@
+---
+/**
+ * Un campo del formulario de atención. Se dibuja solo a partir del modelo
+ * de src/sistema/historia.ts: agregar un campo allá lo hace aparecer acá,
+ * sin tocar esta pantalla.
+ */
+import type { Campo } from '../../sistema/historia';
+
+interface Props {
+  campo: Campo;
+  valor?: string;
+}
+const { campo: c, valor = '' } = Astro.props;
+const id = `c-${c.clave}`;
+const pistaId = c.pista ? `${id}-pista` : undefined;
+const comun = {
+  id,
+  name: c.clave,
+  required: c.exigido,
+  'aria-describedby': pistaId,
+};
+---
+
+<div class:list={['campo', `campo--${c.ancho ?? 2}`]}>
+  <label for={id}>
+    {c.rotulo}
+    {c.exigido && <abbr title="Obligatorio para cerrar la atención">*</abbr>}
+    {c.unidad && <span class="campo__unidad">{c.unidad}</span>}
+  </label>
+
+  {c.tipo === 'parrafo' ? (
+    <textarea {...comun} rows="3">{valor}</textarea>
+  ) : c.tipo === 'opcion' ? (
+    <select {...comun}>
+      <option value="">—</option>
+      {c.opciones?.map((o) => <option value={o} selected={valor === o}>{o}</option>)}
+    </select>
+  ) : c.tipo === 'si-no' ? (
+    <select {...comun}>
+      <option value="">—</option>
+      <option value="si" selected={valor === 'si'}>Sí</option>
+      <option value="no" selected={valor === 'no'}>No</option>
+    </select>
+  ) : (
+    <input
+      {...comun}
+      type={
+        c.tipo === 'fecha' ? 'date'
+        : c.tipo === 'hora' ? 'time'
+        : c.tipo === 'numero' ? 'number'
+        : c.tipo === 'telefono' ? 'tel'
+        : 'text'
+      }
+      value={valor}
+      inputmode={c.tipo === 'numero' ? 'decimal' : c.tipo === 'telefono' ? 'tel' : undefined}
+      step={c.tipo === 'numero' ? 'any' : undefined}
+      autocomplete="off"
+    />
+  )}
+
+  {c.pista && <span class="pista" id={pistaId}>{c.pista}</span>}
+</div>
+
+<style>
+  .campo { display: flex; flex-direction: column; gap: 6px; grid-column: span 4; min-width: 0; }
+
+  /* En tablet y escritorio los campos comparten fila según su ancho. */
+  @media (min-width: 720px) {
+    .campo--1 { grid-column: span 1; }
+    .campo--2 { grid-column: span 2; }
+    .campo--3 { grid-column: span 3; }
+    .campo--4 { grid-column: span 4; }
+  }
+
+  label {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: var(--u-sm);
+    font-weight: 600;
+    color: var(--tinta-suave);
+  }
+  abbr { color: var(--rojo); text-decoration: none; font-weight: 700; }
+  .campo__unidad { margin-left: auto; font-size: var(--u-xs); font-weight: 400; color: var(--tinta-tenue); }
+
+  input, select, textarea {
+    width: 100%;
+    min-height: 44px;
+    padding: 9px 12px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background: var(--papel);
+    color: var(--tinta);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-base);
+  }
+  textarea { min-height: 76px; resize: vertical; line-height: 1.5; }
+  input:hover, select:hover, textarea:hover { border-color: #bcc7dd; }
+  input:focus, select:focus, textarea:focus {
+    outline: 2px solid var(--azul-medio);
+    outline-offset: 0;
+    border-color: var(--azul-medio);
+  }
+  input[aria-invalid='true'], textarea[aria-invalid='true'], select[aria-invalid='true'] {
+    border-color: var(--rojo);
+  }
+  .pista { font-size: var(--u-xs); color: var(--tinta-tenue); }
+</style>

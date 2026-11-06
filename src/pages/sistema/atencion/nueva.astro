@@ -1,0 +1,149 @@
+---
+import Sistema from '../../../layouts/Sistema.astro';
+import Seccion from '../../../components/sistema/Seccion.astro';
+import Icono from '../../../components/Icono.astro';
+import { historia } from '../../../sistema/historia';
+import { bd, esquema } from '../../../sistema/lib/base';
+import {
+  limpiarDatos, faltantes, pacienteDe, anotar, hoyEnVenezuela, ahoraEnVenezuela,
+} from '../../../sistema/lib/atenciones';
+
+export const prerender = false;
+
+const usuario = Astro.locals.usuario!;
+let error = '';
+let datos: Record<string, string> = {
+  fecha: hoyEnVenezuela(),
+  hora_inicio: ahoraEnVenezuela(),
+  medico: usuario.name,
+};
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const cerrar = form.get('accion') === 'cerrar';
+  datos = { ...datos, ...limpiarDatos(form) };
+
+  const faltan = cerrar ? faltantes(datos) : [];
+
+  if (cerrar && faltan.length) {
+    error = `Falta completar: ${faltan.map((c) => c.rotulo.toLowerCase()).join(', ')}.`;
+  } else if (!datos.cedula || !datos.nombre) {
+    error = 'Para guardar hace falta al menos el nombre y la cédula del paciente.';
+  } else {
+    try {
+      const paciente = await pacienteDe(datos);
+      const [creada] = await bd
+        .insert(esquema.atencion)
+        .values({
+          pacienteId: paciente.id,
+          medicoId: usuario.id,
+          estado: cerrar ? 'cerrada' : 'borrador',
+          fecha: datos.fecha,
+          aseguradora: datos.aseguradora ?? null,
+          poliza: datos.poliza ?? null,
+          casoNumero: datos.caso_numero ?? null,
+          datos,
+          cerrada: cerrar ? new Date() : null,
+        })
+        .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
+
+      await anotar(usuario.id, cerrar ? 'cerro' : 'creo', creada.id, { numero: creada.numero });
+      return Astro.redirect(`/sistema/atencion/${creada.id}`);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'No se pudo guardar la atención.';
+    }
+  }
+}
+---
+
+<Sistema titulo="Nueva atención">
+  <form method="post" class="form">
+    <header class="form__cab">
+      <div>
+        <h1>Nueva atención</h1>
+        <p class="form__nota">
+          Lo marcado con <abbr title="Obligatorio">*</abbr> hace falta para cerrar.
+          Puede guardarla como borrador y terminarla después.
+        </p>
+      </div>
+      <a class="sis-boton sis-boton--suave" href="/sistema">Cancelar</a>
+    </header>
+
+    {error && (
+      <p class="sis-error form__error">
+        <Icono nombre="escudo" tam={18} />
+        {error}
+      </p>
+    )}
+
+    <div class="form__bloques">
+      {historia.map((s) => <Seccion seccion={s} datos={datos} />)}
+    </div>
+
+    <div class="form__pie">
+      <div class="form__pie-int">
+        <span class="form__pie-nota">
+          <Icono nombre="reloj" tam={16} />
+          El borrador conserva todo lo escrito.
+        </span>
+        <div class="form__pie-acciones">
+          <!-- formnovalidate: un borrador es incompleto por definición, así que
+               no puede toparse con la validación nativa de los campos obligatorios. -->
+          <button type="submit" name="accion" value="borrador" formnovalidate
+                  class="sis-boton sis-boton--suave">
+            Guardar borrador
+          </button>
+          <button type="submit" name="accion" value="cerrar" class="sis-boton sis-boton--primario">
+            <Icono nombre="escudo" tam={18} />
+            Cerrar atención
+          </button>
+        </div>
+      </div>
+    </div>
+  </form>
+</Sistema>
+
+<style>
+  .form { padding-bottom: 92px; }
+
+  .form__cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+  .form__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 60ch; }
+  .form__nota abbr { color: var(--rojo); text-decoration: none; font-weight: 700; }
+
+  .form__error { margin-top: 18px; }
+  .form__bloques { display: grid; gap: 14px; margin-top: 20px; }
+
+  /* La barra de guardar queda fija: en una atención larga el médico no
+     debería desplazar hasta el final para guardar. */
+  .form__pie {
+    position: fixed;
+    left: 0; right: 0; bottom: 0;
+    z-index: 40;
+    background: var(--papel);
+    border-top: 1px solid var(--linea);
+    box-shadow: 0 -6px 20px -14px rgba(11, 15, 69, 0.4);
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .form__pie-int {
+    max-width: 1320px;
+    margin-inline: auto;
+    padding: 12px 20px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .form__pie-nota {
+    display: none;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--u-sm);
+    color: var(--tinta-tenue);
+  }
+  .form__pie-nota :global(svg) { color: var(--tinta-tenue); }
+  @media (min-width: 620px) { .form__pie-nota { display: flex; } }
+
+  .form__pie-acciones { display: flex; gap: 10px; margin-left: auto; }
+  .form__pie-acciones .sis-boton { min-height: 46px; }
+</style>

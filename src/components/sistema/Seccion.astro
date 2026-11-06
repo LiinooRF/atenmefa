@@ -1,0 +1,83 @@
+---
+/**
+ * Una sección del formulario. Las plegables arrancan cerradas para que en
+ * la tablet no haya que desplazar media pantalla hasta lo que importa.
+ */
+import type { Seccion } from '../../sistema/historia';
+import Campo from './Campo.astro';
+
+interface Props {
+  seccion: Seccion;
+  datos?: Record<string, string>;
+}
+const { seccion: s, datos = {} } = Astro.props;
+const cuantosExigidos = s.campos.filter((c) => c.exigido).length;
+---
+
+<section class="bloque" id={`s-${s.clave}`}>
+  <details open={!s.plegable}>
+    <summary>
+      <span class="bloque__titulo">{s.titulo}</span>
+      {cuantosExigidos > 0 && (
+        <span class="bloque__marca">{cuantosExigidos} obligatorio{cuantosExigidos > 1 ? 's' : ''}</span>
+      )}
+      <span class="bloque__signo" aria-hidden="true"></span>
+    </summary>
+    <div class="bloque__rejilla">
+      {s.campos.map((c) => <Campo campo={c} valor={datos[c.clave] ?? ''} />)}
+    </div>
+  </details>
+</section>
+
+<style>
+  .bloque {
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: 10px;
+  }
+
+  summary {
+    list-style: none;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 15px 18px;
+    user-select: none;
+  }
+  summary::-webkit-details-marker { display: none; }
+  summary:hover { background: var(--panel); border-radius: 10px; }
+  details[open] summary { border-bottom: 1px solid var(--linea-tenue); border-radius: 10px 10px 0 0; }
+
+  .bloque__titulo {
+    font-size: var(--u-md);
+    font-weight: 700;
+    letter-spacing: -0.015em;
+    color: var(--azul);
+    margin-right: auto;
+  }
+
+  .bloque__marca {
+    font-size: var(--u-xs);
+    font-weight: 600;
+    color: var(--tinta-tenue);
+    white-space: nowrap;
+  }
+
+  .bloque__signo {
+    width: 9px; height: 9px;
+    border-right: 2px solid var(--tinta-tenue);
+    border-bottom: 2px solid var(--tinta-tenue);
+    transform: rotate(45deg) translate(-2px, -2px);
+    transition: transform 160ms ease;
+    flex: none;
+  }
+  details[open] .bloque__signo { transform: rotate(-135deg) translate(-2px, -2px); }
+
+  .bloque__rejilla {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 14px;
+    padding: 18px;
+  }
+</style>
