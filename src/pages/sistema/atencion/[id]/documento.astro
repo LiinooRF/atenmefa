@@ -119,6 +119,11 @@ const vitales = [
       </p>
     )}
 
+    <!-- La hoja mide 215 mm y tiene que medir eso: es papel, no una pantalla.
+         Pero en un teléfono de 390 px eso arrastraba la página entera de lado
+         y se llevaba consigo la barra de arriba. Se desplaza dentro de esta
+         caja, que es la regla de la casa para cualquier cosa ancha. -->
+    <div class="lienzo">
     <!-- ===== Página 1: informe de atención ===== -->
     <article class="hoja">
      <table class="corrida">
@@ -303,6 +308,7 @@ const vitales = [
        </table>
       </article>
     )}
+    </div>
 
     <style is:global>
       :root {
@@ -331,7 +337,15 @@ const vitales = [
         align-items: center;
         justify-content: space-between;
       }
-      .acciones a { color: var(--azul); font-size: 10pt; text-decoration: none; }
+      /* 44 px de alto en todo lo que se toca con el dedo, igual que el panel. */
+      .acciones a {
+        display: inline-flex;
+        align-items: center;
+        min-height: 44px;
+        color: var(--azul);
+        font-size: 10pt;
+        text-decoration: none;
+      }
       .acciones a:hover { text-decoration: underline; }
       .acciones__grupo { display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
       .acciones__rotulo { font-size: 9pt; color: var(--gris); font-weight: 600; }
@@ -346,7 +360,9 @@ const vitales = [
       .papel button {
         display: flex;
         flex-direction: column;
+        justify-content: center;
         gap: 1px;
+        min-height: 44px;
         padding: 7px 14px;
         border: 0;
         background: transparent;
@@ -363,6 +379,7 @@ const vitales = [
       .papel button[aria-checked='true'] { background: var(--azul); color: #fff; }
 
       .acciones__imprimir {
+        min-height: 44px;
         padding: 10px 20px;
         border: 0;
         border-radius: 7px;
@@ -387,6 +404,12 @@ const vitales = [
         border: 1px solid #e8c98a;
         color: #7a5200;
         font-size: 10pt;
+      }
+
+      /* Solo en pantalla: en papel un ancestro con overflow puede recortar
+         la paginación. La hoja conserva sus 215 mm y se desplaza acá dentro. */
+      @media screen {
+        .lienzo { overflow-x: auto; padding-bottom: 4px; }
       }
 
       /* El relleno de acá es el MISMO margen que @page le da al papel, para

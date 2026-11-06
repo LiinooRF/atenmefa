@@ -64,10 +64,17 @@ const activo = atajos.find((a) => a.desde === desde && a.hasta === hasta);
   </div>
 
   <div class="rango__libre">
-    <label for="desde">Desde</label>
-    <input id="desde" type="date" name="desde" value={desde} max={hoyVE} required />
-    <label for="hasta">Hasta</label>
-    <input id="hasta" type="date" name="hasta" value={hasta} max={hoyVE} required />
+    <!-- Cada rótulo va pegado a su campo dentro de una caja propia. Sueltos
+         en el mismo flex, a 390 px la fila se partía por la mitad y "Hasta"
+         quedaba al lado del campo de "Desde": se leía al revés. -->
+    <div class="rango__par">
+      <label for="desde">Desde</label>
+      <input id="desde" type="date" name="desde" value={desde} max={hoyVE} required />
+    </div>
+    <div class="rango__par">
+      <label for="hasta">Hasta</label>
+      <input id="hasta" type="date" name="hasta" value={hasta} max={hoyVE} required />
+    </div>
     <button type="submit" class="sis-boton sis-boton--azul">Ver</button>
   </div>
 </form>
@@ -96,6 +103,7 @@ const activo = atajos.find((a) => a.desde === desde && a.hasta === hasta);
   }
 
   .rango__libre { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  .rango__par { display: flex; align-items: center; gap: 8px; }
   .rango__libre label { font-size: var(--u-xs); color: var(--tinta-tenue); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
   .rango__libre input {
     min-height: 42px;

@@ -7,9 +7,10 @@
  * ventana: una tabla ancha puede desplazarse dentro de su caja, lo que no
  * puede es arrastrar la página entera.
  *
- * El documento imprimible queda fuera a propósito: es una hoja carta de
- * 215 mm y tiene que medir eso, en pantalla y en papel. No es una pantalla
- * del sistema, es el papel.
+ * El documento imprimible entra con una salvedad: la hoja sigue midiendo
+ * 215 mm, porque es papel y tiene que medir eso, pero se desplaza dentro de
+ * su caja. Lo que se le exige es lo mismo que a todo lo demás: que no
+ * arrastre la página entera ni deje botones por debajo de 44 px.
  */
 import { test, expect } from '@playwright/test';
 import {
@@ -26,6 +27,7 @@ const SERVICIO = `Servicio angosto de prueba ${CORRIDA}`;
 
 /** Se arman en beforeAll porque las rutas llevan el id del caso. */
 const rutas: string[] = [];
+let documento = '';
 
 test.beforeAll(async ({ browser }) => {
   /* Los datos se cargan con la ventana grande: lo que se está probando es
@@ -81,7 +83,10 @@ test.beforeAll(async ({ browser }) => {
     servicio,
     `/sistema/cierre?mes=${mes}`,
     `/sistema/cierre?mes=${mes}&cobrar_a=pacientes-directos`,
+    `/sistema/atencion/${cerrada}/documento`,
   );
+
+  documento = `/sistema/atencion/${cerrada}/documento`;
 
   await contexto.close();
 });
@@ -101,7 +106,16 @@ test('la pantalla de entrada no desborda a 390 px', async ({ page }) => {
 test('ninguna pantalla del panel desborda a 390 px', async ({ page }) => {
   await entrar(page, 'administracion');
 
-  for (const ruta of rutas) {
+  /* Las pantallas del menú se leen del propio menú y no de una lista escrita
+     a mano: así una pantalla nueva queda revisada desde el día que se agrega,
+     en vez de esperar a que alguien se acuerde de anotarla acá. La lista de
+     arriba es solo para las rutas que llevan el id de un caso y no salen en
+     el menú. Administración no ve las del médico: esas ya están en la lista. */
+  const delMenu = await page.locator('.sis__nav a').evaluateAll((enlaces) =>
+    enlaces.map((e) => new URL((e as HTMLAnchorElement).href).pathname));
+  expect(delMenu.length).toBeGreaterThan(4); // si el menú no cargó, no se prueba nada
+
+  for (const ruta of [...new Set([...delMenu, ...rutas])]) {
     await page.goto(ruta);
     const medida = await anchos(page);
     /* Un píxel de tolerancia: el redondeo de un borde a mitad de píxel no
@@ -147,5 +161,54 @@ test('todo lo que se toca mide 44 px de alto', async ({ page }) => {
     const caja = await botones.nth(i).boundingBox();
     const rotulo = (await botones.nth(i).innerText()).trim();
     expect.soft(caja?.height ?? 0, `el botón "${rotulo}" mide ${caja?.height}`).toBeGreaterThanOrEqual(44);
+  }
+});
+
+test('la hoja del documento se desplaza en su caja, no arrastrando la página', async ({ page }) => {
+  await entrar(page, 'medico');
+  await page.goto(documento);
+
+  /* La hoja mide 215 mm y así tiene que quedar: es papel. Lo que no puede
+     es llevarse la página de lado y dejar la barra de arriba fuera de vista. */
+  const medida = await page.evaluate(() => ({
+    ventana: document.documentElement.clientWidth,
+    pagina: document.documentElement.scrollWidth,
+    caja: document.querySelector('.lienzo')!.clientWidth,
+    hoja: document.querySelector('.hoja')!.scrollWidth,
+  }));
+
+  expect(medida.pagina).toBeLessThanOrEqual(medida.ventana + 1);
+  expect(medida.hoja).toBeGreaterThan(medida.caja); // se desplaza de verdad
+});
+
+test('los botones del documento también miden 44 px', async ({ page }) => {
+  await entrar(page, 'medico');
+  await page.goto(documento);
+
+  for (const sel of ['.acciones a', '.papel button', '.acciones__imprimir']) {
+    const botones = page.locator(sel);
+    for (let i = 0; i < (await botones.count()); i++) {
+      const caja = await botones.nth(i).boundingBox();
+      const rotulo = (await botones.nth(i).innerText()).replace(/\s+/g, ' ').trim();
+      expect.soft(caja?.height ?? 0, `"${rotulo}" mide ${caja?.height}`).toBeGreaterThanOrEqual(44);
+    }
+  }
+});
+
+test('el rango de fechas no separa el rótulo de su campo a 390 px', async ({ page }) => {
+  await entrar(page, 'administracion');
+  await page.goto('/sistema/tablero');
+
+  /* Sueltos en el mismo flex, "Hasta" terminaba al lado del campo de "Desde"
+     y el filtro se leía al revés. Cada rótulo va con el suyo. */
+  const pares = page.locator('.rango__par');
+  expect(await pares.count()).toBe(2);
+
+  for (let i = 0; i < 2; i++) {
+    const rotulo = await pares.nth(i).locator('label').boundingBox();
+    const campo = await pares.nth(i).locator('input').boundingBox();
+    const texto = await pares.nth(i).locator('label').innerText();
+    expect.soft(Math.abs(rotulo!.y - campo!.y), `"${texto}" quedó en otra línea que su campo`)
+      .toBeLessThan(20);
   }
 });
