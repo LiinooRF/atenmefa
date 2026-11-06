@@ -4,11 +4,14 @@ import Icono from '../../components/Icono.astro';
 import { bd, esquema } from '../../sistema/lib/base';
 import { desc, eq, sql, and, ilike, or } from 'drizzle-orm';
 import { exigir } from '../../sistema/lib/guardia';
+import { puede } from '../../sistema/lib/permisos';
 
 export const prerender = false;
 
 const corte = exigir(Astro, 'ver_casos');
 if (corte) return corte;
+
+const escribe = puede(Astro.locals.usuario?.rol as string, 'escribir_historia');
 
 const busca = (Astro.url.searchParams.get('q') ?? '').trim();
 const mes = Astro.url.searchParams.get('mes') ?? '';
@@ -65,10 +68,10 @@ const fechaCorta = (f: string) =>
         {mes && ` · ${mes}`}
       </p>
     </div>
-    <a class="sis-boton sis-boton--primario cab__nueva" href="/sistema/atencion/nueva">
+    {escribe && <a class="sis-boton sis-boton--primario cab__nueva" href="/sistema/atencion/nueva">
       <Icono nombre="mas" tam={19} />
       Nueva atención
-    </a>
+    </a>}
   </div>
 
   <form class="filtros" method="get">
@@ -89,7 +92,7 @@ const fechaCorta = (f: string) =>
           ? 'Pruebe con otro nombre, otra cédula u otro mes.'
           : 'Las atenciones aparecen acá cuando el médico las cierra.'}
       </p>
-      {!busca && !mes && (
+      {!busca && !mes && escribe && (
         <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">Registrar la primera</a>
       )}
     </div>

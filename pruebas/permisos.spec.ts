@@ -44,6 +44,13 @@ test('el médico no ve el cierre del mes ni los servicios en el menú', async ({
   await expect(menu.getByRole('link', { name: 'Servicios' })).toHaveCount(0);
 });
 
+test('administración no ve ningún botón que lleve a escribir una historia', async ({ page }) => {
+  await entrar(page, 'administracion');
+  /* No alcanza con sacarlo del menú: la cabecera de Casos tenía su propio
+     botón "Nueva atención" que llevaba derecho a "no tiene permiso". */
+  await expect(page.locator('a[href="/sistema/atencion/nueva"]')).toHaveCount(0);
+});
+
 test('administración no ve nueva atención ni borradores en el menú', async ({ page }) => {
   await entrar(page, 'administracion');
   const menu = page.locator('.sis__nav');
