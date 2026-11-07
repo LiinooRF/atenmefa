@@ -8,6 +8,7 @@ import { dinero, frasePagador, montoRenglon, renglonesDe, resumir } from '../../
 import { eq, desc, and, ne } from 'drizzle-orm';
 import { exigir } from '../../../sistema/lib/guardia';
 import { puede, puedeEditarAtencion } from '../../../sistema/lib/permisos';
+import { comoSeLee } from '../../../sistema/lib/documento';
 
 export const prerender = false;
 
@@ -37,6 +38,7 @@ const [caso] = await bd
     pacienteId: esquema.paciente.id,
     paciente: esquema.paciente.nombre,
     cedula: esquema.paciente.cedula,
+    tipoDoc: esquema.paciente.tipoDoc,
     telefono: esquema.paciente.telefono,
     medicoId: esquema.atencion.medicoId,
     medico: esquema.user.name,
@@ -122,7 +124,7 @@ const etiqueta = {
       <p class="cab__meta">
         Atención <strong class="cifra">N° {caso.numero}</strong> ·
         {fechaLarga(caso.fecha)} ·
-        {caso.cedula} ·
+        {comoSeLee(caso.tipoDoc, caso.cedula)} ·
         atendió {caso.medico}{caso.colegiatura && ` (C.M. ${caso.colegiatura})`}
       </p>
     </div>

@@ -5,14 +5,25 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { bd, esquema } from './base';
 import { historia, exigidos } from '../historia';
+import { ROTULO, esTipo, llaveDe, soloDigitos, type TipoDocumento } from './documento';
 
-const CLAVES = new Set(historia.flatMap((s) => s.campos.map((c) => c.clave)));
+/* Los campos del modelo, más el tipo de documento. Ese no es un campo del
+   formulario —no se escribe, se elige en la puerta— pero viaja oculto con
+   cada guardado para que el autoguardado sepa con qué llave buscar al
+   paciente. Sin él, una atención de un paciente con pasaporte guardada sola
+   crearía una persona distinta cada vez. */
+const CLAVES = new Set([
+  ...historia.flatMap((s) => s.campos.map((c) => c.clave)),
+  'tipo_doc',
+]);
 
 /** Quita tildes y pasa a minúscula, para poder buscar sin depender del acento. */
 export const normalizar = (t: string) =>
   t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().trim();
 
-export const soloDigitos = (t: string) => t.replace(/\D/g, '');
+/* Vive en documento.ts, donde está el resto de lo que sabe leer un
+   documento. Se reexporta porque media aplicación lo importa de acá. */
+export { soloDigitos };
 
 /** Se queda solo con los campos que el modelo conoce. Lo demás se descarta. */
 export function limpiarDatos(form: FormData) {
@@ -31,12 +42,25 @@ export function faltantes(datos: Record<string, string>) {
 }
 
 /**
- * Busca al paciente por cédula o lo crea. La cédula normalizada es la
- * llave: así "V-12.345.678" y "V12345678" son la misma persona.
+ * Busca al paciente por su documento o lo crea. El documento normalizado es
+ * la llave: así "V-12.345.678" y "V12345678" son la misma persona.
+ *
+ * Casi siempre es una cédula. Cuando no la hay —un extranjero con pasaporte,
+ * un recién nacido, alguien que llegó inconsciente sin nada encima— el tipo
+ * viaja en datos.tipo_doc y la llave se arma distinto; el porqué está en
+ * documento.ts. Sin tipo se asume cédula, que es lo que había antes y lo que
+ * sigue mandando el formulario normal.
  */
 export async function pacienteDe(datos: Record<string, string>) {
-  const cedulaBusca = soloDigitos(datos.cedula ?? '');
-  if (!cedulaBusca) throw new Error('Falta la cédula del paciente.');
+  const tipo: TipoDocumento = esTipo(datos.tipo_doc) ? datos.tipo_doc : 'cedula';
+  const cedulaBusca = llaveDe(tipo, datos.cedula ?? '');
+  if (!cedulaBusca) {
+    throw new Error(
+      tipo === 'cedula'
+        ? 'Falta la cédula del paciente.'
+        : `Falta el documento del paciente (${ROTULO[tipo].toLowerCase()}).`,
+    );
+  }
 
   const [ya] = await bd
     .select()
@@ -63,6 +87,7 @@ export async function pacienteDe(datos: Record<string, string>) {
     .values({
       cedula: datos.cedula!,
       cedulaBusca,
+      tipoDoc: tipo,
       nombre: datos.nombre ?? 'Sin nombre',
       nombreBusca: normalizar(datos.nombre ?? 'Sin nombre'),
       telefono: datos.telefono ?? null,

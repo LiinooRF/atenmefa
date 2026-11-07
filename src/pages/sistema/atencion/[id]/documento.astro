@@ -7,6 +7,7 @@
  * papel, y no hay plantilla aparte que se desincronice del formulario.
  */
 import { historia } from '../../../../sistema/historia';
+import { ROTULO } from '../../../../sistema/lib/documento';
 import { bd, esquema } from '../../../../sistema/lib/base';
 import { anotar } from '../../../../sistema/lib/atenciones';
 import { clinica } from '../../../../data/clinica';
@@ -33,6 +34,7 @@ const [caso] = await bd
     datos: esquema.atencion.datos,
     paciente: esquema.paciente.nombre,
     cedula: esquema.paciente.cedula,
+    tipoDoc: esquema.paciente.tipoDoc,
     telefono: esquema.paciente.telefono,
     medico: esquema.user.name,
     colegiatura: esquema.user.colegiatura,
@@ -166,7 +168,7 @@ const vitales = [
             <th>Paciente</th><td colspan="3">{caso.paciente}</td>
           </tr>
           <tr>
-            <th>Cédula</th><td>{caso.cedula}</td>
+            <th>{ROTULO[caso.tipoDoc]}</th><td>{caso.cedula}</td>
             <th>Edad</th><td>{d.edad ? `${d.edad} años` : '—'}{d.sexo && ` · ${d.sexo}`}</td>
           </tr>
           <tr>
@@ -274,7 +276,7 @@ const vitales = [
         <table class="cabecera">
           <tbody>
             <tr><th>Paciente</th><td colspan="3">{caso.paciente}</td></tr>
-            <tr><th>Cédula</th><td>{caso.cedula}</td><th>Edad</th><td>{d.edad ? `${d.edad} años` : '—'}</td></tr>
+            <tr><th>{ROTULO[caso.tipoDoc]}</th><td>{caso.cedula}</td><th>Edad</th><td>{d.edad ? `${d.edad} años` : '—'}</td></tr>
           </tbody>
         </table>
 

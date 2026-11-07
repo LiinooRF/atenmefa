@@ -9,6 +9,12 @@
  * La pantalla tiene dos momentos:
  *   · sin cédula en la dirección, se pregunta solo eso;
  *   · con cédula, se abre el formulario con lo que ya se sabe cargado.
+ *
+ * Hay una salida para cuando no hay cédula, porque pasa: un extranjero con
+ * pasaporte, un recién nacido, alguien que llega inconsciente sin nada
+ * encima. Está cerrada a propósito —hay que abrir «El paciente no tiene
+ * cédula»— para que en una recepción apurada no se use por comodidad y el
+ * registro no se llene de personas imposibles de cruzar con su seguro.
  */
 import Sistema from '../../../layouts/Sistema.astro';
 import Pasos from '../../../components/sistema/Pasos.astro';
@@ -19,7 +25,11 @@ import {
   limpiarDatos, faltantes, pacienteDe, anotar, hoyEnVenezuela, ahoraEnVenezuela,
   guardarBorrador, esIdentificador, soloDigitos,
 } from '../../../sistema/lib/atenciones';
-import { eq, desc, and, ne } from 'drizzle-orm';
+import {
+  ROTULO, PISTA, TIPOS, alcanza, comoSeLee, esTipo, formatearInterno,
+  llaveDe, numeroInterno, type TipoDocumento,
+} from '../../../sistema/lib/documento';
+import { eq, desc, and, ne, sql } from 'drizzle-orm';
 
 export const prerender = false;
 
@@ -29,25 +39,44 @@ if (corte) return corte;
 const usuario = Astro.locals.usuario!;
 let error = '';
 
-const cedulaPedida = (Astro.url.searchParams.get('cedula') ?? '').trim();
-const digitos = soloDigitos(cedulaPedida);
+const crudoTipo = Astro.url.searchParams.get('doc');
+const tipoDoc: TipoDocumento = esTipo(crudoTipo) ? crudoTipo : 'cedula';
+let cedulaPedida = (Astro.url.searchParams.get('cedula') ?? '').trim();
+
+/* Al que no trae documento el sistema le pone uno: SD-000001, SD-000002…
+   El número sale de una secuencia de la base y no de un contador de acá,
+   porque dos emergencias a la vez sacarían el mismo.
+
+   Se reserva y se redirige con él puesto en la dirección. Si se dejara solo
+   en la pantalla, recargar quemaría un número nuevo cada vez; así la
+   segunda carga reusa el que ya salió. Que la secuencia salte algún número
+   cuando alguien abandona la pantalla es lo normal en un correlativo. */
+if (tipoDoc === 'interno' && !numeroInterno(cedulaPedida)) {
+  const [fila] = await bd.execute<{ n: string }>(
+    sql`SELECT nextval('paciente_interno_seq') AS n`,
+  );
+  const asignado = formatearInterno(Number(fila.n));
+  return Astro.redirect(`/sistema/atencion/nueva?doc=interno&cedula=${asignado}`);
+}
+
+const llave = llaveDe(tipoDoc, cedulaPedida);
 
 /* ----------------------------------------------------------------
    Momento 1: todavía no sabemos a quién se atiende.
    ---------------------------------------------------------------- */
 let conocido: {
-  nombre: string; cedula: string; telefono: string; sexo: string;
-  edad: string; direccion: string; ciudad: string; referencia: string;
+  nombre: string; cedula: string; tipoDoc: TipoDocumento; telefono: string;
+  sexo: string; edad: string; direccion: string; ciudad: string; referencia: string;
   ultima: { numero: number; fecha: string; idx: string } | null;
 } | null = null;
 
 let antecedentesPrevios: Record<string, string> = {};
 
-if (digitos.length >= 6) {
+if (alcanza(tipoDoc, cedulaPedida)) {
   const [paciente] = await bd
     .select()
     .from(esquema.paciente)
-    .where(eq(esquema.paciente.cedulaBusca, digitos))
+    .where(eq(esquema.paciente.cedulaBusca, llave))
     .limit(1);
 
   if (paciente) {
@@ -89,6 +118,7 @@ if (digitos.length >= 6) {
     conocido = {
       nombre: paciente.nombre,
       cedula: paciente.cedula,
+      tipoDoc: paciente.tipoDoc,
       telefono: paciente.telefono ?? '',
       sexo: paciente.sexo ?? '',
       edad,
@@ -100,7 +130,7 @@ if (digitos.length >= 6) {
   }
 }
 
-const abrirFormulario = digitos.length >= 6;
+const abrirFormulario = alcanza(tipoDoc, cedulaPedida);
 
 /* ----------------------------------------------------------------
    Guardar.
@@ -110,6 +140,9 @@ let datos: Record<string, string> = {
   hora_inicio: ahoraEnVenezuela(),
   medico: usuario.name,
   ...(cedulaPedida ? { cedula: conocido?.cedula ?? cedulaPedida } : {}),
+  /* Lo necesita pacienteDe para saber con qué llave buscar, y queda guardado
+     en la atención como el documento con el que se identificó esa vez. */
+  tipo_doc: conocido?.tipoDoc ?? tipoDoc,
   ...(conocido
     ? {
         nombre: conocido.nombre,
@@ -202,6 +235,44 @@ const fechaLarga = (f: string) =>
         </button>
       </form>
 
+      {/* Cerrado a propósito: la cédula es el camino, esto es la salida.
+          Un <details> no necesita JavaScript y deja claro que es otra cosa. */}
+      <details class="otro">
+        <summary>El paciente no tiene cédula</summary>
+
+        <div class="otro__cuerpo">
+          <form method="get" class="otro__forma">
+            <div class="sis-campo">
+              <label for="doc">¿Qué documento trae?</label>
+              <select id="doc" name="doc">
+                {TIPOS.filter((x) => x !== 'cedula' && x !== 'interno').map((x) => (
+                  <option value={x}>{ROTULO[x]}</option>
+                ))}
+              </select>
+            </div>
+            <div class="sis-campo">
+              <label for="otro-numero">Número</label>
+              <input
+                id="otro-numero" name="cedula" required autocomplete="off"
+                placeholder="A1234567"
+              />
+              <span class="pista">Como viene impreso, con sus letras y números.</span>
+            </div>
+            <button type="submit" class="sis-boton">Continuar</button>
+          </form>
+
+          <form method="get" class="otro__nada">
+            <input type="hidden" name="doc" value="interno" />
+            <p>
+              <strong>No trae ningún documento.</strong>
+              Pasa en una emergencia. El sistema le asigna un número propio para
+              poder registrar la atención ahora y reconocerlo si vuelve.
+            </p>
+            <button type="submit" class="sis-boton">Registrar sin documento</button>
+          </form>
+        </div>
+      </details>
+
       <p class="quien__salida">
         <a href="/sistema">Volver a los casos</a>
       </p>
@@ -213,7 +284,7 @@ const fechaLarga = (f: string) =>
           <h1>Nueva atención</h1>
           {conocido ? (
             <p class="form__nota">
-              <strong>{conocido.nombre}</strong> · {conocido.cedula}
+              <strong>{conocido.nombre}</strong> · {comoSeLee(conocido.tipoDoc, conocido.cedula)}
               {conocido.ultima && (
                 <> · última atención N° {conocido.ultima.numero} del {fechaLarga(conocido.ultima.fecha)}
                   {conocido.ultima.idx && <> por {conocido.ultima.idx.toLowerCase()}</>}</>
@@ -221,7 +292,8 @@ const fechaLarga = (f: string) =>
             </p>
           ) : (
             <p class="form__nota">
-              Paciente nuevo, cédula {cedulaPedida}. Se registra con esta atención.
+              Paciente nuevo, {comoSeLee(tipoDoc, cedulaPedida)}. Se registra con
+              esta atención.
             </p>
           )}
         </div>
@@ -255,6 +327,59 @@ const fechaLarga = (f: string) =>
   .quien__form input { font-size: var(--u-lg); min-height: 54px; letter-spacing: 0.01em; }
   .quien__form .sis-boton { min-height: 48px; justify-self: start; }
   .quien__salida { margin-top: 18px; font-size: var(--u-sm); }
+
+  /* La salida para quien no trae cédula. Discreta y cerrada: está, pero no
+     compite con el camino normal. */
+  .otro { margin-top: 16px; }
+  .otro > summary {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    list-style: none;
+    cursor: pointer;
+    font-size: var(--u-sm);
+    font-weight: 600;
+    color: var(--azul);
+  }
+  .otro > summary::-webkit-details-marker { display: none; }
+  .otro > summary::before {
+    content: '+';
+    display: inline-flex;
+    justify-content: center;
+    width: 1.2em;
+    font-weight: 700;
+  }
+  .otro[open] > summary::before { content: '−'; }
+  .otro > summary:hover { text-decoration: underline; }
+
+  .otro__cuerpo {
+    display: grid;
+    gap: 14px;
+    margin-top: 6px;
+    padding: 16px;
+    border: 1px solid var(--linea);
+    border-radius: 12px;
+    background: var(--papel);
+  }
+  .otro__forma { display: grid; gap: 12px; }
+  .otro__forma select {
+    min-height: 44px;
+    padding: 8px 11px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background: var(--papel);
+    font: inherit;
+    font-family: var(--ui);
+    color: var(--tinta);
+  }
+  .otro__nada {
+    display: grid;
+    gap: 10px;
+    padding-top: 14px;
+    border-top: 1px solid var(--linea-tenue);
+    justify-items: start;
+  }
+  .otro__nada p { margin: 0; font-size: var(--u-sm); color: var(--tinta-suave); }
   .quien__salida a { color: var(--tinta-suave); }
 
   /* ---------- formulario ---------- */

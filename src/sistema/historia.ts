@@ -58,8 +58,12 @@ export const historia: readonly Seccion[] = [
     titulo: 'Paciente',
     campos: [
       { clave: 'nombre', rotulo: 'Nombres y apellidos', tipo: 'texto', exigido: true, ancho: 4 },
-      { clave: 'cedula', rotulo: 'Cédula', tipo: 'cedula', exigido: true, ancho: 2,
-        pista: 'Con la letra: V, E, J o G.' },
+      /* "o documento" porque no todo el mundo trae cédula: un extranjero con
+         pasaporte, un recién nacido con su partida, o alguien que llegó sin
+         nada y lleva el número que le puso el centro. El rótulo tiene que
+         servir para los cuatro casos, acá y en el papel que se imprime. */
+      { clave: 'cedula', rotulo: 'Cédula o documento', tipo: 'cedula', exigido: true, ancho: 2,
+        pista: 'La cédula con su letra: V, E, J o G.' },
       { clave: 'edad', rotulo: 'Edad', tipo: 'numero', exigido: true, unidad: 'años', ancho: 1 },
       { clave: 'sexo', rotulo: 'Sexo', tipo: 'opcion', opciones: ['Femenino', 'Masculino'], exigido: true, ancho: 1 },
       { clave: 'telefono', rotulo: 'Teléfono', tipo: 'telefono', ancho: 2 },

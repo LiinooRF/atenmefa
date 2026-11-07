@@ -24,6 +24,7 @@
  */
 import { eq, sql, type SQL } from 'drizzle-orm';
 import { bd, esquema } from './base';
+import type { TipoDocumento } from './documento';
 import { esIdentificador, normalizar, soloDigitos } from './atenciones';
 import { resumir, type CuentaPorMoneda } from './cobro';
 import { historia } from '../historia';
@@ -51,6 +52,7 @@ const comoLike = (texto: string) => `%${texto.replace(/[\\%_]/g, (c) => `\\${c}`
 export interface FilaPaciente {
   id: string;
   cedula: string;
+  tipoDoc: TipoDocumento;
   nombre: string;
   telefono: string | null;
   atenciones: number;
@@ -119,10 +121,10 @@ export async function listarPacientes(
   /* Las anuladas quedaron sin efecto: no cuentan ni como atención ni como
      la última vez que vino. Siguen visibles en su ficha, tachadas. */
   const filas = await bd.execute<{
-    id: string; cedula: string; nombre: string; telefono: string | null;
+    id: string; cedula: string; tipo_doc: TipoDocumento; nombre: string; telefono: string | null;
     atenciones: number; ultima: string | null; idx: string | null;
   }>(sql`
-    SELECT p.id, p.cedula, p.nombre, p.telefono,
+    SELECT p.id, p.cedula, p.tipo_doc, p.nombre, p.telefono,
            c.atenciones,
            to_char(u.ultima, 'YYYY-MM-DD') AS ultima,
            u.idx
@@ -148,6 +150,7 @@ export async function listarPacientes(
     filas: filas.map((f) => ({
       id: f.id,
       cedula: f.cedula,
+      tipoDoc: f.tipo_doc,
       nombre: f.nombre,
       telefono: f.telefono,
       atenciones: f.atenciones ?? 0,
@@ -188,6 +191,7 @@ export interface Ficha {
   paciente: {
     id: string;
     cedula: string;
+    tipoDoc: TipoDocumento;
     nombre: string;
     telefono: string | null;
     sexo: string | null;
@@ -310,6 +314,7 @@ export async function fichaDePaciente(id: string): Promise<Ficha | null> {
     .select({
       id: esquema.paciente.id,
       cedula: esquema.paciente.cedula,
+      tipoDoc: esquema.paciente.tipoDoc,
       nombre: esquema.paciente.nombre,
       telefono: esquema.paciente.telefono,
       sexo: esquema.paciente.sexo,

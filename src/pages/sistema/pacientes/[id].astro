@@ -14,6 +14,7 @@
 import Sistema from '../../../layouts/Sistema.astro';
 import Icono from '../../../components/Icono.astro';
 import { exigir } from '../../../sistema/lib/guardia';
+import { comoSeLee } from '../../../sistema/lib/documento';
 import { puede } from '../../../sistema/lib/permisos';
 import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
 import { dinero } from '../../../sistema/lib/cobro';
@@ -122,7 +123,7 @@ const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(pa
     <div class="cab__quien">
       <h1>{paciente.nombre}</h1>
       <p class="cab__meta">
-        <strong class="cifra">{paciente.cedula}</strong>
+        <strong class="cifra">{comoSeLee(paciente.tipoDoc, paciente.cedula)}</strong>
         {paciente.sexo && <> · {paciente.sexo}</>}
         {donde?.edad && <> · {donde.edad} años</>}
         {resumen.desde

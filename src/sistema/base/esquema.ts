@@ -12,11 +12,14 @@ import { user } from './auth-esquema';
 export { user, session, account, verification } from './auth-esquema';
 export const estadoAtencion = pgEnum('estado_atencion', ['borrador', 'cerrada', 'anulada']);
 export const pagaQuien = pgEnum('paga_quien', ['paciente', 'aseguradora', 'empresa']);
+export const tipoDocumento = pgEnum('tipo_documento', ['cedula', 'pasaporte', 'partida', 'interno']);
 
 export const paciente = pgTable('paciente', {
   id: uuid('id').primaryKey().defaultRandom(),
   cedula: text('cedula').notNull(),
   cedulaBusca: text('cedula_busca').notNull().unique(),
+  /** Qué es lo que hay en `cedula`. Ver 004-documento.sql. */
+  tipoDoc: tipoDocumento('tipo_doc').notNull().default('cedula'),
   nombre: text('nombre').notNull(),
   nombreBusca: text('nombre_busca').notNull(),
   telefono: text('telefono'),
