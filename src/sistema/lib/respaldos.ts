@@ -26,8 +26,12 @@ export interface EstadoDelRespaldo {
   /**
    * 'bien'    — hay copia reciente y verificada
    * 'viejo'   — la última buena ya tiene más de 30 horas
-   * 'fallando'— el último intento falló, aunque haya una buena más atrás
-   * 'nunca'   — no se ha hecho ninguna
+   * 'fallando'— el último intento falló. Vale tanto si hay una copia buena
+   *             más atrás como si NUNCA hubo una: lo segundo es peor, y
+   *             decir "no hay ningún respaldo" se leería como que falta
+   *             configurarlo, cuando lo que pasa es que se está intentando
+   *             y rompiendo.
+   * 'nunca'   — no se intentó nunca
    */
   senal: 'bien' | 'viejo' | 'fallando' | 'nunca';
 }
@@ -59,10 +63,10 @@ export async function estadoDelRespaldo(): Promise<EstadoDelRespaldo> {
   /* El orden importa. Un intento fallido manda aunque haya una copia buena
      de ayer: lo que hay que mirar es que algo se rompió, no que todavía
      queda una copia servible. */
-  const senal: EstadoDelRespaldo['senal'] = !bueno
-    ? 'nunca'
-    : intento?.estado === 'fallo'
-      ? 'fallando'
+  const senal: EstadoDelRespaldo['senal'] = intento?.estado === 'fallo'
+    ? 'fallando'
+    : !bueno
+      ? 'nunca'
       : horas !== null && horas > HORAS_DE_GRACIA
         ? 'viejo'
         : 'bien';

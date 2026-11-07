@@ -34,6 +34,21 @@ test.afterAll(async () => {
   await conBase((sql) => sql`DELETE FROM respaldo`);
 });
 
+test('intentos que fallan y ninguna copia buena: avisa que falla, no que falta', async ({ page }) => {
+  /* Decir "no hay ningún respaldo" cuando el servicio está intentando y
+     rompiéndose se lee como que falta configurarlo, y nadie va a buscar el
+     motivo. Lo que pasa es otra cosa y hay que decirla. */
+  await conRespaldos([{ horas: 1, estado: 'fallo', detalle: 'no se pudo cifrar: openssl: not found' }]);
+  await entrar(page, 'administracion');
+  await page.goto('/sistema/tablero');
+
+  const aviso = page.locator('.respaldo');
+  await expect(aviso).toHaveClass(/respaldo--fallando/);
+  await expect(aviso).toContainText('El último respaldo falló');
+  await expect(aviso).toContainText('No hay ninguna copia buena todavía');
+  await expect(aviso).toContainText('openssl: not found');
+});
+
 test('sin ningún respaldo lo dice, y dice qué se pierde', async ({ page }) => {
   await conRespaldos([]);
   await entrar(page, 'administracion');
