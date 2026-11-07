@@ -23,6 +23,14 @@ export default defineConfig({
     url: 'http://localhost:4399/sistema/entrar',
     reuseExistingServer: false,
     timeout: 60_000,
-    env: { PORT: '4399', URL_BASE: 'http://localhost:4399' },
+    env: {
+      PORT: '4399',
+      URL_BASE: 'http://localhost:4399',
+      /* Nada de salir a internet durante las pruebas. Sin esto, con la base
+         recién creada cada pantalla que muestra plata le iba a pedir la tasa
+         del día al BCV, y la suite quedaba a merced de que ese servicio
+         estuviera vivo. Las tasas que hacen falta se siembran. */
+      SIN_RED: '1',
+    },
   },
 });

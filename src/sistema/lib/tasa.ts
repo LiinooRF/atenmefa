@@ -26,6 +26,7 @@
 import { and, desc, gte, lte, sql } from 'drizzle-orm';
 import { bd, esquema } from './base';
 import { hoyEnCaracas } from './fechas';
+import { entorno } from './entorno';
 
 const ORIGEN = 'https://ve.dolarapi.com/v1/dolares/oficial';
 
@@ -91,6 +92,13 @@ async function traerDelBanco(): Promise<Tasa | null> {
  * haya guardado y la pantalla lo dice.
  */
 export async function asegurarTasa(): Promise<void> {
+  /* Las pruebas no salen a internet. Con la base recién creada no hay
+     ninguna tasa guardada, así que cada pantalla de plata se iba a pedirle
+     la del día al BCV: la suite pasaba a depender de que un servicio ajeno
+     estuviera vivo y a cargar seis segundos de espera por pantalla. Lo que
+     se prueba del cambio es la conversión, y eso se prueba sembrando tasas. */
+  if (entorno('SIN_RED') === '1') return;
+
   const [ultima] = await bd
     .select({ fecha: esquema.tasa.fecha })
     .from(esquema.tasa)
