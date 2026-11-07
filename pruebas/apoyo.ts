@@ -62,6 +62,15 @@ export const CORRIDA = String(Date.now()).slice(-4);
  * archivo de pruebas y el segundo al paciente dentro de ese archivo, así
  * dos pruebas distintas nunca escriben sobre la misma persona.
  */
+/* OJO con el número de archivo: es lo único que separa las cédulas de un
+   .spec de las de otro, y cedulaDePrueba(2) y cedulaDePrueba(2, 0) son LA
+   MISMA cédula. Dos archivos con el mismo número se pisan: el afterAll de
+   uno borra el paciente que el otro todavía está usando, y la falla sale en
+   cualquier parte menos donde está el problema. Pasó entre puerta/paciente y
+   entre tablero/cierre.
+   Series en uso: 1 atencion · 2 paciente · 3 cobro · 4 cierre · 5 documento
+   · 6 responsivo · 7 atajos · 8 pacientes · 9 permisos · 10 puerta
+   · 11 tablero. El siguiente archivo que necesite cédulas toma el 12. */
 export function cedulaDePrueba(archivo: number, n = 0) {
   const serie = `99${archivo}${CORRIDA}${n}`;
   return `V-${serie.slice(0, 2)}.${serie.slice(2, 5)}.${serie.slice(5)}`;
@@ -407,6 +416,37 @@ export async function ahoraEnLaBase() {
  * Borra todo lo que cuelga de esas cédulas. El orden respeta las claves
  * foráneas: la bitácora apunta a la atención y no cae por cascada.
  */
+/**
+ * Borra por la LLAVE de búsqueda y no por la cédula: el que no trae cédula
+ * se guarda con una llave prefijada (P:, N:, SD:) y soloDigitos no la
+ * encuentra. Ver src/sistema/lib/documento.ts.
+ */
+export async function borrarPorLlave(...llaves: string[]) {
+  await conBase(async (sql) => {
+    for (const busca of llaves) {
+      const deEsa = sql`
+        SELECT a.id FROM atencion a
+          JOIN paciente p ON p.id = a.paciente_id
+         WHERE p.cedula_busca = ${busca}`;
+      await sql`DELETE FROM bitacora WHERE atencion_id IN (${deEsa})`;
+      await sql`DELETE FROM renglon  WHERE atencion_id IN (${deEsa})`;
+      await sql`DELETE FROM atencion WHERE paciente_id IN (
+                  SELECT id FROM paciente WHERE cedula_busca = ${busca})`;
+      await sql`DELETE FROM paciente WHERE cedula_busca = ${busca}`;
+    }
+  });
+}
+
+/** El paciente tal como quedó guardado, buscado por su llave. */
+export async function pacientePorLlave(llave: string) {
+  return conBase(async (sql) => {
+    const [p] = await sql`
+      SELECT cedula, cedula_busca, tipo_doc, nombre FROM paciente
+       WHERE cedula_busca = ${llave}`;
+    return p as { cedula: string; cedula_busca: string; tipo_doc: string; nombre: string } | undefined;
+  });
+}
+
 export async function borrarPacientes(...cedulas: string[]) {
   await conBase(async (sql) => {
     for (const cedula of cedulas) {

@@ -9,8 +9,8 @@ import {
   entrar, crearAtencionCerrada, cedulaDePrueba, historiaMinima, borrarPacientes,
 } from './apoyo';
 
-const CONOCIDO = cedulaDePrueba(2);
-const NUEVO = cedulaDePrueba(2, 1);
+const CONOCIDO = cedulaDePrueba(10);
+const NUEVO = cedulaDePrueba(10, 1);
 const NOMBRE = 'Carmen Alicia Rodríguez de Prueba';
 
 test.beforeAll(async ({ browser }) => {

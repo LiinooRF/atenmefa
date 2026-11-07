@@ -10,8 +10,8 @@ import {
   historiaMinima, borrarPacientes, cargarAMano, idDeLaFicha,
 } from './apoyo';
 
-const CEDULA = cedulaDePrueba(4);
-const VIEJA = cedulaDePrueba(4, 1);
+const CEDULA = cedulaDePrueba(11);
+const VIEJA = cedulaDePrueba(11, 1);
 const HOY = new Intl.DateTimeFormat('en-CA', {
   timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit',
 }).format(new Date());
