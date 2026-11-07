@@ -28,6 +28,16 @@ export const paciente = pgTable('paciente', {
   creado: timestamp('creado', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('paciente_nombre_idx').on(t.nombreBusca)]);
 
+/** Una fila por intento de respaldo. Lo escribe el servicio de respaldos. */
+export const respaldo = pgTable('respaldo', {
+  id: bigint('id', { mode: 'number' }).primaryKey(),
+  momento: timestamp('momento', { withTimezone: true }).notNull().defaultNow(),
+  estado: text('estado').notNull(),
+  archivo: text('archivo'),
+  bytes: bigint('bytes', { mode: 'number' }),
+  detalle: text('detalle'),
+});
+
 /** La tasa oficial del BCV, una fila por día publicado. Ver 005-tasa.sql. */
 export const tasa = pgTable('tasa', {
   fecha: date('fecha').primaryKey(),

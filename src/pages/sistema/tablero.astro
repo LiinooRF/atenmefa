@@ -16,6 +16,7 @@ import { exigir } from '../../sistema/lib/guardia';
 import { metricas } from '../../sistema/lib/metricas';
 import { rangoDesdeUrl, nombreDelRango, hoyEnCaracas } from '../../sistema/lib/fechas';
 import Rango from '../../components/sistema/Rango.astro';
+import { estadoDelRespaldo, haceCuanto, tamanio } from '../../sistema/lib/respaldos';
 
 export const prerender = false;
 
@@ -51,6 +52,10 @@ const topeDx = Math.max(1, ...m.diagnosticos.map((d) => d.veces));
 const diaCorto = (f: string) => String(Number(f.slice(-2)));
 const esFinde = (f: string) => [0, 6].includes(new Date(`${f}T12:00:00`).getDay());
 const vacio = m.casos === 0;
+/* Cómo van los respaldos. Va en el tablero y no escondido en una pantalla
+   de ajustes porque el modo más común de quedarse sin respaldo es creer que
+   se está haciendo: tiene que estar donde administración ya mira. */
+const respaldo = await estadoDelRespaldo();
 ---
 
 <Sistema titulo="Tablero">
@@ -60,6 +65,25 @@ const vacio = m.casos === 0;
       <p class="cab__nota">{rotulo} · {m.dias} {m.dias === 1 ? 'día' : 'días'}. Solo atenciones cerradas: las anuladas no cuentan.</p>
     </div>
   </header>
+
+  {/* Fuera del rango de fechas a propósito: esto no es del período que se
+      esté mirando, es de ahora. */}
+  <p class:list={['respaldo', `respaldo--${respaldo.senal}`]}>
+    <Icono nombre="escudo" tam={18} />
+    {respaldo.senal === 'nunca' ? (
+      <span><strong>No hay ningún respaldo de la base.</strong> Mientras no lo haya,
+        una falla del disco se lleva las historias clínicas sin vuelta atrás.</span>
+    ) : respaldo.senal === 'fallando' ? (
+      <span><strong>El último respaldo falló.</strong> La copia buena más reciente es
+        de {haceCuanto(respaldo.horas!)}{respaldo.ultimoIntento?.detalle && <> · {respaldo.ultimoIntento.detalle}</>}.</span>
+    ) : respaldo.senal === 'viejo' ? (
+      <span><strong>Hace {haceCuanto(respaldo.horas!).replace('hace ', '')} que no se
+        respalda.</strong> Debería hacerse todos los días: conviene revisar el servicio.</span>
+    ) : (
+      <span>Base respaldada y verificada {haceCuanto(respaldo.horas!)}
+        {respaldo.ultimoBueno?.bytes && <> · {tamanio(respaldo.ultimoBueno.bytes)}</>}.</span>
+    )}
+  </p>
 
   <Rango desde={desde} hasta={hasta} />
 
@@ -219,6 +243,30 @@ const vacio = m.casos === 0;
 </Sistema>
 
 <style>
+  /* Tres estados y tres colores. El verde no grita: lo normal no tiene que
+     llamar la atención, lo roto sí. */
+  .respaldo {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin: 0 0 16px;
+    padding: 11px 14px;
+    border: 1px solid var(--linea);
+    border-radius: 10px;
+    background: var(--papel);
+    font-size: var(--u-sm);
+    color: var(--tinta-suave);
+    line-height: 1.5;
+  }
+  .respaldo :global(svg) { flex: none; margin-top: 2px; }
+  .respaldo--bien :global(svg) { color: #1b7f4b; }
+  .respaldo--viejo { border-color: #e8c98a; background: #fdf7ea; color: #7a5200; }
+  .respaldo--viejo :global(svg) { color: #a9742a; }
+  .respaldo--fallando,
+  .respaldo--nunca { border-color: #e9b4b4; background: #fdf1f1; color: #8a2020; }
+  .respaldo--fallando :global(svg),
+  .respaldo--nunca :global(svg) { color: var(--rojo); }
+
   .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; justify-content: space-between; }
   .cab h1 { font-size: var(--u-2xl); }
   .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
