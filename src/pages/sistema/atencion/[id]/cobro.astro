@@ -23,6 +23,7 @@ import {
 } from '../../../../sistema/lib/cobro';
 import { eq } from 'drizzle-orm';
 import { exigir } from '../../../../sistema/lib/guardia';
+import { asegurarTasa, equivalenteDe, tasaPara } from '../../../../sistema/lib/tasa';
 
 export const prerender = false;
 
@@ -131,6 +132,19 @@ const renglones = await renglonesDe(caso.id);
 const servicios = await catalogo();
 const grupos = porCategoria(servicios);
 const cuentas = resumir(renglones);
+
+/* Cuánto es la cuenta en bolívares, que es lo que se cobra por taquilla.
+   Con la tasa del DÍA DE LA ATENCIÓN y no con la de hoy: si el caso se
+   cierra una semana después, cobrarlo a la tasa de hoy le cambia el precio
+   al paciente por algo que no hizo. */
+await asegurarTasa();
+const equivalente = await equivalenteDe([{ fecha: caso.fecha, totales: cuentas }]);
+const tasaDelCaso = await tasaPara(caso.fecha);
+const seConvirtio = equivalente.dias.length > 0;
+/* Hay dólares en la cuenta pero no hay tasa de ese día: se dice, no se
+   omite. Si no, la pantalla de al lado muestra bolívares y esta no, y nadie
+   sabe por qué. */
+const faltaTasa = !seConvirtio && equivalente.sinTasa > 0;
 
 const fechaLarga = (f: string) =>
   new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -368,6 +382,29 @@ const etiqueta = {
           ))
         )}
 
+        {faltaTasa && (
+          <p class="cuenta__nota">
+            No hay tasa del BCV guardada de esa fecha, así que no se puede
+            mostrar la cuenta en bolívares sin inventarla.
+          </p>
+        )}
+
+        {seConvirtio && tasaDelCaso && (
+          <div class="cuenta cuenta--bs">
+            {/* Clase propia y no .cuenta__total: esto no es un total de la
+                cuenta, es una lectura derivada. Compartir la clase volvía
+                ambiguo el selector con el que se comprueba el total de verdad. */}
+            <p class="cuenta__equivalente">
+              <span>En bolívares</span>
+              <strong class="cifra">≈ {dinero(equivalente.bolivares)}</strong>
+            </p>
+            <p class="cuenta__tasa">
+              A {dinero(tasaDelCaso.bolivares)} Bs por dólar, la tasa oficial del
+              {' '}{tasaDelCaso.fecha === caso.fecha ? 'día de la atención' : `${fechaLarga(tasaDelCaso.fecha)}`}.
+            </p>
+          </div>
+        )}
+
         {cuentas.length > 1 && (
           <p class="cuenta__nota">
             Hay renglones en dos monedas y no se suman entre ellas: cada una lleva su cuenta.
@@ -574,6 +611,20 @@ const etiqueta = {
   .fila__quitar .sis-boton { min-height: 44px; padding: 6px 14px; }
 
   .cuenta + .cuenta { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--linea-tenue); }
+  /* El equivalente es una lectura de apoyo, no la cifra que se factura:
+     va separado y más tenue que los totales de verdad. */
+  .cuenta--bs { margin-top: 10px; padding-top: 12px; border-top: 1px dashed var(--linea); }
+  .cuenta__equivalente {
+    display: flex;
+    align-items: baseline;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+  }
+  .cuenta__equivalente span { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .cuenta__equivalente strong { font-size: var(--u-lg); font-weight: 700; color: var(--tinta-suave); }
+  .cuenta__tasa { margin: 4px 0 0; font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.45; }
+
   .cuenta__total { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
   .cuenta__total span { font-size: var(--u-sm); color: var(--tinta-tenue); }
   .cuenta__total strong { font-size: var(--u-xl); font-weight: 700; color: var(--azul); }

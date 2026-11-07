@@ -11,6 +11,8 @@ import Sistema from '../../layouts/Sistema.astro';
 import Icono from '../../components/Icono.astro';
 import { consolidadoDelMes, mesPedido, type MontoPorMoneda } from '../../sistema/lib/cierre';
 import { exigir } from '../../sistema/lib/guardia';
+import { asegurarTasa, equivalenteDe, tasaPara } from '../../sistema/lib/tasa';
+import { hoyEnCaracas } from '../../sistema/lib/fechas';
 
 export const prerender = false;
 
@@ -21,6 +23,34 @@ const mes = mesPedido(Astro.url.searchParams.get('mes'));
 const pedido = (Astro.url.searchParams.get('cobrar_a') ?? '').trim();
 
 const cierre = await consolidadoDelMes(mes);
+
+/* El equivalente en bolívares. El centro cotiza en dólares y cobra en
+   bolívares por taquilla, así que el mes termina con dos totales que nadie
+   puede sumar: "1.200,00 USD y 340.000,00 VES".
+
+   Cada atención se convierte con la tasa de SU día, no con la de hoy: en
+   Venezuela la diferencia entre una fecha y otra no es redondeo. Lo que no
+   tiene tasa queda fuera y se dice; un total al que le faltan partes sin
+   avisar es peor que no mostrar total.
+
+   Si la API del BCV no responde, asegurarTasa() no hace nada y la pantalla
+   sale con lo que haya guardado. Nunca rompe el cierre. */
+await asegurarTasa();
+const casos = cierre.grupos.flatMap((g) => g.detalle);
+const equivalente = await equivalenteDe(
+  casos.map((c) => ({ fecha: c.fecha, totales: c.totales })),
+);
+const tasaDeHoy = await tasaPara(hoyEnCaracas());
+/* La cifra solo si de verdad se convirtió algo: con todo ya en bolívares el
+   equivalente repetiría la cifra de al lado, y con cero convertido un
+   "≈ 0,00 Bs" diría que se cobró cero, que es falso.
+
+   La nota, en cambio, también cuando NO se pudo: si hay dólares y no hay
+   tasa de esas fechas, callarse deja al mes de al lado mostrando bolívares y
+   a este sin explicación. */
+const seConvirtio = equivalente.dias.length > 0;
+const faltaronTasas = equivalente.sinTasa > 0;
+const hayNotaDeTasa = seConvirtio || faltaronTasas;
 const grupo = pedido ? cierre.grupos.find((g) => g.clave === pedido) ?? null : null;
 const sinEsePagador = Boolean(pedido) && !grupo;
 const aMostrar = grupo ? [grupo] : cierre.grupos;
@@ -57,6 +87,9 @@ const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno
         {plural(cierre.casosCerrados, 'caso cerrado', 'casos cerrados')} ·
         {plural(cierre.renglones, 'renglón', 'renglones')} ·
         <strong class="cifra">{montos(cierre.totales).join(' y ')}</strong> por cobrar
+        {seConvirtio && (
+          <> · <span class="cifra equiv">≈ {dinero(equivalente.bolivares)} Bs</span></>
+        )}
       </p>
     </div>
     {cierre.renglones > 0 && (
@@ -138,12 +171,42 @@ const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno
               <td class="num cifra">{cierre.renglones}</td>
               <td class="num plata">
                 {montos(cierre.totales).map((m) => <span class="cifra">{m}</span>)}
+                {seConvirtio && (
+                  <span class="cifra equiv">≈ {dinero(equivalente.bolivares)} Bs</span>
+                )}
               </td>
               <td></td>
             </tr>
           </tfoot>
         </table>
       </div>
+
+      {hayNotaDeTasa && (
+        <p class="nota-tasa">
+          <Icono nombre="escudo" tam={16} />
+          <span>
+            {seConvirtio ? (
+              <>El equivalente en bolívares usa la <strong>tasa oficial del BCV
+                del día de cada atención</strong>, no la de hoy: una atención de
+                hace tres semanas vale lo que valía entonces.</>
+            ) : (
+              <><strong>No se puede mostrar el equivalente en bolívares</strong> de
+                este mes: no hay tasa guardada de esas fechas. La medición empezó
+                después, y el BCV de entonces no se puede recuperar desde acá.</>
+            )}
+            {tasaDeHoy && (
+              <> El dólar está en <strong class="cifra">{dinero(tasaDeHoy.bolivares)} Bs</strong>
+                {tasaDeHoy.fecha === hoyEnCaracas()
+                  ? ', publicado hoy'
+                  : `, lo último que publicó el BCV: ${fechaCorta(tasaDeHoy.fecha)}`}.</>
+            )}
+            {seConvirtio && faltaronTasas && (
+              <> Quedaron fuera {plural(equivalente.sinTasa, 'monto', 'montos')} porque
+                no hay tasa guardada de su día: el equivalente está incompleto.</>
+            )}
+          </span>
+        </p>
+      )}
 
       {cierre.casosSinCobro > 0 && (
         <p class="aviso">
@@ -259,6 +322,25 @@ const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno
   .resumen tbody th a:hover { text-decoration: underline; }
   .resumen .num { text-align: right; white-space: nowrap; }
   .resumen .plata { font-weight: 600; color: var(--azul); }
+  /* El equivalente va más tenue que los totales de verdad: es una lectura
+     de apoyo, no la cifra que se factura. */
+  .equiv { color: var(--tinta-tenue); font-weight: 600; }
+
+  .nota-tasa {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin: 14px 0 0;
+    padding: 12px 14px;
+    border: 1px solid var(--linea);
+    border-radius: 10px;
+    background: var(--papel);
+    font-size: var(--u-sm);
+    color: var(--tinta-suave);
+    line-height: 1.5;
+  }
+  .nota-tasa :global(svg) { flex: none; margin-top: 2px; color: var(--azul); }
+
   /* Cada moneda en su renglón: no se leen como una suma. */
   .resumen .plata span { display: block; }
   .resumen .baja { text-align: right; }

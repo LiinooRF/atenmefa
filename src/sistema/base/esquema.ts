@@ -28,6 +28,13 @@ export const paciente = pgTable('paciente', {
   creado: timestamp('creado', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('paciente_nombre_idx').on(t.nombreBusca)]);
 
+/** La tasa oficial del BCV, una fila por día publicado. Ver 005-tasa.sql. */
+export const tasa = pgTable('tasa', {
+  fecha: date('fecha').primaryKey(),
+  bolivares: numeric('bolivares', { precision: 18, scale: 6 }).notNull(),
+  tomada: timestamp('tomada', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const atencion = pgTable('atencion', {
   id: uuid('id').primaryKey().defaultRandom(),
   numero: bigint('numero', { mode: 'number' }).notNull(),
