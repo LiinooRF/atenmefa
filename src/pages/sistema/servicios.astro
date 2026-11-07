@@ -13,6 +13,8 @@ import {
   CATEGORIAS, MONEDAS, catalogo, crearServicio, activarServicio,
   dinero, porCategoria, rotuloCategoria,
 } from '../../sistema/lib/cobro';
+import { asegurarTasa, tasaPara, enBolivares, MONEDA_BASE } from '../../sistema/lib/tasa';
+import { hoyEnCaracas } from '../../sistema/lib/fechas';
 
 export const prerender = false;
 
@@ -21,6 +23,13 @@ if (corte) return corte;
 
 const usuario = Astro.locals.usuario!;
 const verTodos = Astro.url.searchParams.get('todos') === 'si';
+
+/* Acá la tasa es la de HOY, y esa diferencia importa. En el cierre y en el
+   cobro cada monto se convierte con la tasa de SU día, porque son cosas que
+   ya pasaron y valen lo que valían. Un precio de catálogo no pasó: es lo que
+   se cobra hoy, y lo que el paciente va a pagar hoy en bolívares. */
+await asegurarTasa();
+const tasaHoy = await tasaPara(hoyEnCaracas());
 
 let error = '';
 /* Lo tipeado vuelve a la pantalla si el alta falla: nadie quiere escribir
@@ -76,6 +85,18 @@ const apagados = servicios.length - activos.length;
         El precio se copia al renglón cuando se carga el cobro, así que
         cambiarlo acá no mueve lo ya facturado.
       </p>
+      {tasaHoy && (
+        <p class="cab__tasa">
+          <Icono nombre="escudo" tam={15} />
+          <span>
+            El equivalente en bolívares va a <strong class="cifra">{dinero(tasaHoy.bolivares)} Bs</strong>
+            {tasaHoy.fecha === hoyEnCaracas()
+              ? ' por dólar, la tasa oficial del BCV de hoy.'
+              : ` por dólar, la última tasa oficial del BCV (${tasaHoy.fecha}).`}
+            {' '}Es de referencia: lo que se factura es el precio en su moneda.
+          </span>
+        </p>
+      )}
     </div>
     {servicios.length > 0 && (
       <a class="sis-boton sis-boton--suave" href={verTodos ? '/sistema/servicios' : '/sistema/servicios?todos=si'}>
@@ -158,7 +179,12 @@ const apagados = servicios.length - activos.length;
                   <a class="fila__nombre" href={`/sistema/servicios/${s.id}`}>{s.nombre}</a>
                   {!s.activo && <span class="fila__apagado">Desactivado</span>}
                 </td>
-                <td class="num cifra">{dinero(s.precio)}</td>
+                <td class="num cifra">
+                  {dinero(s.precio)}
+                  {tasaHoy && s.moneda === MONEDA_BASE && (
+                    <span class="fila__bs cifra">≈ {dinero(enBolivares(s.precio, tasaHoy))} Bs</span>
+                  )}
+                </td>
                 <td class="moneda">{s.moneda}</td>
                 <td class="acciones">
                   <a class="sis-boton sis-boton--suave" href={`/sistema/servicios/${s.id}`}>Editar</a>
@@ -274,6 +300,21 @@ const apagados = servicios.length - activos.length;
   .num { text-align: right; }
   td.num { font-weight: 600; white-space: nowrap; }
   .moneda { font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  /* Debajo del precio y más tenue: el dólar es lo que se factura, el
+     bolívar es la lectura de apoyo. */
+  .fila__bs { display: block; font-size: var(--u-xs); color: var(--tinta-tenue); font-weight: 600; }
+
+  .cab__tasa {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin: 10px 0 0;
+    font-size: var(--u-sm);
+    color: var(--tinta-suave);
+    line-height: 1.5;
+  }
+  .cab__tasa :global(svg) { flex: none; margin-top: 2px; color: var(--azul); }
 
   .acciones { display: flex; justify-content: flex-end; gap: 8px; }
   /* Objetivo táctil completo: esta tabla se usa desde el teléfono. */

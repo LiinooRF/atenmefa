@@ -258,6 +258,13 @@ const {
     siguiente.addEventListener('click', () => mostrar(actual + 1));
     botones.forEach((b, i) => b.addEventListener('click', () => mostrar(i)));
 
+    /* Desde acá el formulario está por pasos. Antes de esto es el formulario
+       largo entero, porque así se ve si el script no corre.
+       La marca existe para que algo de afuera pueda esperar el cambio en vez
+       de adivinarlo: una prueba que empieza a escribir en medio de esta
+       transición escribe en una hoja que se está por ocultar. */
+    caja.dataset.armado = '';
+
     /* ---------- guardado automático ---------- */
 
     let reloj: ReturnType<typeof setTimeout> | undefined;

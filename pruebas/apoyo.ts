@@ -233,6 +233,15 @@ async function abrirFormulario(page: Page, cedula?: string) {
   }
   await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(cedula)}`);
   await expect(page.locator('[data-hoja]').first()).toBeAttached();
+
+  /* Y se espera a que el formulario termine de volverse "por pasos".
+     Antes se esperaba solo al HTML, que está desde el primer momento, y la
+     prueba podía empezar a escribir justo mientras el script escondía las
+     hojas: escribía en una que se estaba por ocultar y el valor no llegaba a
+     guardarse. Fallaba una vez cada tantas corridas y en otro archivo.
+     El formulario funciona sin script —se ve largo y entero— así que esto no
+     puede ser obligatorio: si la marca no aparece, se sigue igual. */
+  await page.locator('.pasos[data-armado]').waitFor({ timeout: 5000 }).catch(() => {});
 }
 
 export async function crearBorrador(page: Page, campos: Record<string, string>) {

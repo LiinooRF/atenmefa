@@ -214,3 +214,52 @@ test('la tasa de un día que ya está guardado no se reescribe', async ({ page }
   });
   expect(guardada).toBe(TASA_CARA);
 });
+
+/* ------------------------------------------------------------------
+   El catálogo de precios.
+   ------------------------------------------------------------------ */
+
+test('el catálogo muestra cada precio también en bolívares, a la tasa de hoy', async ({ page }) => {
+  const SERVICIO = `Servicio con tasa de prueba ${Date.now()}`;
+  await conBase(async (sql) => {
+    await sql`DELETE FROM servicio WHERE nombre LIKE 'Servicio con tasa de prueba%'`;
+    await sql`INSERT INTO servicio (nombre, categoria, precio, moneda)
+              VALUES (${SERVICIO}, 'consulta', 40, 'USD')`;
+    /* Hoy, no el día de la atención: un precio de catálogo no pasó, es lo
+       que se cobra hoy. Esa es la diferencia con el cierre y el cobro. */
+    await sql`INSERT INTO tasa (fecha, bolivares) VALUES (current_date, 100)
+              ON CONFLICT (fecha) DO UPDATE SET bolivares = 100`;
+  });
+
+  await entrar(page, 'administracion');
+  await page.goto('/sistema/servicios');
+
+  const fila = page.locator('tr').filter({ hasText: SERVICIO });
+  await expect(fila).toContainText('40,00');
+  expect(montoDeTexto(await fila.locator('.fila__bs').innerText())).toBe(40 * 100);
+
+  // Y dice con qué tasa, o el número no se puede comprobar contra nada.
+  await expect(page.locator('.cab__tasa')).toContainText('BCV');
+
+  await conBase((sql) => sql`DELETE FROM servicio WHERE nombre = ${SERVICIO}`);
+});
+
+test('un precio que ya está en bolívares no se convierte dos veces', async ({ page }) => {
+  const SERVICIO = `Servicio en bolivares de prueba ${Date.now()}`;
+  await conBase(async (sql) => {
+    await sql`INSERT INTO servicio (nombre, categoria, precio, moneda)
+              VALUES (${SERVICIO}, 'consulta', 5000, 'VES')`;
+    await sql`INSERT INTO tasa (fecha, bolivares) VALUES (current_date, 100)
+              ON CONFLICT (fecha) DO UPDATE SET bolivares = 100`;
+  });
+
+  await entrar(page, 'administracion');
+  await page.goto('/sistema/servicios');
+
+  const fila = page.locator('tr').filter({ hasText: SERVICIO });
+  await expect(fila).toContainText('5.000,00');
+  // Nada de "≈ 500.000,00 Bs": ya está en bolívares.
+  await expect(fila.locator('.fila__bs')).toHaveCount(0);
+
+  await conBase((sql) => sql`DELETE FROM servicio WHERE nombre = ${SERVICIO}`);
+});
