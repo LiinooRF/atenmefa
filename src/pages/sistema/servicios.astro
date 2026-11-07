@@ -31,6 +31,13 @@ const verTodos = Astro.url.searchParams.get('todos') === 'si';
 await asegurarTasa();
 const tasaHoy = await tasaPara(hoyEnCaracas());
 
+/* "6 de noviembre" y no "2026-11-06": lo lee una persona, no una máquina. */
+const fechaDeLaTasa = tasaHoy
+  ? new Date(`${tasaHoy.fecha}T12:00:00`).toLocaleDateString('es-VE', {
+      day: 'numeric', month: 'long',
+    })
+  : '';
+
 let error = '';
 /* Lo tipeado vuelve a la pantalla si el alta falla: nadie quiere escribir
    el mismo servicio dos veces. */
@@ -92,7 +99,7 @@ const apagados = servicios.length - activos.length;
             El equivalente en bolívares va a <strong class="cifra">{dinero(tasaHoy.bolivares)} Bs</strong>
             {tasaHoy.fecha === hoyEnCaracas()
               ? ' por dólar, la tasa oficial del BCV de hoy.'
-              : ` por dólar, la última tasa oficial del BCV (${tasaHoy.fecha}).`}
+              : ` por dólar, la última que publicó el BCV, del ${fechaDeLaTasa}.`}
             {' '}Es de referencia: lo que se factura es el precio en su moneda.
           </span>
         </p>
