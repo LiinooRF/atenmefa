@@ -67,26 +67,31 @@
 .sis__marca span { display: flex; flex-direction: column; line-height: 1.15; font-weight: 700; letter-spacing: -0.015em; }
 .sis__marca small { font-size: var(--u-xs); font-weight: 400; color: rgba(255, 255, 255, 0.56); letter-spacing: 0; }
 
-/* El menú desplaza dentro de su propia caja. Con seis entradas no entra
-   en una tablet, y arrastrar la página entera de lado por culpa del menú
-   es peor que desplazar el menú. */
+/* El menú envuelve en vez de desplazarse de lado. Antes desplazaba, porque
+   con diez entradas sueltas no entraba en una tablet y lo último quedaba
+   fuera de vista. Ahora las entradas van agrupadas y son cinco como mucho,
+   así que caben; y había una razón para no seguir desplazando: una caja con
+   overflow recorta lo que se sale, y lo que se sale es justo el desplegable
+   de cada grupo. */
 .sis__nav {
   display: flex;
+  flex-wrap: nowrap;
   gap: 2px;
   margin-right: auto;
   min-width: 0;
   overflow-x: auto;
   scrollbar-width: none;
-  mask-image: linear-gradient(90deg, #000 calc(100% - 20px), transparent);
 }
 .sis__nav::-webkit-scrollbar { display: none; }
-.sis__nav a { flex: none; white-space: nowrap; }
+.sis__nav > a,
+.sis__nav > details { flex: none; white-space: nowrap; }
 
 /* El marcado de "usted está acá" NO va en rojo: ese color está reservado
    para la acción urgente, y usarlo acá lo convierte en una alerta metida
    en el menú. La página actual se distingue con contraste y una barra
    fina abajo, que es lo que se espera de una navegación. */
-.sis__nav a {
+.sis__nav > a,
+.sis__nav summary {
   position: relative;
   display: inline-flex;
   align-items: center;
@@ -100,19 +105,84 @@
   border-radius: 7px;
   transition: background-color 160ms ease, color 160ms ease;
 }
-.sis__nav a :global(svg) { opacity: 0.75; }
-.sis__nav a:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
-.sis__nav a:active { background: rgba(255, 255, 255, 0.14); }
+.sis__nav > a :global(svg),
+.sis__nav summary :global(svg) { opacity: 0.75; }
+.sis__nav > a:hover,
+.sis__nav summary:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
+.sis__nav > a:active,
+.sis__nav summary:active { background: rgba(255, 255, 255, 0.14); }
 
-.sis__nav a[aria-current='page'] { color: #fff; background: rgba(255, 255, 255, 0.1); }
-.sis__nav a[aria-current='page'] :global(svg) { opacity: 1; }
-.sis__nav a[aria-current='page']::after {
+.sis__nav > a[aria-current='page'],
+.sis__nav summary[aria-current='true'] { color: #fff; background: rgba(255, 255, 255, 0.1); }
+.sis__nav > a[aria-current='page'] :global(svg),
+.sis__nav summary[aria-current='true'] :global(svg) { opacity: 1; }
+.sis__nav > a[aria-current='page']::after,
+.sis__nav summary[aria-current='true']::after {
   content: '';
   position: absolute;
   left: 14px; right: 14px; bottom: -1px;
   height: 2px;
   border-radius: 2px 2px 0 0;
   background: #fff;
+}
+
+/* ---------- los grupos del menú ---------- */
+
+.sis__grupo { position: relative; }
+.sis__grupo > summary { list-style: none; cursor: pointer; }
+.sis__grupo > summary::-webkit-details-marker { display: none; }
+.sis__flecha { transition: transform 160ms ease; opacity: 0.6; }
+.sis__grupo[open] > summary .sis__flecha { transform: rotate(180deg); }
+
+/* Colgado de la VENTANA y no del grupo. El menú desplaza de lado —si no,
+   con cinco grupos se parte en dos filas y la barra, que va pegada arriba,
+   se come un quinto de la pantalla del teléfono— y una caja que desplaza
+   recorta lo que se sale, que es justo esto. .sis__barra es sticky, y
+   sticky no crea contenedor para un fixed, así que esto se ancla a la
+   ventana y queda limpio debajo de la barra.
+
+   Sin JavaScript queda a lo ancho, que se lee igual de bien. Con él se
+   corre debajo de su propio grupo; lo hace el script de Sistema.astro. */
+.sis__menu {
+  position: fixed;
+  z-index: 60;
+  top: var(--alto-barra, 104px);
+  left: 10px;
+  right: 10px;
+  display: grid;
+  gap: 1px;
+  padding: 6px;
+  border: 1px solid var(--linea);
+  border-radius: 10px;
+  background: var(--papel);
+  box-shadow: 0 10px 28px rgba(8, 11, 48, 0.22);
+}
+
+/* Las entradas de adentro viven sobre papel blanco, no sobre la barra
+   oscura: el color heredado del menú no se lee acá. */
+.sis__menu a {
+  display: flex;
+  align-items: center;
+  min-height: 44px;
+  padding: 0 12px;
+  border-radius: 7px;
+  color: var(--tinta);
+  text-decoration: none;
+  font-size: var(--u-sm);
+  font-weight: 600;
+}
+.sis__menu a:hover { background: var(--azul-suave, rgba(17, 22, 99, 0.07)); color: var(--azul); }
+.sis__menu a[aria-current='page'] { background: var(--azul); color: #fff; }
+
+/* Cuando el script sabe dónde está el grupo, el desplegable se le pone
+   debajo en vez de ocupar todo el ancho. El tope impide que se salga por la
+   derecha en una pantalla angosta. */
+.sis__grupo[data-x] > .sis__menu {
+  left: var(--x);
+  right: auto;
+  width: max-content;
+  min-width: 196px;
+  max-width: calc(100vw - 20px);
 }
 
 .sis__quien { display: flex; align-items: center; gap: 10px; flex: none; }
@@ -158,15 +228,32 @@
   .sis__barra-int { flex-wrap: wrap; gap: 0 12px; padding: 6px 14px; }
   .sis__marca { margin-right: auto; }
 
+  /* En el teléfono el desplegable toma el ancho completo aunque el script
+     sepa dónde está el grupo: un menú angosto pegado a un borde se lee peor
+     que uno que ocupa la pantalla. */
+  .sis__grupo[data-x] > .sis__menu {
+    left: 10px;
+    right: 10px;
+    width: auto;
+    min-width: 0;
+  }
+
   /* Va al final para caer en la segunda fila: en el HTML está antes de
      quién entró, que tiene que quedar arriba a la derecha. */
   .sis__nav { order: 3; width: 100%; margin-right: 0; padding-bottom: 6px; }
-  .sis__nav a { justify-content: center; min-height: 44px; padding-inline: 11px; }
+  /* OJO con el alcance: "> a" y "summary", no "a" a secas. Los enlaces de
+     adentro de un desplegable también son .sis__nav a, y con la regla
+     suelta salían centrados y sin su relleno, como si fueran botones de la
+     barra. */
+  .sis__nav > a,
+  .sis__nav summary { justify-content: center; min-height: 44px; padding-inline: 11px; }
 
-  /* Tres destinos con icono no entran en 390 px sin partir los rótulos en
+  /* Los destinos con icono no entran en 390 px sin partir los rótulos en
      dos líneas. El icono acompaña, el rótulo es el que nombra: en el
-     teléfono se va el icono y el nombre queda entero. */
-  .sis__nav a svg { display: none; }
+     teléfono se va el icono y el nombre queda entero. La flecha del grupo
+     se queda: es lo que dice que eso se abre. */
+  .sis__nav > a svg,
+  .sis__nav summary svg:not(.sis__flecha) { display: none; }
 
   /* En el teléfono es el único control de la barra: le toca el mínimo. */
   .sis__salir { min-height: 44px; }

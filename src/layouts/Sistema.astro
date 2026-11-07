@@ -21,20 +21,66 @@ const { titulo, desnuda = false } = Astro.props;
 const usuario = Astro.locals.usuario;
 
 /* El menú solo muestra lo que el rol puede abrir: una puerta visible que
-   lleva a "no tiene permiso" es peor que no mostrarla. */
-const todos: { href: string; texto: string; icono: 'latido' | 'mas' | 'reloj' | 'laboratorio' | 'escudo'; permiso: Permiso }[] = [
-  { href: '/sistema/tablero', texto: 'Tablero', icono: 'latido', permiso: 'ver_cierre' },
-  { href: '/sistema', texto: 'Casos', icono: 'estetoscopio', permiso: 'ver_casos' },
-  { href: '/sistema/atencion/nueva', texto: 'Nueva atención', icono: 'mas', permiso: 'escribir_historia' },
-  { href: '/sistema/borradores', texto: 'Borradores', icono: 'reloj', permiso: 'escribir_historia' },
-  { href: '/sistema/pacientes', texto: 'Pacientes', icono: 'latido', permiso: 'ver_pacientes' },
-  { href: '/sistema/marketing', texto: 'Marketing', icono: 'laboratorio', permiso: 'ver_marketing' },
-  { href: '/sistema/cierre', texto: 'Cierre del mes', icono: 'laboratorio', permiso: 'ver_cierre' },
-  { href: '/sistema/servicios', texto: 'Servicios', icono: 'escudo', permiso: 'editar_catalogo' },
-  { href: '/sistema/usuarios', texto: 'Cuentas', icono: 'estetoscopio', permiso: 'administrar_usuarios' },
-  { href: '/sistema/bitacora', texto: 'Bitácora', icono: 'escudo', permiso: 'ver_bitacora' },
+   lleva a "no tiene permiso" es peor que no mostrarla.
+
+   Va en grupos porque administración llegó a ver diez entradas sueltas y la
+   barra se cortaba sola en la tablet: "Cierre de…" y lo de más a la derecha
+   quedaba fuera de la pantalla. Lo del día a día —los casos, la gente— se
+   queda arriba de un toque; lo que se abre una vez al mes se agrupa.
+
+   Un grupo al que le queda UNA sola entrada visible se dibuja como enlace
+   suelto, no como desplegable: así el médico, que no ve ninguno de los
+   grupos completos, sigue teniendo su menú plano de siempre sin que haya que
+   escribir un menú distinto por rol. */
+type Icono = 'latido' | 'mas' | 'reloj' | 'laboratorio' | 'escudo' | 'estetoscopio';
+
+interface Entrada { href: string; texto: string; permiso: Permiso }
+interface Bloque { texto: string; icono: Icono; entradas: Entrada[] }
+
+const MENU: Bloque[] = [
+  { texto: 'Casos', icono: 'estetoscopio', entradas: [
+    { href: '/sistema', texto: 'Casos', permiso: 'ver_casos' },
+  ] },
+  { texto: 'Nueva atención', icono: 'mas', entradas: [
+    { href: '/sistema/atencion/nueva', texto: 'Nueva atención', permiso: 'escribir_historia' },
+  ] },
+  { texto: 'Borradores', icono: 'reloj', entradas: [
+    { href: '/sistema/borradores', texto: 'Borradores', permiso: 'escribir_historia' },
+  ] },
+  { texto: 'Pacientes', icono: 'latido', entradas: [
+    { href: '/sistema/pacientes', texto: 'Pacientes', permiso: 'ver_pacientes' },
+  ] },
+  { texto: 'Cobros', icono: 'laboratorio', entradas: [
+    { href: '/sistema/cierre', texto: 'Cierre del mes', permiso: 'ver_cierre' },
+    { href: '/sistema/servicios', texto: 'Servicios y precios', permiso: 'editar_catalogo' },
+  ] },
+  { texto: 'Reportes', icono: 'latido', entradas: [
+    { href: '/sistema/tablero', texto: 'Tablero', permiso: 'ver_cierre' },
+    { href: '/sistema/marketing', texto: 'Marketing del sitio', permiso: 'ver_marketing' },
+  ] },
+  { texto: 'Administración', icono: 'escudo', entradas: [
+    { href: '/sistema/usuarios', texto: 'Cuentas', permiso: 'administrar_usuarios' },
+    { href: '/sistema/bitacora', texto: 'Bitácora de accesos', permiso: 'ver_bitacora' },
+  ] },
 ];
-const enlaces = todos.filter((e) => puede(usuario?.rol as string, e.permiso));
+
+/* En qué pantalla estamos. /sistema es la lista de casos y calza exacta: con
+   el prefijo se marcaría como actual en todas las demás, porque todas
+   cuelgan de ahí. El resto sí marca sus pantallas hijas, para que la ficha
+   de un paciente siga iluminando "Pacientes". */
+const aqui = Astro.url.pathname;
+const esLaDeAhora = (href: string) =>
+  href === '/sistema' ? aqui === href : aqui === href || aqui.startsWith(`${href}/`);
+
+const menu = MENU
+  .map((b) => ({ ...b, entradas: b.entradas.filter((e) => puede(usuario?.rol as string, e.permiso)) }))
+  .filter((b) => b.entradas.length > 0)
+  .map((b) => ({
+    ...b,
+    // Con una sola entrada el desplegable sobra: es un enlace y ya.
+    sola: b.entradas.length === 1 ? b.entradas[0] : null,
+    actual: b.entradas.some((e) => esLaDeAhora(e.href)),
+  }));
 ---
 
 <!doctype html>
@@ -58,13 +104,108 @@ const enlaces = todos.filter((e) => puede(usuario?.rol as string, e.permiso));
           </a>
 
           <nav class="sis__nav" aria-label="Sistema">
-            {enlaces.map((e) => (
-              <a href={e.href} aria-current={Astro.url.pathname === e.href ? 'page' : undefined}>
-                <Icono nombre={e.icono} tam={17} />
-                {e.texto}
+            {menu.map((b) => b.sola ? (
+              <a
+                class="sis__nav-uno"
+                href={b.sola.href}
+                aria-current={esLaDeAhora(b.sola.href) ? 'page' : undefined}
+              >
+                <Icono nombre={b.icono} tam={17} />
+                {b.sola.texto}
               </a>
+            ) : (
+              /* <details> y no un menú de JavaScript: se abre con el dedo,
+                 funciona sin scripts y el navegador ya sabe cerrarlo. Lo
+                 único que agrega el script de abajo es cerrarlo al tocar
+                 afuera, que es lo que la gente espera. */
+              <details class="sis__grupo" data-grupo>
+                <summary aria-current={b.actual ? 'true' : undefined}>
+                  <Icono nombre={b.icono} tam={17} />
+                  {b.texto}
+                  <svg class="sis__flecha" width="10" height="10" viewBox="0 0 10 10" aria-hidden="true">
+                    <path d="M1 3.5 5 7.5 9 3.5" fill="none" stroke="currentColor" stroke-width="1.6"
+                          stroke-linecap="round" stroke-linejoin="round" />
+                  </svg>
+                </summary>
+                <div class="sis__menu">
+                  {b.entradas.map((e) => (
+                    <a href={e.href} aria-current={esLaDeAhora(e.href) ? 'page' : undefined}>
+                      {e.texto}
+                    </a>
+                  ))}
+                </div>
+              </details>
             ))}
           </nav>
+
+          <script>
+            /* Lo único que le falta a <details> para sentirse un menú: que se
+               cierre al tocar afuera, con Escape, y que abrir uno cierre el
+               otro. Sin esto quedan dos desplegables abiertos a la vez y hay
+               que volver a tocar el mismo para cerrarlo.
+
+               Si no corre, el menú sigue funcionando: se abre, se navega y
+               se cierra al cambiar de pantalla. */
+            const grupos = Array.from(document.querySelectorAll('[data-grupo]'));
+
+            /* En el teléfono el desplegable se cuelga de la ventana y necesita
+               saber dónde termina la barra. Se mide en vez de escribirlo a
+               mano porque la barra cambia de alto con el ancho. */
+            const barra = document.querySelector('.sis__barra');
+            const medirBarra = () => {
+              document.documentElement.style.setProperty(
+                '--alto-barra', `${Math.round(barra.getBoundingClientRect().height)}px`,
+              );
+            };
+            if (barra) {
+              medirBarra();
+              addEventListener('resize', medirBarra, { passive: true });
+            }
+
+            const cerrarMenos = (dejar) => {
+              for (const g of grupos) if (g !== dejar) g.open = false;
+            };
+
+            /* Dónde cae el desplegable. Se calcula al abrir y no antes: el
+               menú se desplaza de lado, así que la posición del grupo
+               cambia. Si no corre, el CSS lo deja a lo ancho. */
+            const ubicar = (grupo) => {
+              /* La marca va PRIMERO. Sin ella el desplegable todavía está a
+                 lo ancho de la pantalla, y medirlo así daba 1260 px: la
+                 cuenta lo empujaba al borde izquierdo y todos los grupos
+                 abrían en el mismo sitio. */
+              grupo.dataset.x = '';
+              const menu = grupo.querySelector('.sis__menu');
+              const caja = grupo.getBoundingClientRect();
+              const tope = document.documentElement.clientWidth - 10;
+              const ancho = menu.offsetWidth || 196;
+              const x = Math.max(10, Math.min(caja.left, tope - ancho));
+              grupo.style.setProperty('--x', `${Math.round(x)}px`);
+            };
+
+            for (const grupo of grupos) {
+              grupo.addEventListener('toggle', () => {
+                if (!grupo.open) return;
+                cerrarMenos(grupo);
+                ubicar(grupo);
+              });
+            }
+
+            document.addEventListener('pointerdown', (ev) => {
+              /* closest() sobre el objetivo: tocar DENTRO de un desplegable
+                 no lo cierra, que si no el enlace no alcanza a navegar. */
+              const dentro = ev.target instanceof Element && ev.target.closest('[data-grupo]');
+              if (!dentro) cerrarMenos(null);
+            });
+
+            document.addEventListener('keydown', (ev) => {
+              if (ev.key !== 'Escape') return;
+              const abierto = grupos.find((g) => g.open);
+              if (!abierto) return;
+              abierto.open = false;
+              abierto.querySelector('summary')?.focus();
+            });
+          </script>
 
           <div class="sis__quien">
             <a class="sis__yo" href="/sistema/mi-clave" title="Cambiar mi clave">

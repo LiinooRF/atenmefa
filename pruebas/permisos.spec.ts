@@ -54,8 +54,16 @@ test('administración no ve ningún botón que lleve a escribir una historia', a
 test('administración no ve nueva atención ni borradores en el menú', async ({ page }) => {
   await entrar(page, 'administracion');
   const menu = page.locator('.sis__nav');
+
+  /* Lo suyo vive dentro del grupo "Cobros", que viene cerrado: se abre para
+     mirarlo. Lo que importa de esta prueba no es si está desplegado, sino
+     que el destino exista para administración y NO exista para lo que es del
+     médico; por eso lo de abajo se comprueba por conteo y no por visibilidad,
+     que daría verde aunque el enlace estuviera ahí escondido. */
+  await menu.locator('.sis__grupo').filter({ hasText: 'Cobros' }).locator('summary').click();
   await expect(menu.getByRole('link', { name: 'Cierre del mes' })).toBeVisible();
-  await expect(menu.getByRole('link', { name: 'Servicios' })).toBeVisible();
+  await expect(menu.getByRole('link', { name: 'Servicios y precios' })).toBeVisible();
+
   await expect(menu.getByRole('link', { name: 'Nueva atención' })).toHaveCount(0);
   await expect(menu.getByRole('link', { name: 'Borradores' })).toHaveCount(0);
 });

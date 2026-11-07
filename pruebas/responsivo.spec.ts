@@ -180,6 +180,11 @@ test('todo lo que se toca mide 44 px de alto', async ({ page }) => {
 
   for (const ruta of porRevisar) {
     await page.goto(ruta);
+    /* Los grupos del menú vienen cerrados y lo de adentro no cuenta como
+       visible: se abren todos para que sus enlaces también se midan. */
+    await page.evaluate(() => {
+      document.querySelectorAll('[data-grupo]').forEach((d) => ((d as HTMLDetailsElement).open = true));
+    });
     const cosas = page.locator(SE_TOCA);
     for (let i = 0; i < (await cosas.count()); i++) {
       const caja = await cosas.nth(i).boundingBox();
