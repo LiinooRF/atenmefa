@@ -69,6 +69,14 @@ const montos = (totales: MontoPorMoneda[]) =>
 const fechaCorta = (f: string) =>
   new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
 
+/* fechaCorta ya termina en punto ("06-nov."), así que el de la frase se
+   pone solo cuando no lo trae puesto. */
+const colaDeLaTasa = !tasaDeHoy
+  ? ''
+  : tasaDeHoy.fecha === hoyEnCaracas()
+    ? ', publicado hoy.'
+    : `, lo último que publicó el BCV (${fechaCorta(tasaDeHoy.fecha)}).`;
+
 const mesEnLetras = new Date(`${mes}-01T12:00:00`)
   .toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
 
@@ -195,16 +203,10 @@ const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno
                 después, y el BCV de entonces no se puede recuperar desde acá.</>
             )}
             {tasaDeHoy && (
-              /* Todo en una expresión: dos seguidas dentro de un fragmento de
-                 Astro dejan un espacio antes de la coma al compilar, y
-                 fechaCorta ya termina en punto ("06-nov."), así que el punto
-                 final sale doble si se agrega aparte. */
-              <>{' '}El dólar está en{' '}
-                <strong class="cifra">{dinero(tasaDeHoy.bolivares)} Bs</strong>
-                {tasaDeHoy.fecha === hoyEnCaracas()
-                  ? ', publicado hoy.'
-                  : `, lo último que publicó el BCV (${fechaCorta(tasaDeHoy.fecha)})`}
-              </>
+              /* La cola va pegada al </strong> en la MISMA línea: un salto de
+                 línea entre una etiqueta y la expresión que sigue se compila
+                 como un espacio, y salía "896,12 Bs , lo último...". */
+              <> El dólar está en <strong class="cifra">{dinero(tasaDeHoy.bolivares)} Bs</strong>{colaDeLaTasa}</>
             )}
             {seConvirtio && faltaronTasas && (
               <> Quedaron fuera {plural(equivalente.sinTasa, 'monto', 'montos')} porque
