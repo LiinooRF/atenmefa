@@ -8,8 +8,17 @@
 import { equipo } from '../data/clinica';
 import Hueco from './Hueco.astro';
 import Falta from './Falta.astro';
+import { enRevision } from '../lib/revision';
+
+/* Sin nadie confirmado, la sección NO se publica.
+   Publicarla vacía dice "personal colegiado con su número de registro a la
+   vista" y no muestra ni un nombre: es una afirmación sin respaldo, y en un
+   sitio de salud es la peor clase. Además deja dos marcos de foto vacíos.
+   En la copia de revisión sí sale, con los huecos, para no olvidarla. */
+const mostrar = equipo.length > 0 || enRevision;
 ---
 
+{mostrar && (
 <section class="seccion" id="equipo">
   <div class="contenedor">
     <div class="titulo-seccion">
@@ -55,6 +64,7 @@ import Falta from './Falta.astro';
     )}
   </div>
 </section>
+)}
 
 <style>
   .equipo {

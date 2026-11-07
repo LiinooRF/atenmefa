@@ -4,6 +4,8 @@
  * Reserva la relación de aspecto real: cuando llegue la foto se cambia por
  * <Image> y la página no se mueve ni un pixel.
  */
+import { enRevision } from '../lib/revision';
+
 interface Props {
   ancho: number;
   alto: number;
@@ -15,7 +17,9 @@ const { ancho, alto, nota } = Astro.props;
 
 <div class="hueco" style={`aspect-ratio: ${ancho} / ${alto};`} role="img" aria-label={`Espacio reservado para imagen: ${nota}`}>
   <div class="hueco__cuerpo">
-    <span class="hueco__sello">Falta imagen</span>
+    {/* El rótulo es lenguaje del encargo: queda en la revisión. Afuera va
+        la medida y nada más, que es lo que se pidió. */}
+    {enRevision && <span class="hueco__sello">Falta imagen</span>}
     <span class="hueco__medida cifra">{ancho} × {alto} px</span>
   </div>
 </div>

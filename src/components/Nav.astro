@@ -1,13 +1,22 @@
 ---
-import { clinica } from '../data/clinica';
+import { clinica, equipo } from '../data/clinica';
 import { ruta } from '../lib/rutas';
+import { enRevision } from '../lib/revision';
 import Icono from './Icono.astro';
 import TiraSuperior from './TiraSuperior.astro';
 
+/* "Quiénes atienden" solo si esa sección existe. Mientras el cliente no
+   confirme a su personal, la sección no se publica, y un enlace del menú
+   que lleva a un ancla que no está deja al visitante donde cayó, sin nada
+   que explique qué pasó. */
+const hayEquipo = equipo.length > 0 || enRevision;
+
 const enlaces = [
   { href: ruta('/#servicios'), texto: 'Servicios' },
-  { href: ruta('/#equipo'), texto: 'Quiénes atienden' },
-  { href: ruta('/#preguntas'), texto: 'Preguntas' },
+  ...(hayEquipo ? [{ href: ruta('/#equipo'), texto: 'Quiénes atienden' }] : []),
+  /* A la sección y no al ancla de la portada: es una sección de verdad, con
+     una página por pregunta, y el menú es el enlace que más pesa del sitio. */
+  { href: ruta('/preguntas/'), texto: 'Preguntas' },
   { href: ruta('/#ubicacion'), texto: 'Ubicación' },
 ];
 const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;

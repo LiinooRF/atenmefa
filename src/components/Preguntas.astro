@@ -4,8 +4,14 @@
  * al recortarla: así es como Gemini y las respuestas de IA la pueden citar.
  * Solo se muestran las que tienen dato confirmado (ver src/data/clinica.ts).
  */
-import { preguntasPublicables, wa } from '../data/clinica';
+import { preguntasPublicables, catalogoDePreguntas, wa } from '../data/clinica';
 import Icono from './Icono.astro';
+import { ruta } from '../lib/rutas';
+
+/* Cada respuesta enlaza a su propia página. Sin esto las páginas de pregunta
+   quedan colgando de la nada: Google llega a ellas por el sitemap, pero un
+   enlace desde la portada vale mucho más que una línea en un XML. */
+const conPagina = new Set(catalogoDePreguntas.map((q) => q.slug));
 ---
 
 <section class="seccion seccion--bruma" id="preguntas">
@@ -22,11 +28,23 @@ import Icono from './Icono.astro';
               <span>{p.pregunta}</span>
               <span class="preguntas__signo" aria-hidden="true"><Icono nombre="mas" tam={19} /></span>
             </summary>
-            <div class="preguntas__respuesta"><p>{p.respuesta}</p></div>
+            <div class="preguntas__respuesta">
+              <p>{p.respuesta}</p>
+              {conPagina.has(p.slug) && (
+                <a class="preguntas__mas" href={ruta(`/preguntas/${p.slug}/`)}>
+                  Ver esta pregunta
+                  <Icono nombre="flecha" tam={14} />
+                </a>
+              )}
+            </div>
           </details>
         </li>
       ))}
     </ul>
+
+    <p class="preguntas__cierre">
+      <a class="preguntas__todas" href={ruta('/preguntas/')}>Ver todas las preguntas</a>
+    </p>
 
     <p class="preguntas__cierre">
       ¿No está acá lo que necesita?
@@ -38,6 +56,19 @@ import Icono from './Icono.astro';
 </section>
 
 <style>
+  .preguntas__mas {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    margin-top: 10px;
+    color: var(--azul);
+    font-size: var(--u-sm);
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .preguntas__mas:hover { text-decoration: underline; }
+  .preguntas__todas { font-weight: 700; }
+
   .preguntas__caja { max-width: 840px; }
 
   .preguntas { list-style: none; margin: 0; padding: 0; border-top: 1px solid var(--linea); }

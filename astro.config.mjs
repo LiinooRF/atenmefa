@@ -19,7 +19,16 @@ const base = process.env.BASE ?? '/';
 export default defineConfig({
   site: sitio,
   base,
-  integrations: [sitemap()],
+  integrations: [
+    sitemap({
+      /* El panel clínico NO va en el sitemap. Estaba yendo: trece rutas de
+         /sistema/ listadas, incluida la bitácora de accesos y el cierre del
+         mes. Las páginas responden 307 sin sesión y llevan X-Robots-Tag, así
+         que no se indexaban, pero un sitemap es público y estaba repartiendo
+         el mapa del sistema interno a cualquiera que lo abriera. */
+      filter: (pagina) => !new URL(pagina).pathname.startsWith('/sistema'),
+    }),
+  ],
   /**
    * Las páginas públicas se generan estáticas, como hasta ahora. Solo las
    * de /sistema/ se sirven en el momento, porque necesitan sesión y base

@@ -1,6 +1,7 @@
 ---
 import { clinica, wa } from '../data/clinica';
 import Falta from './Falta.astro';
+import { enRevision } from '../lib/revision';
 import Icono from './Icono.astro';
 
 const d = clinica.direccion;
@@ -60,23 +61,24 @@ const contactos = [
           </ul>
         </div>
 
-        <div class="ubi__bloque">
-          <h3>Horario</h3>
-          {clinica.horariosTexto ? (
-            <p>{clinica.horariosTexto}</p>
-          ) : (
-            <Falta
-              que="horario de atención, día por día"
-            />
-          )}
-        </div>
+        {/* El bloque entero desaparece si no hay dato, no solo su relleno:
+            un <h3>Horario</h3> con nada debajo se lee como una página rota.
+            En la copia de revisión sí sale, con el hueco a la vista. */}
+        {(clinica.horariosTexto || enRevision) && (
+          <div class="ubi__bloque">
+            <h3>Horario</h3>
+            {clinica.horariosTexto ? (
+              <p>{clinica.horariosTexto}</p>
+            ) : (
+              <Falta que="horario de atención, día por día" />
+            )}
+          </div>
+        )}
 
-        {!clinica.contacto.fijo && (
+        {!clinica.contacto.fijo && enRevision && (
           <div class="ubi__bloque">
             <h3>Teléfono fijo</h3>
-            <Falta
-              que="teléfono fijo del local"
-            />
+            <Falta que="teléfono fijo del local" />
           </div>
         )}
 

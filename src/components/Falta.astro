@@ -1,9 +1,13 @@
 ---
 /**
  * Slot para un dato que el cliente todavía no entregó.
- * Se ve a propósito: al revisar la página salta a la vista qué falta.
- * Cuando el dato se llena en src/data/clinica.ts, el bloque desaparece solo.
+ *
+ * Se ve SOLO en la copia de revisión (PREVIA=1): ahí salta a la vista qué
+ * falta. En el sitio publicado no se dibuja nada. Estaba saliendo en
+ * producción y Google lo indexó.
  */
+import { enRevision } from '../lib/revision';
+
 interface Props {
   /** Qué dato falta, en pocas palabras. Lo lee el cliente. */
   que: string;
@@ -11,7 +15,7 @@ interface Props {
 const { que } = Astro.props;
 ---
 
-<p class="falta">Falta el dato de {que}</p>
+{enRevision && <p class="falta">Falta el dato de {que}</p>}
 
 <style>
   .falta {

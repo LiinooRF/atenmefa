@@ -135,7 +135,7 @@ export interface Servicio {
   preparacion: Pendiente<string>;
   entrega: Pendiente<string>;
   /** Preguntas propias del servicio. Sin respuesta no se publican. */
-  preguntas: readonly { pregunta: string; respuesta: Pendiente<string> }[];
+  preguntas: readonly { slug: string; pregunta: string; respuesta: Pendiente<string> }[];
 }
 
 export const servicios: readonly Servicio[] = [
@@ -160,10 +160,11 @@ export const servicios: readonly Servicio[] = [
     preparacion: null,
     entrega: null,
     preguntas: [
-      { pregunta: '¿Cuánto cuesta un traslado de Ciudad Bolívar a Caracas?', respuesta: null },
-      { pregunta: '¿Cuánto tardan en llegar dentro de Ciudad Bolívar?', respuesta: null },
-      { pregunta: '¿Puede acompañar un familiar en la ambulancia?', respuesta: null },
-      { pregunta: '¿Hacen traslados programados, no solo de emergencia?',
+      { slug: 'traslado-a-caracas', pregunta: '¿Cuánto cuesta un traslado de Ciudad Bolívar a Caracas?', respuesta: null },
+      { slug: 'cuanto-tarda-la-ambulancia', pregunta: '¿Cuánto tardan en llegar dentro de Ciudad Bolívar?', respuesta: null },
+      { slug: 'acompanante-en-la-ambulancia', pregunta: '¿Puede acompañar un familiar en la ambulancia?', respuesta: null },
+      { slug: 'traslados-programados',
+        pregunta: '¿Hacen traslados programados, no solo de emergencia?',
         respuesta: 'Sí. Además de las emergencias, Atenmefa coordina traslados programados: alta de una clínica, ingreso a otra, o viajes a otro estado para un tratamiento.' },
     ],
   },
@@ -187,10 +188,10 @@ export const servicios: readonly Servicio[] = [
     preparacion: null,
     entrega: null,
     preguntas: [
-      { pregunta: '¿Necesito orden médica para hacerme exámenes?', respuesta: null },
-      { pregunta: '¿Hay que ir en ayunas?', respuesta: null },
-      { pregunta: '¿Cuándo están listos los resultados?', respuesta: null },
-      { pregunta: '¿Desde qué hora toman muestras?', respuesta: null },
+      { slug: 'orden-medica-laboratorio', pregunta: '¿Necesito orden médica para hacerme exámenes?', respuesta: null },
+      { slug: 'ayunas-laboratorio', pregunta: '¿Hay que ir en ayunas?', respuesta: null },
+      { slug: 'resultados-laboratorio', pregunta: '¿Cuándo están listos los resultados?', respuesta: null },
+      { slug: 'hora-de-muestras', pregunta: '¿Desde qué hora toman muestras?', respuesta: null },
     ],
   },
   {
@@ -213,10 +214,10 @@ export const servicios: readonly Servicio[] = [
     preparacion: null,
     entrega: null,
     preguntas: [
-      { pregunta: '¿Atienden emergencias las 24 horas?',
-        respuesta: 'Sí. La línea 0414-893.91.76 atiende las 24 horas, todos los días. La segunda línea es 0414-851.74.22.' },
-      { pregunta: '¿Hacen atención a domicilio?',
-        respuesta: 'Sí. Atenmefa presta servicios de salud a domicilio en Ciudad Bolívar, además de atender en su local.' },
+      /* Las de "24 horas" y "a domicilio" viven en la lista general y no
+         acá: son del centro entero, no de este servicio. Estaban en los dos
+         lados, y la misma pregunta con la misma respuesta en dos FAQPage es
+         contenido duplicado: Google termina ignorando las dos. */
     ],
   },
   {
@@ -239,8 +240,8 @@ export const servicios: readonly Servicio[] = [
     preparacion: null,
     entrega: null,
     preguntas: [
-      { pregunta: '¿Atienden niños?', respuesta: null },
-      { pregunta: '¿Hay que pedir cita o se atiende por orden de llegada?', respuesta: null },
+      { slug: 'atienden-ninos', pregunta: '¿Atienden niños?', respuesta: null },
+      { slug: 'hay-que-pedir-cita-o', pregunta: '¿Hay que pedir cita o se atiende por orden de llegada?', respuesta: null },
     ],
   },
   {
@@ -258,8 +259,8 @@ export const servicios: readonly Servicio[] = [
     preparacion: null,
     entrega: null,
     preguntas: [
-      { pregunta: '¿Necesito orden médica para un electrocardiograma?', respuesta: null },
-      { pregunta: '¿Me entregan el informe el mismo día?', respuesta: null },
+      { slug: 'necesito-orden-medica-para-un', pregunta: '¿Necesito orden médica para un electrocardiograma?', respuesta: null },
+      { slug: 'me-entregan-el-informe-el', pregunta: '¿Me entregan el informe el mismo día?', respuesta: null },
     ],
   },
   {
@@ -277,8 +278,8 @@ export const servicios: readonly Servicio[] = [
     preparacion: null,
     entrega: null,
     preguntas: [
-      { pregunta: '¿Hay que llevar el medicamento?', respuesta: null },
-      { pregunta: '¿Cuántas sesiones hacen falta?', respuesta: null },
+      { slug: 'hay-que-llevar-el-medicamento', pregunta: '¿Hay que llevar el medicamento?', respuesta: null },
+      { slug: 'cuantas-sesiones-hacen-falta', pregunta: '¿Cuántas sesiones hacen falta?', respuesta: null },
     ],
   },
   {
@@ -296,8 +297,8 @@ export const servicios: readonly Servicio[] = [
     preparacion: null,
     entrega: null,
     preguntas: [
-      { pregunta: '¿Atienden heridas el mismo día?', respuesta: null },
-      { pregunta: '¿Incluye el retiro de los puntos?', respuesta: null },
+      { slug: 'atienden-heridas-el-mismo-dia', pregunta: '¿Atienden heridas el mismo día?', respuesta: null },
+      { slug: 'incluye-el-retiro-de-los', pregunta: '¿Incluye el retiro de los puntos?', respuesta: null },
     ],
   },
   {
@@ -315,9 +316,9 @@ export const servicios: readonly Servicio[] = [
     preparacion: null,
     entrega: null,
     preguntas: [
-      { pregunta: '¿Cuál es el alquiler mínimo?', respuesta: null },
-      { pregunta: '¿Piden depósito o garantía?', respuesta: null },
-      { pregunta: '¿Llevan el equipo hasta la casa?', respuesta: null },
+      { slug: 'cual-es-el-alquiler-minimo', pregunta: '¿Cuál es el alquiler mínimo?', respuesta: null },
+      { slug: 'piden-deposito-o-garantia', pregunta: '¿Piden depósito o garantía?', respuesta: null },
+      { slug: 'llevan-el-equipo-hasta-la', pregunta: '¿Llevan el equipo hasta la casa?', respuesta: null },
     ],
   },
 ] as const;
@@ -333,53 +334,90 @@ export const servicios: readonly Servicio[] = [
  * `respuesta: null` = la pregunta existe pero falta el dato. No se publica.
  */
 export const preguntas = [
+  /* El `slug` es la dirección de la página de esa pregunta y se escribe a
+     mano, no se saca del texto: si mañana se reformula la pregunta, la
+     dirección tiene que seguir siendo la misma o se rompe lo que Google ya
+     indexó y lo que alguien haya compartido. */
   {
+    slug: 'donde-queda-atenmefa',
     pregunta: '¿Dónde queda Atenmefa en Ciudad Bolívar?',
     respuesta:
       'Atenmefa está en la Av. Sucre, sector Puente Gómez, dentro del C.C. Santa Catalina, local 04, en Ciudad Bolívar, estado Bolívar.',
   },
   {
+    slug: 'emergencias-24-horas',
     pregunta: '¿Atienden emergencias las 24 horas?',
     respuesta:
       'Sí. La línea 0414-893.91.76 atiende las 24 horas. También está disponible el 0414-851.74.22.',
   },
   {
+    slug: 'atencion-a-domicilio',
     pregunta: '¿Hacen atención médica a domicilio?',
     respuesta:
       'Sí. Atenmefa presta servicios de salud a domicilio en Ciudad Bolívar, además de la atención en su local del C.C. Santa Catalina.',
   },
   {
+    slug: 'traslados-fuera-del-estado',
     pregunta: '¿Hacen traslados en ambulancia fuera del estado Bolívar?',
     respuesta:
       'Sí. Atenmefa hace traslados a cualquier estado del país, en unidades con soporte vital y personal paramédico a bordo durante todo el trayecto.',
   },
   {
+    slug: 'como-pedir-una-ambulancia',
+    pregunta: '¿Cómo pido una ambulancia en Ciudad Bolívar?',
+    respuesta:
+      'Llamando o escribiendo al 0414-893.91.76, que atiende las 24 horas. Conviene tener a mano dónde está el paciente, qué le pasa y a dónde hay que llevarlo.',
+  },
+  {
+    slug: 'examenes-del-laboratorio',
+    pregunta: '¿Qué exámenes hace el laboratorio de Atenmefa?',
+    respuesta:
+      'Hematología completa, química sanguínea —glicemia, urea, creatinina y perfil lipídico—, examen de orina y examen de heces. Se procesan en el local del C.C. Santa Catalina.',
+  },
+  {
+    slug: 'alquiler-de-equipos-medicos',
+    pregunta: '¿Alquilan sillas de ruedas o camas clínicas?',
+    respuesta:
+      'Sí. Atenmefa alquila sillas de ruedas, camas clínicas y equipos de oxígeno para uso en casa.',
+  },
+  {
+    slug: 'seguros-y-polizas',
     pregunta: '¿Trabajan con seguros?',
     respuesta:
       'Sí. Atenmefa atiende casos de seguros y de redes de asistencia médica. Para saber si su póliza aplica, escriba por WhatsApp con el nombre del seguro antes de la consulta.',
   },
   {
+    slug: 'formas-de-pago',
     pregunta: '¿Qué formas de pago aceptan?',
     respuesta:
       'Pago móvil, transferencia en bolívares, punto de venta y divisas en efectivo.',
   },
+
+  /* De acá para abajo falta el dato del cliente. La pregunta está escrita
+     porque es la que la gente hace; mientras `respuesta` sea null no se
+     publica, no sale en el schema y no tiene página. */
   {
+    slug: 'orden-medica-para-examenes',
     pregunta: '¿Necesito orden médica para hacerme exámenes de laboratorio?',
     respuesta: null as Pendiente<string>,
   },
   {
+    slug: 'cuanto-cuesta-un-traslado',
     pregunta: '¿Cuánto cuesta un traslado en ambulancia?',
     respuesta: null as Pendiente<string>,
   },
   {
+    slug: 'cuando-estan-los-resultados',
     pregunta: '¿Cuándo están listos los resultados del laboratorio?',
     respuesta: null as Pendiente<string>,
   },
   {
+    slug: 'ayuno-para-examenes',
     pregunta: '¿Hay que ir en ayunas para los exámenes de sangre?',
     respuesta: null as Pendiente<string>,
   },
   {
+    slug: 'atienden-ninos',
     pregunta: '¿Atienden niños?',
     respuesta: null as Pendiente<string>,
   },
@@ -397,6 +435,55 @@ export const servicioPorSlug = (slug: string) => servicios.find((s) => s.slug ==
 /** Solo las preguntas del servicio que ya tienen dato confirmado. */
 export const preguntasDe = (s: Servicio) =>
   s.preguntas.filter((p): p is { pregunta: string; respuesta: string } => p.respuesta !== null);
+
+/* ------------------------------------------------------------------
+   El catálogo de preguntas con página propia.
+   ------------------------------------------------------------------
+
+   Cada pregunta respondida tiene su dirección. No es un blog: es lo que
+   recomienda el diagnóstico para que Gemini y AI Overviews puedan citar a
+   la clínica. Esos buscadores extraen pares de pregunta y respuesta, y una
+   respuesta que se sostiene sola en dos frases se cita; un párrafo dentro
+   de una página de servicio, no.
+
+   Lo que NO se hace acá: una página por cada combinación de servicio y
+   sector para llenar el sitio. Eso son páginas puerta, Google las castiga
+   y además se nota. Una pregunta tiene página cuando tiene una respuesta
+   distinta que dar. */
+
+export interface PreguntaConPagina {
+  slug: string;
+  pregunta: string;
+  respuesta: string;
+  /** El servicio del que habla, si es de uno. Sirve para enlazar de vuelta. */
+  servicio: Servicio | null;
+}
+
+const respondida = (p: { respuesta: Pendiente<string> }): p is { respuesta: string } & typeof p =>
+  typeof p.respuesta === 'string' && p.respuesta.trim().length > 0;
+
+export const catalogoDePreguntas: readonly PreguntaConPagina[] = [
+  ...preguntas.filter(respondida).map((p) => ({
+    slug: p.slug, pregunta: p.pregunta, respuesta: p.respuesta, servicio: null,
+  })),
+  ...servicios.flatMap((s) =>
+    s.preguntas.filter(respondida).map((p) => ({
+      slug: p.slug, pregunta: p.pregunta, respuesta: p.respuesta, servicio: s,
+    })),
+  ),
+];
+
+export const preguntaPorSlug = (slug: string) =>
+  catalogoDePreguntas.find((p) => p.slug === slug);
+
+/* Las que todavía esperan el dato del cliente. No se publican, pero tenerlas
+   contadas es lo que permite pedirlas en una sola lista en vez de a goteo. */
+export const preguntasSinResponder: readonly { pregunta: string; servicio: string | null }[] = [
+  ...preguntas.filter((p) => !respondida(p)).map((p) => ({ pregunta: p.pregunta, servicio: null })),
+  ...servicios.flatMap((s) =>
+    s.preguntas.filter((p) => !respondida(p)).map((p) => ({ pregunta: p.pregunta, servicio: s.nombre })),
+  ),
+];
 
 export const wa = (mensaje: string) =>
   `https://wa.me/${clinica.contacto.whatsapp.e164.replace('+', '')}?text=${encodeURIComponent(mensaje)}`;

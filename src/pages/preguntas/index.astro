@@ -1,0 +1,130 @@
+---
+/**
+ * El índice de las preguntas.
+ *
+ * Dos trabajos. Para una persona, encontrar la suya de un barrido. Para
+ * Google, descubrir las páginas: sin una lista que enlace a todas, cada
+ * pregunta queda colgando de la nada y tarda meses en indexarse.
+ *
+ * Las que esperan dato del cliente NO salen acá ni enlazadas ni nombradas:
+ * un listado con la mitad de las entradas muertas es peor que uno corto.
+ */
+import Base from '../../layouts/Base.astro';
+import Icono from '../../components/Icono.astro';
+import Cierre from '../../components/Cierre.astro';
+import { catalogoDePreguntas, servicios, clinica } from '../../data/clinica';
+import { ruta } from '../../lib/rutas';
+
+/* Agrupadas: primero las del centro entero, después las de cada servicio.
+   Así la lista se lee como el sitio y no como un montón. */
+const generales = catalogoDePreguntas.filter((p) => !p.servicio);
+const porServicio = servicios
+  .map((s) => ({ servicio: s, suyas: catalogoDePreguntas.filter((p) => p.servicio?.slug === s.slug) }))
+  .filter((g) => g.suyas.length > 0);
+---
+
+<Base
+  titulo="Preguntas frecuentes sobre Atenmefa | Ciudad Bolívar"
+  descripcion={`Dónde queda Atenmefa, si atienden las 24 horas, cómo pedir una ambulancia, qué exámenes hace el laboratorio y qué formas de pago aceptan, en ${clinica.direccion.ciudad}.`}
+  ruta="/preguntas/"
+>
+  <nav class="miga" aria-label="Ruta">
+    <div class="contenedor">
+      <a href={ruta('/')}>Inicio</a>
+      <Icono nombre="flecha" tam={14} />
+      <span aria-current="page">Preguntas</span>
+    </div>
+  </nav>
+
+  <header class="cab">
+    <div class="contenedor">
+      <h1>Preguntas frecuentes</h1>
+      <p>
+        Lo que más preguntan sobre Atenmefa, respondido. Si lo suyo no está acá,
+        escriba por WhatsApp al {clinica.contacto.whatsapp.visible}.
+      </p>
+    </div>
+  </header>
+
+  <div class="contenedor listas">
+    <section>
+      <h2>Sobre el centro</h2>
+      <ul class="lista">
+        {generales.map((p) => (
+          <li>
+            <a href={ruta(`/preguntas/${p.slug}/`)}>
+              <span class="lista__pregunta">{p.pregunta}</span>
+              <span class="lista__respuesta">{p.respuesta}</span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+
+    {porServicio.map(({ servicio, suyas }) => (
+      <section>
+        <h2>
+          <a href={ruta(`/servicios/${servicio.slug}/`)}>{servicio.nombre}</a>
+        </h2>
+        <ul class="lista">
+          {suyas.map((p) => (
+            <li>
+              <a href={ruta(`/preguntas/${p.slug}/`)}>
+                <span class="lista__pregunta">{p.pregunta}</span>
+                <span class="lista__respuesta">{p.respuesta}</span>
+              </a>
+            </li>
+          ))}
+        </ul>
+      </section>
+    ))}
+  </div>
+
+  <Cierre />
+</Base>
+
+<style>
+  .miga { padding: 14px 0; font-size: var(--u-sm); }
+  .miga > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--tinta-tenue); }
+  .miga a { color: var(--azul); text-decoration: none; }
+  .miga a:hover { text-decoration: underline; }
+
+  .cab { padding: 8px 0 26px; }
+  .cab h1 {
+    margin: 0 0 10px;
+    font-size: clamp(1.7rem, 1.3rem + 1.8vw, 2.5rem);
+    letter-spacing: -0.02em;
+    color: var(--azul);
+  }
+  .cab p { margin: 0; max-width: min(58ch, 100%); color: var(--tinta-suave); line-height: 1.6; }
+
+  .listas { display: grid; gap: 30px; padding-bottom: 46px; }
+  .listas h2 { margin: 0 0 12px; font-size: 1.1rem; color: var(--azul); }
+  .listas h2 a { color: inherit; text-decoration: none; }
+  .listas h2 a:hover { text-decoration: underline; }
+
+  .lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 8px; }
+  .lista a {
+    display: grid;
+    gap: 4px;
+    min-height: 56px;
+    padding: 13px 15px;
+    border: 1px solid var(--linea);
+    border-radius: 11px;
+    background: var(--papel);
+    text-decoration: none;
+  }
+  .lista a:hover { border-color: var(--azul-medio, var(--azul)); }
+  .lista__pregunta { font-weight: 700; color: var(--azul); line-height: 1.35; }
+  /* La respuesta, recortada: deja ver que hay respuesta sin convertir el
+     índice en la página. */
+  .lista__respuesta {
+    color: var(--tinta-suave);
+    font-size: var(--u-sm);
+    line-height: 1.5;
+    display: -webkit-box;
+    -webkit-line-clamp: 2;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+  }
+</style>

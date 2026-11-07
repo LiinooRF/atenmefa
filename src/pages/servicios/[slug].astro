@@ -3,8 +3,11 @@ import Base from '../../layouts/Base.astro';
 import Icono from '../../components/Icono.astro';
 import Falta from '../../components/Falta.astro';
 import Cierre from '../../components/Cierre.astro';
-import { servicios, preguntasDe, clinica, wa, type Servicio } from '../../data/clinica';
+import {
+  servicios, preguntasDe, catalogoDePreguntas, clinica, wa, type Servicio,
+} from '../../data/clinica';
 import { ruta } from '../../lib/rutas';
+import { enRevision } from '../../lib/revision';
 
 export function getStaticPaths() {
   return servicios.map((s) => ({ params: { slug: s.slug }, props: { servicio: s } }));
@@ -16,6 +19,13 @@ const { servicio: s } = Astro.props;
 const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
 const preguntas = preguntasDe(s);
 const otros = servicios.filter((o) => o.slug !== s.slug).slice(0, 4);
+
+/* Las preguntas de este servicio que ya tienen página propia, para enlazar
+   a ellas desde acá: es lo que convierte las páginas sueltas en un conjunto
+   que Google recorre. */
+const conPagina = new Set(
+  catalogoDePreguntas.filter((q) => q.servicio?.slug === s.slug).map((q) => q.slug),
+);
 
 const fichas = [
   { rotulo: 'Precio', valor: s.precioDesde ? `Desde ${s.precioDesde}` : null, falta: 'precio' },
@@ -112,7 +122,10 @@ const fichas = [
       </section>
     )}
 
-    {s.preguntas.length > preguntas.length && (
+    {/* Solo en la copia de revisión: es la lista de pendientes del encargo,
+        no contenido del sitio. Publicada le decía a cualquier visitante que
+        la página está a medias. */}
+    {enRevision && s.preguntas.length > preguntas.length && (
       <section class="seccion">
         <div class="contenedor estrecho">
           <h2>Lo que falta responder</h2>

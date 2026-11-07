@@ -1,0 +1,149 @@
+---
+/**
+ * Una pregunta, una página.
+ *
+ * Es lo que pide el diagnóstico para AEO: Gemini, AI Overviews y Perplexity
+ * citan pares de pregunta y respuesta porque son extraíbles. Una pregunta
+ * literal como título y una respuesta que se sostiene sola en dos frases se
+ * puede citar; el mismo párrafo enterrado en una página de servicio, no.
+ *
+ * Solo llegan acá las preguntas con respuesta confirmada. Las que esperan el
+ * dato del cliente no tienen página: una página que dice "falta el dato" es
+ * peor que no existir, porque Google la indexa igual.
+ */
+import Base from '../../layouts/Base.astro';
+import Icono from '../../components/Icono.astro';
+import Cierre from '../../components/Cierre.astro';
+import {
+  catalogoDePreguntas, clinica, wa, type PreguntaConPagina,
+} from '../../data/clinica';
+import { ruta } from '../../lib/rutas';
+
+export function getStaticPaths() {
+  return catalogoDePreguntas.map((p) => ({ params: { slug: p.slug }, props: { p } }));
+}
+
+interface Props { p: PreguntaConPagina }
+const { p } = Astro.props;
+
+/* Las demás preguntas, con las de su mismo servicio adelante. Enlazar entre
+   ellas es lo que las saca de ser páginas sueltas: Google sigue los enlaces
+   y entiende que son un conjunto. */
+const otras = catalogoDePreguntas
+  .filter((o) => o.slug !== p.slug)
+  .sort((a, b) => Number(b.servicio?.slug === p.servicio?.slug) - Number(a.servicio?.slug === p.servicio?.slug))
+  .slice(0, 6);
+---
+
+<Base
+  titulo={`${p.pregunta} | Atenmefa`}
+  descripcion={p.respuesta}
+  ruta={`/preguntas/${p.slug}/`}
+  pregunta={p}
+>
+  <nav class="miga" aria-label="Ruta">
+    <div class="contenedor">
+      <a href={ruta('/')}>Inicio</a>
+      <Icono nombre="flecha" tam={14} />
+      <a href={ruta('/preguntas/')}>Preguntas</a>
+      <Icono nombre="flecha" tam={14} />
+      <span aria-current="page">{p.pregunta}</span>
+    </div>
+  </nav>
+
+  <article class="preg">
+    <div class="contenedor preg__caja">
+      <h1>{p.pregunta}</h1>
+
+      {/* La respuesta primero y sola: es lo que se cita. Nada entre el
+          título y ella. */}
+      <p class="preg__respuesta">{p.respuesta}</p>
+
+      <div class="preg__acciones">
+        <a class="boton boton--rojo" href={`tel:${clinica.contacto.whatsapp.e164}`}>
+          <Icono nombre="telefono" tam={18} />
+          Llamar al {clinica.contacto.whatsapp.visible}
+        </a>
+        <a class="boton boton--linea" href={wa(`Hola, tengo una consulta: ${p.pregunta}`)}>
+          <Icono nombre="whatsapp" tam={18} />
+          Escribir por WhatsApp
+        </a>
+      </div>
+
+      {p.servicio && (
+        <p class="preg__servicio">
+          Esta pregunta es sobre{' '}
+          <a href={ruta(`/servicios/${p.servicio.slug}/`)}>{p.servicio.nombre.toLowerCase()}</a>.
+        </p>
+      )}
+    </div>
+  </article>
+
+  {otras.length > 0 && (
+    <section class="otras">
+      <div class="contenedor">
+        <h2>Otras preguntas</h2>
+        <ul class="otras__lista">
+          {otras.map((o) => (
+            <li>
+              <a href={ruta(`/preguntas/${o.slug}/`)}>
+                <span>{o.pregunta}</span>
+                <Icono nombre="flecha" tam={16} />
+              </a>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </section>
+  )}
+
+  <Cierre />
+</Base>
+
+<style>
+  .miga { padding: 14px 0; font-size: var(--u-sm); }
+  .miga > div { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; color: var(--tinta-tenue); }
+  .miga a { color: var(--azul); text-decoration: none; }
+  .miga a:hover { text-decoration: underline; }
+  .miga [aria-current] { color: var(--tinta-tenue); }
+
+  .preg { padding: 10px 0 36px; }
+  .preg__caja { max-width: min(62ch, 100%); }
+  .preg h1 {
+    margin: 0 0 18px;
+    font-size: clamp(1.6rem, 1.2rem + 1.8vw, 2.4rem);
+    line-height: 1.2;
+    letter-spacing: -0.02em;
+    color: var(--azul);
+  }
+
+  /* Más grande que el cuerpo: es la respuesta, no un párrafo cualquiera. */
+  .preg__respuesta {
+    margin: 0 0 26px;
+    font-size: clamp(1.05rem, 1rem + 0.4vw, 1.2rem);
+    line-height: 1.65;
+    color: var(--tinta);
+  }
+
+  .preg__acciones { display: flex; flex-wrap: wrap; gap: 10px; }
+  .preg__servicio { margin: 22px 0 0; font-size: var(--u-sm); color: var(--tinta-suave); }
+  .preg__servicio a { color: var(--azul); }
+
+  .otras { padding: 30px 0 46px; border-top: 1px solid var(--linea); }
+  .otras h2 { margin: 0 0 16px; font-size: 1.15rem; color: var(--azul); }
+  .otras__lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+  .otras__lista a {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 14px;
+    min-height: 56px;
+    padding: 12px 14px;
+    border-radius: 10px;
+    color: var(--tinta);
+    text-decoration: none;
+    font-weight: 600;
+  }
+  .otras__lista a:hover { background: var(--azul-suave, rgba(17, 22, 99, 0.06)); color: var(--azul); }
+  .otras__lista :global(svg) { flex: none; color: var(--azul); }
+</style>
