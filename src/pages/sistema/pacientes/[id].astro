@@ -1,0 +1,540 @@
+---
+/**
+ * Ficha del paciente: todo lo que el centro sabe de una persona, junto.
+ *
+ * El orden de la pantalla es el orden en que lo necesita un médico que está
+ * por atenderla: quién es, a qué es alérgica, qué toma, qué le pasó antes y
+ * recién después la plata. Las alergias van arriba y con color propio
+ * porque es el único dato de acá que, si no se ve, hace daño.
+ *
+ * Lo único editable es el teléfono. El nombre y la cédula vienen de cada
+ * atención firmada: corregirlos desde el registro cambiaría el encabezado de
+ * historias que ya tienen firma, y eso no es corregir, es reescribir.
+ */
+import Sistema from '../../../layouts/Sistema.astro';
+import Icono from '../../../components/Icono.astro';
+import { exigir } from '../../../sistema/lib/guardia';
+import { puede } from '../../../sistema/lib/permisos';
+import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
+import { dinero } from '../../../sistema/lib/cobro';
+import {
+  alergiaQueImporta, enlacesDeTelefono, fichaDePaciente, guardarTelefono,
+} from '../../../sistema/lib/pacientes';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'ver_pacientes');
+if (corte) return corte;
+
+const usuario = Astro.locals.usuario!;
+const { id } = Astro.params;
+
+/* Un id sin forma de uuid hace que Postgres rechace el cast y la pantalla
+   termina en error de servidor. Un enlace viejo se contesta como lo que es:
+   un paciente que no está. */
+if (!id || !esIdentificador(id)) return Astro.redirect('/sistema/pacientes');
+
+let error = '';
+let aviso = '';
+/* Lo tecleado vuelve a la pantalla si rebota: nadie debería tener que
+   escribir dos veces el mismo número. */
+let telefonoEscrito: string | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+
+  if (String(form.get('accion') ?? '') === 'telefono') {
+    const escrito = String(form.get('telefono') ?? '');
+    try {
+      const { antes, ahora } = await guardarTelefono(id, escrito);
+      await anotar(usuario.id, 'cambio_telefono', undefined, { paciente: id, antes, ahora });
+      aviso = ahora
+        ? `Teléfono guardado. Antes decía ${antes ?? 'nada'}.`
+        : 'El teléfono quedó en blanco.';
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'No se pudo guardar el teléfono.';
+      telefonoEscrito = escrito;
+    }
+  }
+}
+
+const ficha = await fichaDePaciente(id);
+if (!ficha) return Astro.redirect('/sistema/pacientes');
+
+/* Abrir la ficha es leer datos de salud de una persona identificada, igual
+   que abrir una historia. Queda registrado por lo mismo.
+   Solo al abrirla: en un POST ya quedó anotado lo que se cambió, y sumarle
+   un "vio" a cada guardado llena la bitácora de ruido. */
+if (Astro.request.method !== 'POST') {
+  await anotar(usuario.id, 'vio_paciente', undefined, { paciente: ficha.paciente.id });
+}
+
+const { paciente, atenciones, resumen, antecedentes, donde } = ficha;
+const escribe = puede(usuario.rol as string, 'escribir_historia');
+
+const telefono = telefonoEscrito ?? paciente.telefono ?? '';
+const contacto = enlacesDeTelefono(paciente.telefono);
+
+const alergias = antecedentes?.campos.find((a) => a.clave === 'alergias')?.valor ?? '';
+/* El enlace a la atención de donde salieron los antecedentes se resuelve
+   acá: en el template quedaría un encadenado que puede caer en una
+   dirección vacía. */
+const idAntecedentes = antecedentes
+  ? (atenciones.find((a) => a.numero === antecedentes.numero)?.id ?? null)
+  : null;
+const otros = antecedentes?.campos.filter((a) => a.clave !== 'alergias') ?? [];
+const hayAlergia = alergiaQueImporta(alergias);
+/* Tres situaciones distintas que la pantalla no puede confundir: nunca vino,
+   vino y nadie le preguntó, o vino y quedó escrito. */
+const hayAtenciones = resumen.atenciones > 0;
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
+const fechaCorta = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  });
+const soloFecha = (m: Date) =>
+  new Intl.DateTimeFormat('es-VE', {
+    timeZone: 'America/Caracas', day: 'numeric', month: 'long', year: 'numeric',
+  }).format(m);
+
+const ETIQUETAS: Record<string, { texto: string; clase: string }> = {
+  borrador: { texto: 'Borrador', clase: 'borrador' },
+  cerrada: { texto: 'Cerrada', clase: 'cerrada' },
+  anulada: { texto: 'Anulada', clase: 'anulada' },
+};
+
+/* La primera moneda es el titular de la tarjeta y las demás van al pie: el
+   catálogo cotiza en dólares, pero lo que se cobró en taquilla en bolívares
+   no se le suma encima. */
+const [principal, ...otrasMonedas] = resumen.facturado;
+
+const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(paciente.cedula)}`;
+---
+
+<Sistema titulo={paciente.nombre}>
+  <nav class="miga"><a href="/sistema/pacientes">Pacientes</a> <span>/</span> {paciente.nombre}</nav>
+
+  <header class="cab">
+    <div class="cab__quien">
+      <h1>{paciente.nombre}</h1>
+      <p class="cab__meta">
+        <strong class="cifra">{paciente.cedula}</strong>
+        {paciente.sexo && <> · {paciente.sexo}</>}
+        {donde?.edad && <> · {donde.edad} años</>}
+        {resumen.desde
+          ? <> · paciente desde {fechaLarga(resumen.desde)}</>
+          : <> · registrado el {soloFecha(paciente.registrado)}</>}
+      </p>
+    </div>
+    <div class="cab__acciones">
+      {contacto && (
+        <a class="sis-boton sis-boton--suave" href={contacto.llamar}>
+          <Icono nombre="telefono" tam={18} />
+          Llamar
+        </a>
+      )}
+      {contacto?.whatsapp && (
+        <a class="sis-boton sis-boton--suave" href={contacto.whatsapp} target="_blank" rel="noopener">
+          <Icono nombre="whatsapp" tam={18} />
+          WhatsApp
+        </a>
+      )}
+      {escribe && (
+        <a class="sis-boton sis-boton--primario" href={nuevaConSuCedula}>
+          <Icono nombre="mas" tam={18} />
+          Nueva atención
+        </a>
+      )}
+    </div>
+  </header>
+
+  {error && <p class="sis-error msj"><Icono nombre="escudo" tam={18} />{error}</p>}
+  {aviso && <p class="msj msj--bien"><Icono nombre="escudo" tam={18} />{aviso}</p>}
+
+  <!-- Las alergias primero y con su propio color. Es el único dato de esta
+       pantalla que, si no se ve, hace daño. -->
+  <div
+    class:list={[
+      'alergia',
+      !hayAtenciones ? 'alergia--sin'
+      : hayAlergia ? 'alergia--ojo'
+      : alergias ? 'alergia--limpia'
+      : 'alergia--falta',
+    ]}
+  >
+    <Icono nombre="escudo" tam={19} />
+    <div>
+      {!hayAtenciones ? (
+        <p><strong>Sin antecedentes registrados.</strong> Todavía no tiene ninguna atención que cuente.</p>
+      ) : hayAlergia ? (
+        <p><strong>Alergias: {alergias}</strong></p>
+      ) : alergias ? (
+        <p><strong>Alergias: {alergias.toLowerCase()}.</strong> Así quedó escrito en su atención más reciente que lo anotó.</p>
+      ) : antecedentes ? (
+        <p>
+          <strong>Sin dato de alergias.</strong> Esa atención dejó el campo en blanco, que no
+          es lo mismo que "ninguna": hay que preguntarlo otra vez.
+        </p>
+      ) : (
+        <p>
+          <strong>Sin dato de alergias.</strong> Ninguna de sus atenciones lo dejó escrito, y en
+          blanco no es lo mismo que "ninguna": hay que preguntarlo.
+        </p>
+      )}
+      {antecedentes && (
+        <small>
+          De la atención {idAntecedentes
+            ? <a href={`/sistema/atencion/${idAntecedentes}`}>N° {antecedentes.numero}</a>
+            : <>N° {antecedentes.numero}</>}, del {fechaLarga(antecedentes.fecha)}.
+        </small>
+      )}
+    </div>
+  </div>
+
+  <ul class="cifras">
+    <li class="sis-tarjeta">
+      <span class="cifras__rotulo">Atenciones</span>
+      <strong class="cifras__dato cifra">{resumen.atenciones}</strong>
+      <span class="cifras__pie">
+        {resumen.borradores > 0 && `${resumen.borradores} sin terminar. `}
+        {resumen.anuladas > 0
+          ? `${resumen.anuladas} ${resumen.anuladas === 1 ? 'anulada' : 'anuladas'} aparte.`
+          : 'ninguna anulada.'}
+      </span>
+    </li>
+    <li class="sis-tarjeta">
+      <span class="cifras__rotulo">Paciente desde</span>
+      <strong class="cifras__dato cifras__dato--corto">
+        {resumen.desde ? fechaCorta(resumen.desde) : '—'}
+      </strong>
+      <span class="cifras__pie">
+        {resumen.desde ? 'fecha de su primera atención' : 'todavía sin atenciones'}
+      </span>
+    </li>
+    <li class="sis-tarjeta">
+      <span class="cifras__rotulo">Facturado en total</span>
+      <strong class="cifras__dato cifra">{principal ? dinero(principal.total) : '0,00'}</strong>
+      <span class="cifras__pie">
+        {principal ? `en ${principal.moneda}` : 'nada cargado todavía'}
+        {otrasMonedas.map((c) => <><br />y {dinero(c.total)} en {c.moneda}</>)}
+      </span>
+    </li>
+    <li class="sis-tarjeta">
+      <span class="cifras__rotulo">Con qué seguros vino</span>
+      {resumen.seguros.length === 0 ? (
+        <p class="cifras__texto">Siempre pagó directo.</p>
+      ) : (
+        <ul class="chapas">
+          {resumen.seguros.map((s) => <li>{s}</li>)}
+        </ul>
+      )}
+    </li>
+  </ul>
+
+  <div class="col">
+    <section class="sis-tarjeta">
+      <h2>Hábitos y antecedentes</h2>
+      {otros.length === 0 ? (
+        <p class="suelto">
+          {!hayAtenciones
+            ? 'Se llenan en la atención y aparecen acá en cuanto haya una.'
+            : antecedentes
+              ? 'Esa atención no dejó escrito nada más que las alergias.'
+              : 'Ninguna de sus atenciones dejó escritos los hábitos ni los antecedentes.'}
+        </p>
+      ) : (
+        <dl class="datos">
+          {otros.map((a) => (
+            <div>
+              <dt>{a.rotulo}</dt>
+              <dd>{a.valor}</dd>
+            </div>
+          ))}
+        </dl>
+      )}
+      {antecedentes && (
+        <p class="pie">
+          Es lo que quedó escrito en la atención N° {antecedentes.numero}, del
+          {' '}{fechaLarga(antecedentes.fecha)}. No se arrastra solo de una atención a la
+          siguiente: el médico lo confirma cada vez.
+        </p>
+      )}
+    </section>
+
+    <section class="sis-tarjeta">
+      <h2>Contacto</h2>
+
+      <form method="post" class="tel">
+        <input type="hidden" name="accion" value="telefono" />
+        <div class="sis-campo">
+          <label for="telefono">Teléfono</label>
+          <input
+            id="telefono" name="telefono" type="tel" value={telefono}
+            inputmode="tel" autocomplete="off" placeholder="0414-8939176"
+            aria-invalid={error ? 'true' : undefined}
+          />
+          <span class="pista">
+            Lo único que se corrige desde acá. Se puede dejar en blanco: un número
+            equivocado es peor que ninguno.
+          </span>
+        </div>
+        <button type="submit" class="sis-boton sis-boton--azul" name="guardar" value="1">
+          Guardar el teléfono
+        </button>
+      </form>
+
+      {contacto && !contacto.esMovil && (
+        <p class="suelto suelto--nota">
+          No parece un celular, así que no se ofrece WhatsApp: el enlace llevaría a una
+          conversación que no existe.
+        </p>
+      )}
+
+      {donde && (donde.direccion || donde.ciudad || donde.referencia) && (
+        <dl class="datos datos--alto">
+          {donde.direccion && <div><dt>Dirección</dt><dd>{donde.direccion}</dd></div>}
+          {donde.ciudad && <div><dt>Ciudad</dt><dd>{donde.ciudad}</dd></div>}
+          {donde.referencia && <div><dt>Punto de referencia</dt><dd>{donde.referencia}</dd></div>}
+          <div><dt>De la atención</dt><dd class="cifra">N° {donde.numero}, del {fechaLarga(donde.fecha)}</dd></div>
+        </dl>
+      )}
+
+      <p class="pie">
+        El nombre y la cédula salen de cada atención firmada y no se editan acá. Si están
+        mal, se corrigen en la atención, que es donde quedó la firma.
+      </p>
+    </section>
+  </div>
+
+  <section class="historial">
+    <h2>Todas sus atenciones</h2>
+    {atenciones.length === 0 ? (
+      <div class="sis-tarjeta suelto suelto--vacio">
+        <p>Está en el registro pero todavía no tiene ninguna atención cargada.</p>
+        {escribe && (
+          <a class="sis-boton sis-boton--primario" href={nuevaConSuCedula}>Registrar la primera</a>
+        )}
+      </div>
+    ) : (
+      <div class="sis-tarjeta tabla">
+        <table>
+          <thead>
+            <tr>
+              <th scope="col">Atención</th>
+              <th scope="col">Fecha</th>
+              <th scope="col">Diagnóstico</th>
+              <th scope="col">Atendió</th>
+              <th scope="col">Estado</th>
+              <th scope="col" class="derecha">Cobrado</th>
+            </tr>
+          </thead>
+          <tbody>
+            {atenciones.map((a) => (
+              <tr class:list={[a.estado === 'anulada' && 'muerta']}>
+                <td class="numero">
+                  <a href={`/sistema/atencion/${a.id}`} class="cifra">N° {a.numero}</a>
+                </td>
+                <td class="cifra">{fechaCorta(a.fecha)}</td>
+                <td>
+                  <span class="dx">{a.idx ?? 'Sin diagnóstico escrito'}</span>
+                  {a.aseguradora && <small>{a.aseguradora}</small>}
+                  {a.anuladaMotivo && <small class="motivo">Anulada: {a.anuladaMotivo}</small>}
+                </td>
+                <td>{a.medico ?? 'Cuenta borrada'}</td>
+                <td>
+                  <span class:list={['chapa', `chapa--${ETIQUETAS[a.estado]?.clase ?? 'cerrada'}`]}>
+                    {ETIQUETAS[a.estado]?.texto ?? a.estado}
+                  </span>
+                </td>
+                <td class="derecha">
+                  {a.cuentas.length === 0 ? (
+                    <span class="nada">Sin cobro</span>
+                  ) : (
+                    a.cuentas.map((c) => (
+                      <span class="monto cifra">{dinero(c.total)} {c.moneda}</span>
+                    ))
+                  )}
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+    )}
+    <p class="pie pie--suelto">
+      Las anuladas se muestran tachadas y no se esconden: quedaron sin efecto, pero
+      pasaron. Tampoco entran en los totales de arriba.
+    </p>
+  </section>
+</Sistema>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 12px; }
+  .miga a { color: var(--azul); text-decoration: none; font-weight: 600; }
+  .miga a:hover { text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+  .cab__quien { min-width: 0; }
+  .cab h1 { font-size: var(--u-2xl); overflow-wrap: anywhere; }
+  .cab__meta { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 70ch; }
+  .cab__meta strong { color: var(--tinta-suave); }
+  .cab__acciones { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  .msj { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; }
+  .msj--bien {
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+    font-size: var(--u-sm);
+  }
+  .msj--bien :global(svg) { color: #15663f; flex: none; margin-top: 1px; }
+
+  /* ---------- alergias ---------- */
+  .alergia {
+    display: flex;
+    align-items: flex-start;
+    gap: 10px;
+    margin-top: 18px;
+    padding: 12px 15px;
+    border: 1px solid;
+    border-radius: 9px;
+    font-size: var(--u-sm);
+    line-height: 1.45;
+  }
+  .alergia :global(svg) { flex: none; margin-top: 2px; }
+  .alergia p { overflow-wrap: anywhere; }
+  .alergia small { display: block; margin-top: 4px; font-size: var(--u-xs); opacity: 0.85; }
+  .alergia small a { color: inherit; font-weight: 700; }
+
+  /* Rojo solo acá: una alergia escrita es la única cosa de esta pantalla
+     que hay que leer antes de tocar al paciente. */
+  .alergia--ojo { background: #fdeced; border-color: #f3bfc2; color: #8f1017; }
+  .alergia--falta { background: #fdf0d9; border-color: #e8c98a; color: #7a5200; }
+  .alergia--limpia { background: #e4f2ea; border-color: #a9d5bd; color: #105433; }
+  .alergia--sin { background: var(--panel); border-color: var(--linea); color: var(--tinta-suave); }
+
+  /* ---------- resumen ---------- */
+  .cifras {
+    list-style: none; margin: 14px 0 0; padding: 0;
+    display: grid; gap: 12px;
+    /* En el teléfono entran de a dos: cuatro recuadros en columna empujan
+       los antecedentes fuera de la primera pantalla. */
+    grid-template-columns: repeat(auto-fit, minmax(min(165px, 100%), 1fr));
+  }
+  .cifras li { display: grid; gap: 3px; align-content: start; }
+  .cifras__rotulo {
+    font-size: var(--u-xs); text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--tinta-tenue); font-weight: 700;
+  }
+  .cifras__dato {
+    font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; color: var(--azul); line-height: 1.05;
+  }
+  /* Una fecha no es una cifra de dos dígitos: con 2rem parte la tarjeta. */
+  .cifras__dato--corto { font-size: var(--u-xl); letter-spacing: -0.02em; }
+  .cifras__pie { font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.45; }
+  .cifras__texto { font-size: var(--u-sm); color: var(--tinta-suave); margin-top: 3px; }
+
+  .chapas { list-style: none; margin: 6px 0 0; padding: 0; display: flex; flex-wrap: wrap; gap: 5px; }
+  .chapas li {
+    padding: 4px 9px;
+    border-radius: 999px;
+    background: var(--azul-tenue);
+    color: var(--azul);
+    font-size: var(--u-xs);
+    font-weight: 600;
+    overflow-wrap: anywhere;
+  }
+
+  /* ---------- dos columnas ---------- */
+  .col { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; margin-top: 12px; align-items: start; }
+  @media (min-width: 1000px) { .col { grid-template-columns: minmax(0, 1fr) 360px; } }
+  h2 { font-size: var(--u-md); margin-bottom: 13px; }
+
+  .datos { display: grid; gap: 1px; }
+  .datos div { padding: 9px 0; border-top: 1px solid var(--linea-tenue); }
+  .datos div:first-child { border-top: 0; padding-top: 0; }
+  .datos dt { font-size: var(--u-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--tinta-tenue); font-weight: 700; }
+  /* El margen izquierdo que el navegador le pone al dd desalinea la
+     respuesta de su rótulo: en una ficha se leen en columna. */
+  .datos dd { margin: 2px 0 0; font-size: var(--u-sm); color: var(--tinta); overflow-wrap: anywhere; }
+  .datos--alto { margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--linea-tenue); }
+
+  .suelto { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .suelto--nota { margin-top: 12px; }
+  .suelto--vacio { text-align: center; padding-block: 36px; }
+  .suelto--vacio .sis-boton { margin-top: 16px; }
+
+  .pie {
+    margin-top: 14px; padding-top: 11px;
+    border-top: 1px solid var(--linea-tenue);
+    font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.45;
+  }
+  .pie--suelto { border-top: 0; padding-top: 0; max-width: 78ch; }
+
+  /* ---------- teléfono ---------- */
+  .tel { display: grid; gap: 12px; justify-items: start; }
+  .tel .sis-campo { width: 100%; }
+
+  /* ---------- historial ---------- */
+  .historial { margin-top: 22px; }
+  /* La tabla se desplaza dentro de su caja: el panel nunca se arrastra. */
+  .tabla { padding: 0; overflow-x: auto; }
+  table { width: 100%; min-width: 720px; border-collapse: collapse; font-size: var(--u-sm); }
+  th, td { text-align: left; padding: 10px 14px; border-bottom: 1px solid var(--linea-tenue); vertical-align: top; }
+  th {
+    padding-block: 11px;
+    font-size: var(--u-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--tinta-tenue);
+    background: var(--panel);
+    white-space: nowrap;
+  }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--bruma); }
+  .derecha { text-align: right; }
+
+  .numero { padding-block: 4px; }
+  .numero a {
+    display: flex;
+    align-items: center;
+    min-height: 44px;
+    color: var(--azul);
+    text-decoration: none;
+    font-weight: 700;
+    white-space: nowrap;
+  }
+  .numero a:hover { text-decoration: underline; }
+
+  .dx { display: block; overflow-wrap: anywhere; }
+  td small { display: block; margin-top: 2px; font-size: var(--u-xs); color: var(--tinta-tenue); }
+  td small.motivo { color: #8f1017; }
+  .monto { display: block; white-space: nowrap; }
+  .nada { color: var(--tinta-tenue); }
+
+  /* Anulada: se ve, se lee y se entiende que no cuenta. */
+  .muerta { background: #fdfafa; }
+  .muerta .dx, .muerta .numero a, .muerta .monto { text-decoration: line-through; }
+  .muerta td { color: var(--tinta-tenue); }
+
+  .chapa {
+    display: inline-block;
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    white-space: nowrap;
+  }
+  .chapa--borrador { background: #fdf0d9; color: #7a5200; }
+  .chapa--cerrada  { background: #e4f2ea; color: #15663f; }
+  .chapa--anulada  { background: #fdeced; color: #8f1017; }
+</style>

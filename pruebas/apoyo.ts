@@ -458,3 +458,180 @@ export async function anchos(page: Page) {
     ventana: document.documentElement.clientWidth,
   }));
 }
+
+/* ------------------------------------------------------------------
+   Registro de pacientes.
+   ------------------------------------------------------------------ */
+
+/** Lo que la base guarda de una persona, buscada por su cédula. */
+export async function pacienteEnLaBase(cedula: string) {
+  return conBase(async (sql) => {
+    const [fila] = await sql`
+      SELECT id, cedula, nombre, telefono
+        FROM paciente
+       WHERE cedula_busca = ${soloDigitos(cedula)}`;
+    expect(fila, `no hay ningún paciente con la cédula ${cedula}`).toBeTruthy();
+    return {
+      id: String(fila.id),
+      cedula: String(fila.cedula),
+      nombre: String(fila.nombre),
+      telefono: fila.telefono === null ? null : String(fila.telefono),
+    };
+  });
+}
+
+/**
+ * Lo facturado a una persona, sumado por moneda desde los renglones.
+ *
+ * Es la cuenta contra la que se compara el recuadro de la ficha, y se hace
+ * en Postgres para no repetir en JavaScript la misma suma que se está
+ * verificando. Las monedas no se mezclan, igual que en el cobro.
+ *
+ * Con `conAnuladas` suma también las que quedaron sin efecto: sirve para
+ * comprobar que la ficha las deja afuera, porque si la anulada no tuviera
+ * renglones cargados los dos totales darían igual y la prueba no probaría
+ * nada.
+ */
+export async function renglonesSumadosDe(cedula: string, conAnuladas = false) {
+  return conBase(async (sql) => {
+    const busca = soloDigitos(cedula);
+    const filas = conAnuladas
+      ? await sql`
+          SELECT r.moneda, sum(r.cantidad * r.precio)::float8 AS total
+            FROM renglon r
+            JOIN atencion a ON a.id = r.atencion_id
+            JOIN paciente p ON p.id = a.paciente_id
+           WHERE p.cedula_busca = ${busca}
+           GROUP BY r.moneda`
+      : await sql`
+          SELECT r.moneda, sum(r.cantidad * r.precio)::float8 AS total
+            FROM renglon r
+            JOIN atencion a ON a.id = r.atencion_id
+            JOIN paciente p ON p.id = a.paciente_id
+           WHERE p.cedula_busca = ${busca} AND a.estado <> 'anulada'
+           GROUP BY r.moneda`;
+
+    return Object.fromEntries(filas.map((f) => [String(f.moneda), Number(f.total)]));
+  });
+}
+
+/** Las acciones que la bitácora anotó sobre una ficha, en orden. */
+export async function bitacoraDePaciente(paciente: string) {
+  return conBase(async (sql) => {
+    const filas = await sql`
+      SELECT accion FROM bitacora
+       WHERE detalle ->> 'paciente' = ${paciente}
+       ORDER BY id`;
+    return filas.map((f) => String(f.accion));
+  });
+}
+
+/**
+ * Lo que la ficha deja en bitácora —verla y corregir el teléfono— no cuelga
+ * de ninguna atención: su atencion_id es nulo y la persona a la que apunta
+ * vive en el detalle. Por eso borrarPacientes() no se lo lleva y hay que
+ * borrarlo aparte, ANTES de borrar al paciente, mientras todavía se le
+ * puede resolver el id desde la cédula.
+ */
+export async function borrarBitacoraDePacientes(...cedulas: string[]) {
+  await conBase(async (sql) => {
+    for (const cedula of cedulas) {
+      await sql`
+        DELETE FROM bitacora
+         WHERE detalle ->> 'paciente' IN (
+                 SELECT id::text FROM paciente WHERE cedula_busca = ${soloDigitos(cedula)})`;
+    }
+  });
+}
+
+/* ------------------------------------------------------------------
+   Medición del sitio público.
+   ------------------------------------------------------------------ */
+
+/**
+ * El user-agent de un teléfono cualquiera.
+ *
+ * Hace falta ponerlo a mano y no es un adorno: el navegador que levanta
+ * Playwright se presenta como "HeadlessChrome", que el filtro de
+ * rastreadores reconoce y descarta con razón. Con el agente por omisión no
+ * se registra una sola visita y la prueba falla sin que nada esté roto.
+ */
+export const AGENTE_TELEFONO =
+  'Mozilla/5.0 (Linux; Android 13; SM-A135M) AppleWebKit/537.36 (KHTML, like Gecko) '
+  + 'Chrome/120.0.0.0 Mobile Safari/537.36';
+
+/** El mismo visitante pero en una computadora: otra huella, misma IP. */
+export const AGENTE_COMPUTADORA =
+  'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) '
+  + 'Chrome/120.0.0.0 Safari/537.36';
+
+export const AGENTE_RASTREADOR =
+  'Mozilla/5.0 (compatible; Googlebot/2.1; +http://www.google.com/bot.html)';
+
+/** Las visitas registradas desde ese momento. `ruta` acota a una página. */
+export async function visitasDesde(desde: Date, ruta?: string) {
+  return conBase(async (sql) => {
+    const filas = ruta
+      ? await sql`
+          SELECT ruta, referente, dispositivo::text AS dispositivo, navegador, pais, huella,
+                 to_char(momento AT TIME ZONE 'America/Caracas', 'YYYY-MM-DD') AS dia
+            FROM visita WHERE momento >= ${desde} AND ruta = ${ruta} ORDER BY id`
+      : await sql`
+          SELECT ruta, referente, dispositivo::text AS dispositivo, navegador, pais, huella,
+                 to_char(momento AT TIME ZONE 'America/Caracas', 'YYYY-MM-DD') AS dia
+            FROM visita WHERE momento >= ${desde} ORDER BY id`;
+    return filas.map((f) => ({
+      ruta: String(f.ruta),
+      referente: f.referente === null ? null : String(f.referente),
+      dispositivo: String(f.dispositivo),
+      navegador: f.navegador === null ? null : String(f.navegador),
+      pais: f.pais === null ? null : String(f.pais),
+      huella: String(f.huella),
+      dia: String(f.dia),
+    }));
+  });
+}
+
+/** Los eventos registrados desde ese momento. `tipo` acota a una acción. */
+export async function eventosDesde(desde: Date, tipo?: string) {
+  return conBase(async (sql) => {
+    const filas = tipo
+      ? await sql`
+          SELECT tipo::text AS tipo, detalle, ruta, huella
+            FROM evento WHERE momento >= ${desde} AND tipo::text = ${tipo} ORDER BY id`
+      : await sql`
+          SELECT tipo::text AS tipo, detalle, ruta, huella
+            FROM evento WHERE momento >= ${desde} ORDER BY id`;
+    return filas.map((f) => ({
+      tipo: String(f.tipo),
+      detalle: f.detalle === null ? null : String(f.detalle),
+      ruta: String(f.ruta),
+      huella: String(f.huella),
+    }));
+  });
+}
+
+/** Los nombres de las columnas de una tabla, en el orden en que se declaró. */
+export async function columnasDe(tabla: string) {
+  return conBase(async (sql) => {
+    const filas = await sql`
+      SELECT column_name FROM information_schema.columns
+       WHERE table_schema = 'public' AND table_name = ${tabla}
+       ORDER BY ordinal_position`;
+    return filas.map((f) => String(f.column_name));
+  });
+}
+
+/**
+ * Deja las dos tablas de medición como estaban.
+ *
+ * Son las únicas del sistema que se pueden borrar sin perder nada: son
+ * conteos del sitio público, no datos clínicos. El `desde` tiene que venir
+ * de ahoraEnLaBase() para no llevarse lo que ya había.
+ */
+export async function borrarMediciones(desde: Date) {
+  await conBase(async (sql) => {
+    await sql`DELETE FROM visita WHERE momento >= ${desde}`;
+    await sql`DELETE FROM evento WHERE momento >= ${desde}`;
+  });
+}

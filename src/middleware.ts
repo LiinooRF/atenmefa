@@ -1,6 +1,7 @@
 import { defineMiddleware } from 'astro:middleware';
 import { auth } from './sistema/lib/auth';
 import { entorno } from './sistema/lib/entorno';
+import { medirPaginaPublica } from './sistema/lib/visitas';
 
 /* Los orígenes desde los que se aceptan formularios. URL_BASE es el
    público; localhost queda para desarrollo y para las pruebas. */
@@ -45,7 +46,14 @@ export const onRequest = defineMiddleware(async (ctx, siguiente) => {
 
   const ruta = ctx.url.pathname;
 
-  if (!ruta.startsWith('/sistema')) return siguiente();
+  if (!ruta.startsWith('/sistema')) {
+    const respuesta = await siguiente();
+    /* La medición va después de tener la respuesta y sin esperarla: una
+       página pública que no abre por culpa de su propia analítica es un
+       error grave; perder un conteo, no. El detalle está en visitas.ts. */
+    medirPaginaPublica(ctx, respuesta);
+    return respuesta;
+  }
 
   // Las rutas de Better Auth se atienden solas.
   if (ruta.startsWith('/sistema/auth')) return siguiente();

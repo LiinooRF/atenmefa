@@ -1,0 +1,736 @@
+---
+/**
+ * Marketing: cómo va el tráfico del sitio público.
+ *
+ * El orden de la pantalla es una decisión, no una casualidad. Arriba va lo
+ * único que para una clínica se convierte en un paciente: cuánta gente tocó
+ * el teléfono, escribió por WhatsApp o pidió cómo llegar. Las visitas
+ * quedan debajo, porque mil visitas sin una sola llamada no son un buen mes;
+ * son curiosidad. Puesto al revés, el cliente mira el número grande de
+ * visitas y cree que el sitio está funcionando.
+ *
+ * Los gráficos son todos de una sola medida y llevan un solo tono: el largo
+ * de la barra informa y el color no codifica nada. Una paleta de colores por
+ * categoría acá sería ruido con pinta de información.
+ *
+ * Los números salen de medicionDelSitio() y se calculan en Postgres; las
+ * dos advertencias del contrato de visitas.ts —que los "visitantes
+ * distintos" de varios días son una suma por día, y que el país puede venir
+ * vacío— están dichas en la pantalla, no escondidas.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import Rango from '../../components/sistema/Rango.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { rangoDesdeUrl, nombreDelRango, hoyEnCaracas } from '../../sistema/lib/fechas';
+import { medicionDelSitio } from '../../sistema/lib/visitas';
+import { servicios } from '../../data/clinica';
+import { bd } from '../../sistema/lib/base';
+import { sql } from 'drizzle-orm';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'ver_marketing');
+if (corte) return corte;
+
+const hoy = hoyEnCaracas();
+const { desde, hasta } = rangoDesdeUrl(Astro.url);
+
+/* Las dos consultas salen juntas. La segunda existe porque sin ella no se
+   puede distinguir "nadie entró en estas fechas" de "esto todavía no mide
+   nada", y son dos mensajes completamente distintos para el cliente: uno es
+   un dato y el otro es una aclaración de que la medición no tiene pasado. */
+const [m, arranque] = await Promise.all([
+  medicionDelSitio(desde, hasta),
+  bd.execute<{ primera: string | null }>(sql`
+    SELECT to_char(min(momento) AT TIME ZONE 'America/Caracas', 'YYYY-MM-DD') AS primera
+      FROM visita
+  `),
+]);
+
+const primera = arranque[0]?.primera ?? null;
+const nuncaMidio = primera === null;
+const sinVisitas = m.visitas === 0;
+/* El rango elegido termina antes de que existiera la medición: no es que no
+   haya entrado nadie, es que de esas fechas no hay nada guardado. */
+const antesDeMedir = primera !== null && hasta < primera;
+
+const rotulo = nombreDelRango(desde, hasta);
+const incluyeHoy = hasta === hoy;
+
+/* ---------- formato ---------- */
+
+const numero = (v: number) => new Intl.NumberFormat('es-VE').format(v);
+const conDecimal = (v: number) =>
+  new Intl.NumberFormat('es-VE', { minimumFractionDigits: 1, maximumFractionDigits: 1 }).format(v);
+const frase = (n: number, uno: string, varios: string) =>
+  `${numero(n)} ${n === 1 ? uno : varios}`;
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
+const fechaCorta = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'short' });
+const mesCorto = (f: string) =>
+  new Date(`${f}-01T12:00:00`).toLocaleDateString('es-VE', { month: 'short' });
+const mesLargo = (f: string) =>
+  new Date(`${f}-01T12:00:00`).toLocaleDateString('es-VE', { month: 'long', year: 'numeric' });
+
+/* La variación solo se muestra si hay con qué comparar, y eso son DOS
+   condiciones, no una:
+     · el tramo anterior tiene algo: "+100%" sobre cero no dice nada;
+     · el tramo anterior estuvo medido ENTERO. Recién instalado esto, los
+       días de atrás vienen en cero porque no había medición, no porque no
+       entrara nadie, y la pantalla anunciaba un "+133%" con el tráfico
+       plano en tres visitas diarias. El primer día medido también queda
+       afuera del tramo válido: la medición arrancó a media jornada y ese
+       día cuenta menos de lo que fue. */
+const tramoAnteriorMedido = primera !== null && sumarDias(desde, -m.dias) > primera;
+
+const variacion = (ahora: number, antes: number) =>
+  (tramoAnteriorMedido && antes > 0 ? Math.round(((ahora - antes) / antes) * 100) : null);
+
+const varVisitas = variacion(m.visitas, m.visitasAntes);
+const varUnicos = variacion(m.unicos, m.unicosAntes);
+
+/* Si la comparación se calla, se dice por qué: un número que desaparece sin
+   explicación se lee como que la pantalla se rompió. */
+const sinComparacion = primera !== null && !tramoAnteriorMedido
+  ? `los días anteriores no estaban medidos: esto cuenta desde el ${fechaLarga(primera)}`
+  : null;
+
+const porVisitante = m.unicos > 0 ? m.visitas / m.unicos : 0;
+
+/* ---------- lo que la gente hizo ---------- */
+
+const accion = (tipo: string) =>
+  m.eventos.find((e) => e.tipo === tipo) ?? { veces: 0, personas: 0 };
+
+const llamar = accion('llamar');
+const whatsapp = accion('whatsapp');
+const comoLlegar = accion('como_llegar');
+const instagram = accion('instagram');
+const correo = accion('correo');
+
+/* El tipo del icono se declara acá y no se infiere: el componente acepta una
+   lista cerrada de nombres y un string suelto no calza. */
+const acciones: { icono: 'telefono' | 'whatsapp' | 'ubicacion'; hizo: string; hizoUna: string; dato: { veces: number; personas: number } }[] = [
+  { icono: 'telefono', hizo: 'tocaron el teléfono para llamar', hizoUna: 'tocó el teléfono para llamar', dato: llamar },
+  { icono: 'whatsapp', hizo: 'escribieron por WhatsApp', hizoUna: 'escribió por WhatsApp', dato: whatsapp },
+  { icono: 'ubicacion', hizo: 'pidieron cómo llegar', hizoUna: 'pidió cómo llegar', dato: comoLlegar },
+];
+
+/* Instagram y el correo también son contacto, pero son los dos caminos
+   flacos: van en una línea al pie en vez de robarle sitio a los tres que el
+   cliente mira todos los días.
+
+   La frase se arma entera acá y no en el marcado: dos expresiones seguidas
+   dentro de un fragmento pierden el espacio que las separa al compilar, y
+   en pantalla quedaba «1 personafueron al Instagram». */
+const otrosContactos = [
+  { uno: 'fue al Instagram', varios: 'fueron al Instagram', dato: instagram },
+  { uno: 'escribió un correo', varios: 'escribieron un correo', dato: correo },
+]
+  .filter((x) => x.dato.personas > 0)
+  .map((x) => `${frase(x.dato.personas, 'persona', 'personas')} `
+    + `${x.dato.personas === 1 ? x.uno : x.varios}`);
+
+/* El porcentaje de contacto cuenta CINCO acciones —llamar, WhatsApp,
+   correo, Instagram y cómo llegar—, así que el pie las nombra a todas: con
+   el texto corto de antes el cliente sumaba los tres recuadros de arriba y
+   no le daba el número. */
+const pieConversion = `${numero(m.conversion.actuaron)} de `
+  + `${frase(m.conversion.visitantes, 'visitante', 'visitantes')} `
+  + (m.conversion.actuaron === 1
+    ? 'llamó, escribió, pidió cómo llegar o fue al Instagram'
+    : 'llamaron, escribieron, pidieron cómo llegar o fueron al Instagram');
+
+/* ---------- gráfico de visitas en el tiempo ---------- */
+
+/* Una columna por día solo se lee hasta un mes. Con 90 días o un año las
+   columnas quedan más finas que la separación y los rótulos se pisan, así
+   que el rango largo se agrupa por semana o por mes y el título lo dice.
+   Agrupar acá es barato: porDia ya trae una fila por día, como máximo 366. */
+const paso: 'dia' | 'semana' | 'mes' = m.dias <= 31 ? 'dia' : m.dias <= 130 ? 'semana' : 'mes';
+
+/* Lunes de la semana de esa fecha. Mediodía en UTC para que restar días no
+   se tropiece con los cambios de hora. */
+function lunesDe(f: string): string {
+  const d = new Date(`${f}T12:00:00Z`);
+  const dia = (d.getUTCDay() + 6) % 7; // 0 = lunes
+  d.setUTCDate(d.getUTCDate() - dia);
+  return d.toISOString().slice(0, 10);
+}
+
+function sumarDias(f: string, dias: number): string {
+  const d = new Date(`${f}T12:00:00Z`);
+  d.setUTCDate(d.getUTCDate() + dias);
+  return d.toISOString().slice(0, 10);
+}
+
+/* Se parte siempre del día 1, que es lo que vuelve segura esta cuenta: con
+   cualquier otro día, sumarle un mes al 31 de enero cae en marzo. */
+function ultimoDelMes(clave: string): string {
+  const d = new Date(`${clave}-01T12:00:00Z`);
+  d.setUTCMonth(d.getUTCMonth() + 1);
+  d.setUTCDate(0);
+  return d.toISOString().slice(0, 10);
+}
+
+const tramoCorto = (a: string, b: string) =>
+  (a === b ? fechaCorta(a) : `del ${fechaCorta(a)} al ${fechaCorta(b)}`);
+
+interface Columna {
+  etiqueta: string;
+  titulo: string;
+  visitas: number;
+  finde: boolean;
+  /** Abarca menos días que una semana o un mes enteros: no se compara. */
+  parcial: boolean;
+}
+
+let columnas: Columna[] = [];
+if (paso === 'dia') {
+  columnas = m.porDia.map((d) => ({
+    etiqueta: String(Number(d.dia.slice(-2))),
+    titulo: fechaCorta(d.dia),
+    visitas: d.visitas,
+    finde: [0, 6].includes(new Date(`${d.dia}T12:00:00`).getDay()),
+    parcial: false,
+  }));
+} else {
+  /* Map conserva el orden en que se inserta y porDia viene ordenado, así que
+     los cubos salen en orden cronológico sin volver a ordenar nada. Se
+     guardan el primer y el último día que CAYERON adentro, no los de la
+     semana o el mes teóricos: "Últimos 90 días" arranca un domingo y su
+     primer cubo tiene un solo día, no siete. */
+  const cubos = new Map<string, { visitas: number; primero: string; ultimo: string }>();
+  for (const d of m.porDia) {
+    const clave = paso === 'semana' ? lunesDe(d.dia) : d.dia.slice(0, 7);
+    const cubo = cubos.get(clave);
+    if (cubo) {
+      cubo.visitas += d.visitas;
+      cubo.ultimo = d.dia;
+    } else {
+      cubos.set(clave, { visitas: d.visitas, primero: d.dia, ultimo: d.dia });
+    }
+  }
+
+  columnas = [...cubos].map(([clave, cubo]) => {
+    const inicio = paso === 'semana' ? clave : `${clave}-01`;
+    const fin = paso === 'semana' ? sumarDias(clave, 6) : ultimoDelMes(clave);
+    const parcial = cubo.primero !== inicio || cubo.ultimo !== fin;
+
+    return {
+      /* Un cubo cortado se rotula por el día en que de verdad empieza: poner
+         el lunes teórico señala una fecha que ni siquiera está en el rango. */
+      etiqueta: paso === 'semana'
+        ? `${Number(cubo.primero.slice(-2))}/${Number(cubo.primero.slice(5, 7))}`
+        : mesCorto(clave),
+      titulo: parcial
+        ? `${tramoCorto(cubo.primero, cubo.ultimo)}, ${paso === 'semana' ? 'semana incompleta' : 'mes incompleto'}`
+        : (paso === 'semana' ? `semana del ${fechaCorta(clave)}` : mesLargo(clave)),
+      visitas: cubo.visitas,
+      finde: false,
+      parcial,
+    };
+  });
+}
+
+/* Los extremos del rango casi nunca caen justo en lunes o en día 1, así que
+   la primera y la última barra suelen abarcar menos días que el resto y
+   aparecen hundidas sin que el tráfico haya bajado. Van rayadas y el pie lo
+   dice: si no, el cliente lee un derrumbe donde solo hay media semana. */
+const hayParcial = columnas.some((c) => c.parcial);
+
+const tituloDelGrafico = paso === 'dia'
+  ? 'Visitas por día'
+  : paso === 'semana' ? 'Visitas por semana' : 'Visitas por mes';
+
+/* Los rótulos se van salteando cuando hay muchas columnas: treinta y un
+   números de dos cifras en un teléfono no se leen, se amontonan y arrastran
+   la pantalla de lado. La barra sigue estando; lo que se saltea es el texto.
+   La cuenta va desde el final para que la última columna —la que se está
+   viviendo— siempre quede rotulada; la que se puede quedar sin rótulo es la
+   primera, que es la más vieja. */
+const cadaRotulo = Math.max(1, Math.ceil(columnas.length / (paso === 'semana' ? 8 : 12)));
+const llevaRotulo = (i: number) => (columnas.length - 1 - i) % cadaRotulo === 0;
+
+const topeColumna = Math.max(1, ...columnas.map((c) => c.visitas));
+/* Un solo cubo (el atajo "Hoy") no es un gráfico: ese número ya está arriba
+   en su recuadro y una sola barra no compara nada. */
+const hayGrafico = columnas.length > 1;
+
+/* ---------- nombres para la pantalla ---------- */
+
+const nombreDeServicio = new Map(servicios.map((s) => [s.slug, s.nombre]));
+
+const nombreDePagina = (r: string) => {
+  if (r === '/') return 'Portada';
+  const esServicio = /^\/servicios\/(.+)$/.exec(r);
+  if (esServicio) return nombreDeServicio.get(esServicio[1]!) ?? r;
+  return r;
+};
+
+/* Los dominios se agrupan por lo que el cliente conoce. Lo que no está en la
+   lista se muestra tal cual: inventarle un nombre a un dominio desconocido
+   es peor que mostrar el dominio. */
+const ORIGENES: Record<string, string> = {
+  'instagram.com': 'Instagram',
+  'facebook.com': 'Facebook',
+  'messenger.com': 'Messenger',
+  'm.me': 'Messenger',
+  'bing.com': 'Búsqueda de Bing',
+  'duckduckgo.com': 'Búsqueda de DuckDuckGo',
+  'search.yahoo.com': 'Búsqueda de Yahoo',
+  'tiktok.com': 'TikTok',
+  'x.com': 'X (antes Twitter)',
+  't.co': 'X (antes Twitter)',
+  'youtube.com': 'YouTube',
+  'threads.net': 'Threads',
+  'linkedin.com': 'LinkedIn',
+  'wa.me': 'WhatsApp',
+  'whatsapp.com': 'WhatsApp',
+};
+
+const nombreDeOrigen = (n: string) => {
+  if (ORIGENES[n]) return ORIGENES[n];
+  /* google.com, google.co.ve y las demás son la misma búsqueda. */
+  if (/^google\./.test(n)) return 'Búsqueda de Google';
+  return n;
+};
+
+/* Los códigos de país vienen de dos letras. Intl les pone el nombre; si el
+   código no existe queda el código, que es lo que de verdad llegó. */
+const nombreDePais = (codigo: string) => {
+  try {
+    return new Intl.DisplayNames(['es'], { type: 'region' }).of(codigo) ?? codigo;
+  } catch {
+    return codigo;
+  }
+};
+
+const topePagina = Math.max(1, ...m.paginas.map((p) => p.visitas));
+const topeOrigen = Math.max(1, ...m.origenes.map((o) => o.visitas));
+const topeDispositivo = Math.max(1, ...m.dispositivos.map((d) => d.visitas));
+---
+
+<Sistema titulo="Marketing">
+  <header class="cab">
+    <div>
+      <h1>Marketing</h1>
+      <p class="cab__nota">
+        {rotulo} · {m.dias} {m.dias === 1 ? 'día' : 'días'}.
+        Mide el sitio público: quién entra, qué mira y qué hace. El panel
+        interno no se mide.
+      </p>
+    </div>
+  </header>
+
+  <Rango desde={desde} hasta={hasta} />
+
+  {nuncaMidio ? (
+    <div class="sis-tarjeta nada">
+      <h2>Todavía no entró nadie al sitio</h2>
+      <p>
+        No hay ninguna visita registrada. La medición cuenta desde el día en
+        que se instaló: lo que haya pasado en el sitio antes de eso no quedó
+        guardado en ninguna parte y no se puede recuperar.
+      </p>
+      <p>
+        En cuanto alguien abra el sitio público, esta pantalla se llena sola.
+        No hace falta configurar nada.
+      </p>
+    </div>
+  ) : sinVisitas ? (
+    <div class="sis-tarjeta nada">
+      <h2>Ninguna visita en este período</h2>
+      <p>
+        {antesDeMedir
+          ? `Estas fechas son anteriores a la medición, que empezó el ${fechaLarga(primera!)}. De antes de ese día no hay nada guardado.`
+          : 'En las fechas elegidas no entró nadie al sitio. Pruebe con un rango más amplio.'}
+      </p>
+      {!antesDeMedir && (
+        <p class="nada__pie">La medición viene contando desde el {fechaLarga(primera!)}.</p>
+      )}
+    </div>
+  ) : (
+    <>
+      <!-- Lo primero de la pantalla, a propósito: es lo único que puede
+           terminar en un paciente. -->
+      <section class="sis-tarjeta acciones">
+        <h2>Quién nos buscó</h2>
+        <p class="acciones__nota">
+          De todo lo que pasa en el sitio, esto es lo que puede terminar en un
+          paciente. El resto de las visitas es gente mirando.
+        </p>
+
+        <ul class="acciones__lista">
+          {acciones.map((a) => (
+            <li>
+              <span class="acciones__icono"><Icono nombre={a.icono} tam={20} /></span>
+              <strong class="acciones__dato cifra">{numero(a.dato.personas)}</strong>
+              <span class="acciones__texto">
+                {a.dato.personas === 1 ? `persona ${a.hizoUna}` : `personas ${a.hizo}`}
+              </span>
+              <span class="acciones__veces">
+                {a.dato.veces === 0
+                  ? 'ninguna vez en este período'
+                  : `${frase(a.dato.veces, 'vez', 'veces')} en total`}
+              </span>
+            </li>
+          ))}
+        </ul>
+
+        {otrosContactos.length > 0 && (
+          <p class="acciones__pie">Además, {otrosContactos.join(' y ')}.</p>
+        )}
+      </section>
+
+      <!-- Cifras del período: son titulares, no gráficos. Un gráfico de un
+           solo número es decoración. -->
+      <ul class="cifras">
+        <li class="sis-tarjeta">
+          <span class="cifras__rotulo">Visitas</span>
+          <strong class="cifras__dato cifra">{numero(m.visitas)}</strong>
+          {varVisitas !== null ? (
+            <span class:list={['cifras__cambio', varVisitas >= 0 ? 'sube' : 'baja']}>
+              {varVisitas >= 0 ? '+' : ''}{varVisitas}% contra {numero(m.visitasAntes)} en los {m.dias} días anteriores
+            </span>
+          ) : (
+            <span class="cifras__pie">{sinComparacion ?? 'páginas abiertas en total'}</span>
+          )}
+        </li>
+        <li class="sis-tarjeta">
+          <span class="cifras__rotulo">Visitantes distintos</span>
+          <strong class="cifras__dato cifra">{numero(m.unicos)}</strong>
+          {varUnicos !== null && (
+            <span class:list={['cifras__cambio', varUnicos >= 0 ? 'sube' : 'baja']}>
+              {varUnicos >= 0 ? '+' : ''}{varUnicos}% contra {numero(m.unicosAntes)} en los {m.dias} días anteriores
+            </span>
+          )}
+          <span class="cifras__pie">
+            {m.dias === 1 ? 'personas distintas que entraron' : 'suma de cada día; ver la nota al pie'}
+          </span>
+        </li>
+        <li class="sis-tarjeta">
+          <span class="cifras__rotulo">Páginas por visitante</span>
+          <strong class="cifras__dato cifra">{conDecimal(porVisitante)}</strong>
+          <span class="cifras__pie">cuánto mira cada uno antes de irse</span>
+        </li>
+        <li class="sis-tarjeta">
+          <span class="cifras__rotulo">Nos contactaron</span>
+          <strong class="cifras__dato cifra">{conDecimal(m.conversion.porcentaje)}%</strong>
+          <span class="cifras__pie">{pieConversion}</span>
+        </li>
+      </ul>
+
+      <div class="rejilla">
+        {hayGrafico && (
+          <section class="sis-tarjeta panel panel--ancho">
+            <h2>{tituloDelGrafico}</h2>
+            <div class="dias" role="img" aria-label={`${tituloDelGrafico}, ${rotulo}`}>
+              {columnas.map((c, i) => (
+                <div class:list={['dias__col', c.finde && 'dias__col--finde']}>
+                  <div class="dias__carril">
+                    <div
+                      class="dias__barra"
+                      style={`height: ${(c.visitas / topeColumna) * 100}%`}
+                      data-cero={c.visitas === 0 ? '' : undefined}
+                      data-parcial={c.parcial ? '' : undefined}
+                    >
+                      <span class="dias__globo">
+                        {c.visitas === 0 ? 'sin visitas' : frase(c.visitas, 'visita', 'visitas')} · {c.titulo}
+                      </span>
+                    </div>
+                  </div>
+                  <span class="dias__dia cifra">{llevaRotulo(i) ? c.etiqueta : ''}</span>
+                </div>
+              ))}
+            </div>
+            <p class="panel__pie">
+              Máximo: <strong class="cifra">{numero(topeColumna)}</strong>
+              {paso === 'dia' ? ' visitas en un día. Los días en gris claro son fin de semana.' : null}
+              {paso === 'semana' ? ' visitas en una semana. El rango es largo, así que las barras van agrupadas por semana.' : null}
+              {paso === 'mes' ? ' visitas en un mes. El rango es largo, así que las barras van agrupadas por mes.' : null}
+              {hayParcial && (paso === 'semana'
+                ? ' Las barras rayadas abarcan menos de siete días, porque el rango empieza o termina en mitad de una semana: su altura no se compara con las otras.'
+                : ' Las barras rayadas abarcan un mes a medias, porque el rango empieza o termina adentro del mes: su altura no se compara con las otras.')}
+              {incluyeHoy && ' El día de hoy todavía no terminó.'}
+            </p>
+          </section>
+        )}
+
+        <section class="sis-tarjeta panel">
+          <h2>Qué miran</h2>
+          {m.paginas.length === 0 ? (
+            <p class="panel__vacio">Todavía no hay páginas vistas en este período.</p>
+          ) : (
+            <ul class="barras">
+              {m.paginas.map((p) => (
+                <li>
+                  <div class="barras__fila">
+                    <span class="barras__nombre" title={p.ruta}>{nombreDePagina(p.ruta)}</span>
+                    <span class="barras__valor cifra">{numero(p.visitas)}</span>
+                  </div>
+                  <div class="barras__carril">
+                    <div class="barras__barra" style={`width: ${(p.visitas / topePagina) * 100}%`} data-cero={p.visitas === 0 ? '' : undefined}></div>
+                  </div>
+                  <span class="barras__pie">{frase(p.unicos, 'visitante', 'visitantes')}</span>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+
+        <section class="sis-tarjeta panel">
+          <h2>De dónde llegan</h2>
+          <ul class="barras">
+            {m.origenes.map((o) => (
+              <li>
+                <div class="barras__fila">
+                  <span class="barras__nombre">{nombreDeOrigen(o.nombre)}</span>
+                  <span class="barras__valor cifra">{numero(o.visitas)}</span>
+                </div>
+                <div class="barras__carril">
+                  <div class="barras__barra" style={`width: ${(o.visitas / topeOrigen) * 100}%`} data-cero={o.visitas === 0 ? '' : undefined}></div>
+                </div>
+              </li>
+            ))}
+          </ul>
+          <p class="panel__pie">
+            «Directo» es quien escribió la dirección, entró por un enlace
+            guardado o vino de una aplicación que no dice de dónde: casi
+            siempre, un enlace pasado por WhatsApp.
+          </p>
+        </section>
+
+        <section class="sis-tarjeta panel">
+          <h2>Con qué entran</h2>
+          <ul class="barras">
+            {m.dispositivos.map((d) => (
+              <li>
+                <div class="barras__fila">
+                  <span class="barras__nombre">{d.nombre}</span>
+                  <span class="barras__valor cifra">{numero(d.visitas)}</span>
+                </div>
+                <div class="barras__carril">
+                  <div class="barras__barra" style={`width: ${(d.visitas / topeDispositivo) * 100}%`} data-cero={d.visitas === 0 ? '' : undefined}></div>
+                </div>
+              </li>
+            ))}
+          </ul>
+
+          {m.navegadores.length > 0 && (
+            <>
+              <h3 class="panel__sub">Navegadores</h3>
+              <ul class="lista">
+                {m.navegadores.map((n) => (
+                  <li><span>{n.nombre}</span><strong class="cifra">{numero(n.visitas)}</strong></li>
+                ))}
+              </ul>
+            </>
+          )}
+        </section>
+
+        <!-- El país solo se sabe si el proxy lo manda. Cuando no llega, el
+             bloque no aparece: un gráfico en blanco parece algo roto. -->
+        {m.paises.length > 0 && (
+          <section class="sis-tarjeta panel">
+            <h2>De qué país entran</h2>
+            <ul class="lista">
+              {m.paises.map((p) => (
+                <li><span>{nombreDePais(p.nombre)}</span><strong class="cifra">{numero(p.visitas)}</strong></li>
+              ))}
+            </ul>
+          </section>
+        )}
+      </div>
+    </>
+  )}
+
+  <p class="aviso">
+    <Icono nombre="escudo" tam={17} />
+    <span>
+      Esta medición no usa cookies y no guarda la dirección IP de nadie: no
+      queda nada en el equipo de quien entra y nada sale hacia Google ni hacia
+      ninguna otra empresa. Para contar visitantes se usa un código que se
+      vuelve a calcular todos los días, así que en un rango de varios días
+      «visitantes distintos» es la suma de cada día: quien entró el lunes y
+      volvió el martes cuenta dos veces.
+    </span>
+  </p>
+</Sistema>
+
+<style>
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-end; justify-content: space-between; }
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: min(62ch, 100%); }
+
+  /* ---------- lo que la gente hizo ---------- */
+  /* Se distingue del resto con fondo propio porque es el ancla de la
+     pantalla, no una tarjeta más de una rejilla. */
+  .acciones { margin-top: 20px; background: var(--azul-tenue); border-color: #ccd3ee; }
+  .acciones h2 { font-size: var(--u-lg); }
+  .acciones__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-suave); max-width: min(70ch, 100%); }
+
+  .acciones__lista {
+    list-style: none; margin: 18px 0 0; padding: 0;
+    display: grid; gap: 14px;
+    grid-template-columns: repeat(auto-fit, minmax(min(210px, 100%), 1fr));
+  }
+  .acciones__lista li {
+    display: grid;
+    grid-template-columns: auto auto 1fr;
+    grid-template-areas: 'icono dato texto' 'veces veces veces';
+    gap: 2px 10px;
+    align-items: center;
+    padding: 14px 16px;
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: 9px;
+  }
+  .acciones__icono { grid-area: icono; display: flex; color: var(--azul-medio); }
+  .acciones__dato {
+    grid-area: dato;
+    font-size: 1.9rem; font-weight: 800; letter-spacing: -0.03em;
+    color: var(--azul); line-height: 1;
+  }
+  .acciones__texto { grid-area: texto; font-size: var(--u-sm); color: var(--tinta); line-height: 1.3; }
+  .acciones__veces { grid-area: veces; margin-top: 5px; font-size: var(--u-xs); color: var(--tinta-tenue); }
+  .acciones__pie { margin-top: 14px; font-size: var(--u-sm); color: var(--tinta-suave); }
+
+  /* ---------- cifras ---------- */
+  .cifras {
+    list-style: none; margin: 12px 0 0; padding: 0;
+    display: grid; gap: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(min(190px, 100%), 1fr));
+  }
+  .cifras li { display: grid; gap: 3px; align-content: start; }
+  .cifras__rotulo {
+    font-size: var(--u-xs); text-transform: uppercase; letter-spacing: 0.06em;
+    color: var(--tinta-tenue); font-weight: 700;
+  }
+  .cifras__dato {
+    font-size: 2rem; font-weight: 800; letter-spacing: -0.03em; color: var(--azul); line-height: 1.05;
+  }
+  .cifras__pie, .cifras__cambio { font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.4; }
+  .cifras__cambio.sube { color: #15663f; }
+  .cifras__cambio.baja { color: #8f1017; }
+
+  /* ---------- estado vacío ---------- */
+  .nada { margin-top: 18px; text-align: center; padding-block: 44px; }
+  .nada h2 { font-size: var(--u-lg); }
+  .nada p { margin-top: 10px; color: var(--tinta-tenue); font-size: var(--u-sm); max-width: min(64ch, 100%); margin-inline: auto; line-height: 1.55; }
+  .nada__pie { font-size: var(--u-xs); }
+
+  /* ---------- paneles ---------- */
+  .rejilla {
+    display: grid; gap: 12px; margin-top: 12px;
+    grid-template-columns: repeat(auto-fit, minmax(min(300px, 100%), 1fr));
+  }
+  .panel--ancho { grid-column: 1 / -1; }
+  .panel h2 { font-size: var(--u-md); margin-bottom: 14px; }
+  .panel__sub {
+    margin: 18px 0 10px; padding-top: 13px; border-top: 1px solid var(--linea-tenue);
+    font-size: var(--u-sm); color: var(--tinta-suave); text-transform: uppercase;
+    letter-spacing: 0.05em; font-weight: 700;
+  }
+  .panel__pie {
+    margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--linea-tenue);
+    font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.5;
+  }
+  .panel__vacio { font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  /* ---------- columnas en el tiempo ---------- */
+  /* El carril tiene que ser casi invisible y la columna no puede crecer sin
+     límite: con doce meses a lo ancho del panel, un carril del tono de los
+     paneles se lee como una barra llena y el gráfico pasa a decir lo
+     contrario de lo que pasó. */
+  .dias { display: flex; gap: 2px; align-items: flex-end; justify-content: space-between; height: 150px; }
+  .dias__col { flex: 1; max-width: 72px; display: flex; flex-direction: column; gap: 5px; min-width: 0; height: 100%; }
+  .dias__carril { flex: 1; display: flex; align-items: flex-end; background: var(--bruma); border-radius: 3px; position: relative; }
+  .dias__col--finde .dias__carril { background: #e9edf7; }
+
+  .dias__barra {
+    width: 100%;
+    min-height: 2px;
+    background: var(--azul-medio);
+    border-radius: 4px 4px 0 0;   /* el extremo del dato redondeado, apoyado en la base */
+    position: relative;
+    transition: background-color 150ms ease;
+  }
+  /* El rayado va encima del MISMO tono, no de otro color: no codifica una
+     categoría, avisa de que esa barra abarca menos días que las demás y por
+     eso su altura no se compara. Va antes del cero para que una barra vacía
+     siga sin pintarse. */
+  .dias__barra[data-parcial] {
+    background-image: repeating-linear-gradient(
+      135deg,
+      rgba(255, 255, 255, 0.5) 0 3px,
+      transparent 3px 7px
+    );
+  }
+  .dias__barra[data-cero] { background: transparent; min-height: 0; }
+  /* background-color y no el atajo: el atajo borraría el rayado al pasar
+     por encima. */
+  .dias__col:hover .dias__barra:not([data-cero]) { background-color: var(--azul); }
+
+  /* El globo aparece al pasar por encima: con treinta columnas, un número
+     fijo en cada una no se lee. */
+  .dias__globo {
+    position: absolute;
+    bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%);
+    background: var(--azul-profundo); color: #fff;
+    font-size: var(--u-xs); white-space: nowrap;
+    padding: 5px 9px; border-radius: 6px;
+    opacity: 0; pointer-events: none;
+    transition: opacity 140ms ease;
+    z-index: 5;
+  }
+  .dias__col:hover .dias__globo { opacity: 1; }
+
+  /* En los extremos el globo centrado se sale de la pantalla y arrastra la
+     página de lado: ahí se ancla al borde. */
+  .dias__col:nth-child(-n + 4) .dias__globo { left: 0; transform: none; }
+  .dias__col:nth-last-child(-n + 4) .dias__globo { left: auto; right: 0; transform: none; }
+
+  .dias__dia { font-size: 0.62rem; color: var(--tinta-tenue); text-align: center; min-height: 1em; }
+
+  /* ---------- barras horizontales ---------- */
+  .barras { list-style: none; margin: 0; padding: 0; display: grid; gap: 13px; }
+  .barras__fila { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
+  .barras__nombre { font-size: var(--u-sm); color: var(--tinta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .barras__valor { font-size: var(--u-sm); font-weight: 700; color: var(--azul); flex: none; }
+  .barras__carril { height: 8px; background: var(--panel); border-radius: 999px; overflow: hidden; }
+  .barras__barra { height: 100%; background: var(--azul-medio); border-radius: 999px; min-width: 3px; }
+  /* El mínimo de 3 px existe para que un valor chiquito se vea; sobre un cero
+     pinta un punto azul que dice que algo pasó, y no pasó nada. */
+  .barras__barra[data-cero] { min-width: 0; background: transparent; }
+  .barras__pie { display: block; margin-top: 4px; font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  /* ---------- listas ---------- */
+  .lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+  .lista li {
+    display: flex; align-items: baseline; justify-content: space-between; gap: 14px;
+    padding: 8px 0; border-top: 1px solid var(--linea-tenue);
+  }
+  .lista li:first-child { border-top: 0; padding-top: 0; }
+  .lista span { font-size: var(--u-sm); min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .lista strong { font-weight: 700; color: var(--azul); flex: none; }
+
+  /* ---------- nota de privacidad ---------- */
+  /* Se queda a la vista incluso cuando no hay datos: la pregunta del
+     cliente va a ser esta, con visitas o sin ellas. */
+  .aviso {
+    display: flex; align-items: flex-start; gap: 10px;
+    margin-top: 16px; padding: 12px 15px;
+    border: 1px solid var(--linea); border-radius: 8px;
+    background: var(--papel);
+    font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.55;
+    max-width: min(92ch, 100%);
+  }
+  .aviso :global(svg) { flex: none; margin-top: 1px; color: var(--azul-medio); }
+</style>

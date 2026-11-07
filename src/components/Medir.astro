@@ -1,0 +1,101 @@
+---
+/**
+ * Lo que mide el sitio público, visto desde el navegador.
+ *
+ * Es poco a propósito: sin biblioteca, sin cookies, sin nada guardado en
+ * el equipo de nadie y sin una sola llamada a un servicio de terceros. Lo
+ * único que sale de acá son avisos a /api/v del propio dominio.
+ *
+ * Si algo de esto falla, la página sigue andando igual: todo va dentro de
+ * un try y el aviso viaja por sendBeacon, que no espera respuesta.
+ *
+ * Va incluido desde el layout público (Base.astro). NO entra en /sistema,
+ * que usa su propio layout: el panel interno no se mide.
+ */
+import { ruta } from '../lib/rutas';
+
+interface Props {
+  /**
+   * La página de error se entrega para CUALQUIER dirección que no exista,
+   * así que avisar desde ahí registra como visitada una página que no
+   * existe —y si la dirección empieza por /servicios/, además deja un
+   * "abrió un servicio" por un servicio inventado. Un enlace viejo roto en
+   * Instagram alcanza para ensuciar los tres números.
+   */
+  medible?: boolean;
+}
+
+const { medible = true } = Astro.props;
+
+/**
+ * El servidor solo ve las páginas que arma en el momento. Las
+ * prerenderizadas las entrega el adaptador desde el disco sin pasar por el
+ * middleware, así que esas tiene que reportarlas la propia página. La
+ * decisión se toma al compilar cada página, no en el navegador, y por eso
+ * una visita no puede quedar contada dos veces.
+ */
+const avisarVista = Astro.isPrerendered && medible;
+const destino = ruta('/api/v');
+---
+
+<script is:inline define:vars={{ avisarVista, destino }}>
+  (function () {
+    /* Del referente sale solo el dominio, y sale acá: la dirección entera
+       de donde viene alguien suele llevar su búsqueda adentro y no tiene
+       por qué cruzar la red. De paso el aviso no se pasa del tope de
+       tamaño del endpoint cuando el referente es uno de esos enlaces
+       larguísimos con identificadores. */
+    function dominioDelReferente() {
+      try {
+        return document.referrer ? new URL(document.referrer).hostname : '';
+      } catch (e) {
+        return '';
+      }
+    }
+
+    function avisar(tipo) {
+      try {
+        var cuerpo = JSON.stringify({
+          tipo: tipo,
+          ruta: location.pathname,
+          /* El servidor no puede saber de dónde llegó la visita: para su
+             aviso, el referente es esta misma página. */
+          origen: tipo === 'vista' ? dominioDelReferente() : '',
+        });
+        /* text/plain está en la lista blanca de CORS, así que el beacon
+           sale sin consulta previa. El servidor lo lee como JSON igual. */
+        var paquete = new Blob([cuerpo], { type: 'text/plain;charset=UTF-8' });
+        if (!navigator.sendBeacon || !navigator.sendBeacon(destino, paquete)) {
+          fetch(destino, { method: 'POST', body: paquete, keepalive: true })
+            .catch(function () {});
+        }
+      } catch (e) {
+        /* Medir nunca puede romper la página. */
+      }
+    }
+
+    if (avisarVista) avisar('vista');
+
+    /* Un solo oyente para todo el documento, en captura: así sigue
+       funcionando si mañana aparecen enlaces nuevos o alguno detiene la
+       propagación. Lo que importa es el destino del enlace, no quién lo
+       pintó. */
+    document.addEventListener('click', function (ev) {
+      try {
+        var blanco = ev.target;
+        var enlace = blanco && blanco.closest ? blanco.closest('a[href]') : null;
+        if (!enlace) return;
+        var href = enlace.getAttribute('href') || '';
+
+        if (href.indexOf('tel:') === 0) avisar('llamar');
+        else if (/(wa\.me|whatsapp\.com)/i.test(href)) avisar('whatsapp');
+        else if (/(maps\.google|google\.[a-z.]+\/maps|maps\.app\.goo\.gl)/i.test(href)) {
+          avisar('como_llegar');
+        } else if (href.indexOf('mailto:') === 0) avisar('correo');
+        else if (/instagram\.com/i.test(href)) avisar('instagram');
+      } catch (e) {
+        /* Igual que arriba: un clic no se queda sin abrir por esto. */
+      }
+    }, true);
+  })();
+</script>

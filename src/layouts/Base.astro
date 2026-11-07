@@ -6,6 +6,7 @@ import '../styles/global.css';
 import Nav from '../components/Nav.astro';
 import Pie from '../components/Pie.astro';
 import BarraFija from '../components/BarraFija.astro';
+import Medir from '../components/Medir.astro';
 import {
   clinica, equipo, servicios, preguntasPublicables, preguntasDe, type Servicio,
 } from '../data/clinica';
@@ -234,5 +235,6 @@ const jsonLd = JSON.stringify({ '@context': 'https://schema.org', '@graph': graf
     </main>
     <Pie />
     <BarraFija />
+    <Medir medible={rutaPagina !== '/404'} />
   </body>
 </html>

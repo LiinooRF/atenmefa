@@ -32,7 +32,9 @@ export type Permiso =
   | 'ver_cierre'           // consolidado del mes
   | 'exportar_cierre'      // la descarga en Excel
   | 'ver_bitacora'         // quién vio o tocó qué
-  | 'administrar_usuarios'; // crear cuentas, cambiar roles, dar de baja
+  | 'administrar_usuarios'  // crear cuentas, cambiar roles, dar de baja
+  | 'ver_pacientes'        // el registro general de pacientes
+  | 'ver_marketing';       // cómo va el tráfico del sitio público
 
 const TABLA: Record<Rol, readonly Permiso[]> = {
   /**
@@ -51,6 +53,7 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
     'cerrar_atencion',
     'imprimir_documento',
     'cargar_cobro',
+    'ver_pacientes',
   ],
 
   /**
@@ -70,6 +73,8 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
     'exportar_cierre',
     'ver_bitacora',
     'administrar_usuarios',
+    'ver_pacientes',
+    'ver_marketing',
   ],
 };
 
@@ -111,4 +116,6 @@ export const porQueNo: Record<Permiso, string> = {
   exportar_cierre: 'La exportación del cierre es de administración.',
   ver_bitacora: 'La bitácora de accesos es de administración.',
   administrar_usuarios: 'Las cuentas las maneja administración.',
+  ver_pacientes: 'Su usuario no puede ver el registro de pacientes.',
+  ver_marketing: 'Las métricas del sitio son de administración.',
 };

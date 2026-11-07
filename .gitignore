@@ -23,3 +23,6 @@ pnpm-debug.log*
 test-results/
 yarn-debug.log*
 yarn-error.log*
+
+# Configuración del editor, no del proyecto.
+.vscode/

@@ -1,0 +1,312 @@
+---
+/**
+ * Registro general de pacientes.
+ *
+ * El cliente lo llamó "un CRM". Lo que faltaba era más simple que eso: al
+ * paciente solo se llegaba entrando a una de sus atenciones, así que para
+ * saber si una señora ya había venido había que recordar el número del caso.
+ *
+ * Esta pantalla es una sola cosa: encontrar a la persona. Una caja de
+ * búsqueda que acepta nombre o cédula como venga escrita, y una tabla con
+ * lo único que sirve para reconocerla de un barrido: cuántas veces vino,
+ * cuándo fue la última y por qué. Todo lo demás vive en su ficha.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { puede } from '../../sistema/lib/permisos';
+import { soloDigitos } from '../../sistema/lib/atenciones';
+import { listarPacientes, esOrden, POR_PAGINA, type Orden } from '../../sistema/lib/pacientes';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'ver_pacientes');
+if (corte) return corte;
+
+const escribe = puede(Astro.locals.usuario?.rol as string, 'escribir_historia');
+
+const p = Astro.url.searchParams;
+const busca = (p.get('q') ?? '').trim();
+
+const pedido = p.get('orden');
+const orden: Orden = esOrden(pedido) ? pedido : 'nombre';
+
+/* El número de página se comprueba antes de convertirlo: Number(null) da 0
+   y pasaría por entero sin que nadie note que el parámetro no venía. */
+const pedidaPagina = p.get('p');
+const pagina = pedidaPagina && /^\d{1,5}$/.test(pedidaPagina) ? Number(pedidaPagina) : 1;
+
+const listado = await listarPacientes({ busca, orden, pagina });
+
+/* La dirección se arma en un solo lugar: ordenar no puede perder la
+   búsqueda, y cambiar el orden vuelve a la primera página porque la
+   página 3 del orden anterior no es la página 3 del nuevo. */
+const direccion = (cambios: { orden?: Orden; pagina?: number } = {}) => {
+  const partes = new URLSearchParams();
+  if (busca) partes.set('q', busca);
+  const cual = cambios.orden ?? orden;
+  if (cual !== 'nombre') partes.set('orden', cual);
+  const numero = cambios.pagina ?? 1;
+  if (numero > 1) partes.set('p', String(numero));
+  const cola = partes.toString();
+  return cola ? `/sistema/pacientes?${cola}` : '/sistema/pacientes';
+};
+
+const fechaCorta = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', {
+    day: '2-digit', month: 'short', year: 'numeric',
+  });
+
+const numero = (v: number) => new Intl.NumberFormat('es-VE').format(v);
+
+/* Si lo que se buscó parece una cédula y no apareció nadie, lo que la
+   persona quiere hacer casi siempre es registrarlo. */
+const digitosBuscados = soloDigitos(busca);
+const pareceCedula = digitosBuscados.length >= 6;
+
+const desde = (listado.pagina - 1) * POR_PAGINA + 1;
+const hasta = Math.min(listado.pagina * POR_PAGINA, listado.total);
+---
+
+<Sistema titulo="Pacientes">
+  <header class="cab">
+    <div>
+      <h1>Pacientes</h1>
+      <p class="cab__nota">
+        {busca
+          ? `${numero(listado.total)} ${listado.total === 1 ? 'coincide' : 'coinciden'} con «${busca}».`
+          : `${numero(listado.total)} ${listado.total === 1 ? 'persona' : 'personas'} en el registro.`}
+        {' '}El paciente se registra solo, con su primera atención.
+      </p>
+    </div>
+    {escribe && (
+      <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">
+        <Icono nombre="mas" tam={19} />
+        Nueva atención
+      </a>
+    )}
+  </header>
+
+  <form class="buscador" method="get">
+    <div class="buscador__caja">
+      <Icono nombre="latido" tam={18} />
+      <input
+        type="search" name="q" value={busca} autocomplete="off"
+        placeholder="Nombre, apellido o cédula"
+        aria-label="Buscar paciente por nombre o cédula"
+      />
+    </div>
+    <!-- El orden viaja escondido para que buscar no lo pierda. -->
+    {orden !== 'nombre' && <input type="hidden" name="orden" value={orden} />}
+    <button type="submit" class="sis-boton sis-boton--azul">Buscar</button>
+    {busca && <a class="sis-boton sis-boton--suave" href="/sistema/pacientes">Limpiar</a>}
+    <p class="buscador__pista">
+      La cédula se encuentra como sea que esté escrita: V-12.345.678, 12345678 o 345.
+    </p>
+  </form>
+
+  {listado.total === 0 ? (
+    <div class="sis-tarjeta vacio">
+      <h2>{busca ? 'Ningún paciente coincide' : 'Todavía no hay pacientes'}</h2>
+      <p>
+        {busca
+          ? 'Pruebe con el apellido solo, o con la cédula sin puntos ni letra.'
+          : 'Las personas aparecen acá cuando se les registra la primera atención.'}
+      </p>
+      {busca && pareceCedula && escribe && (
+        <a class="sis-boton sis-boton--primario" href={`/sistema/atencion/nueva?cedula=${encodeURIComponent(busca)}`}>
+          <Icono nombre="mas" tam={18} />
+          Atender a {busca}
+        </a>
+      )}
+      {!busca && escribe && (
+        <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">
+          Registrar la primera atención
+        </a>
+      )}
+    </div>
+  ) : (
+    <>
+      <div class="sis-tarjeta tabla">
+        <table>
+          <thead>
+            <!-- El orden de las columnas es el de lo que se busca saber: en
+                 el teléfono se desplaza, y lo que queda del lado que se tapa
+                 tiene que ser lo menos urgente. -->
+            <tr>
+              <th scope="col" aria-sort={orden === 'nombre' ? 'ascending' : 'none'}>
+                <a href={direccion({ orden: 'nombre' })} class:list={[orden === 'nombre' && 'activo sube']}>
+                  Paciente
+                  {orden === 'nombre' && <Icono nombre="flecha" tam={14} />}
+                </a>
+              </th>
+              <th scope="col" aria-sort={orden === 'ultima' ? 'descending' : 'none'}>
+                <a href={direccion({ orden: 'ultima' })} class:list={[orden === 'ultima' && 'activo baja']}>
+                  Última atención
+                  {orden === 'ultima' && <Icono nombre="flecha" tam={14} />}
+                </a>
+              </th>
+              <th scope="col" class="plano centro">Atenciones</th>
+              <th scope="col" class="plano">Teléfono</th>
+            </tr>
+          </thead>
+          <tbody>
+            {listado.filas.map((f) => (
+              <tr>
+                <td class="quien">
+                  <a href={`/sistema/pacientes/${f.id}`}>
+                    <strong>{f.nombre}</strong>
+                    <small class="cifra">{f.cedula}</small>
+                  </a>
+                </td>
+                <td>
+                  {f.ultima ? (
+                    <span class="cuando">
+                      <span class="cifra">{fechaCorta(f.ultima)}</span>
+                      <small>{f.idx ?? 'Sin diagnóstico escrito'}</small>
+                    </span>
+                  ) : (
+                    <span class="nada">Sin atenciones que cuenten</span>
+                  )}
+                </td>
+                <td class="centro cifra">{f.atenciones}</td>
+                <td class="tel cifra">{f.telefono ?? <span class="nada">Sin teléfono</span>}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      {listado.paginas > 1 && (
+        <!-- El extremo de la lista no es un enlace apagado sino que no es
+             un enlace: apagarlo con estilos lo deja igual de pulsable con el
+             teclado, llevando a una página que no existe. -->
+        <nav class="paginas" aria-label="Páginas del registro">
+          {listado.pagina > 1 ? (
+            <a class="sis-boton sis-boton--suave" rel="prev" href={direccion({ pagina: listado.pagina - 1 })}>
+              Anteriores
+            </a>
+          ) : (
+            <span class="sis-boton sis-boton--suave" aria-disabled="true">Anteriores</span>
+          )}
+          <span class="paginas__cuenta cifra">
+            {desde}–{hasta} de {numero(listado.total)}
+          </span>
+          {listado.pagina < listado.paginas ? (
+            <a class="sis-boton sis-boton--suave" rel="next" href={direccion({ pagina: listado.pagina + 1 })}>
+              Siguientes
+            </a>
+          ) : (
+            <span class="sis-boton sis-boton--suave" aria-disabled="true">Siguientes</span>
+          )}
+        </nav>
+      )}
+    </>
+  )}
+</Sistema>
+
+<style>
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 68ch; }
+
+  /* ---------- buscar ---------- */
+  .buscador { display: flex; flex-wrap: wrap; gap: 9px; margin: 20px 0 16px; align-items: center; }
+  .buscador__caja {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 1 1 min(260px, 100%);
+    /* Una caja de búsqueda de mil píxeles no busca mejor: se corta donde
+       deja de ayudar y el resto de la fila queda para los botones. */
+    max-width: min(460px, 100%);
+    min-width: 0;
+    padding: 0 14px;
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+  }
+  .buscador__caja:focus-within { outline: 2px solid var(--azul-medio); border-color: var(--azul-medio); }
+  .buscador__caja :global(svg) { color: var(--tinta-tenue); flex: none; }
+  .buscador__caja input {
+    flex: 1; min-width: 0; min-height: 44px;
+    border: 0; background: none; font: inherit; font-family: var(--ui); outline: none;
+  }
+  /* La pista toma la fila completa: pegada al botón partía la línea. */
+  .buscador__pista { flex: 1 0 100%; font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  /* ---------- vacío ---------- */
+  .vacio { text-align: center; padding-block: 52px; }
+  .vacio h2 { font-size: var(--u-lg); }
+  .vacio p { margin-top: 8px; color: var(--tinta-tenue); font-size: var(--u-sm); }
+  .vacio .sis-boton { margin-top: 20px; }
+
+  /* ---------- tabla ---------- */
+  /* Se desplaza dentro de su caja: el panel nunca se arrastra de lado. */
+  .tabla { padding: 0; overflow-x: auto; }
+  table { width: 100%; min-width: 580px; border-collapse: collapse; font-size: var(--u-sm); }
+  th, td { text-align: left; padding: 0 14px; border-bottom: 1px solid var(--linea-tenue); }
+  td { padding-block: 10px; }
+  tbody tr:last-child td { border-bottom: 0; }
+  tbody tr:hover { background: var(--bruma); }
+  .centro { text-align: center; }
+
+  th {
+    padding-block: 0;
+    font-size: var(--u-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--tinta-tenue);
+    background: var(--panel);
+    white-space: nowrap;
+  }
+  th.plano { padding-block: 11px; }
+
+  /* El encabezado que ordena es un enlace y se toca con el dedo como todo
+     lo demás del panel. */
+  th a {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 44px;
+    color: inherit;
+    text-decoration: none;
+    font-weight: 700;
+  }
+  th a:hover { color: var(--azul); }
+  th a.activo { color: var(--azul); }
+  /* La flecha apunta en el sentido en que crece la columna: de la A a la
+     Z hacia arriba, de la fecha más nueva a la más vieja hacia abajo. */
+  th a.sube :global(svg) { transform: rotate(-90deg); }
+  th a.baja :global(svg) { transform: rotate(90deg); }
+
+  .quien a {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-height: 44px;
+    justify-content: center;
+    padding-block: 2px;
+    text-decoration: none;
+    color: var(--tinta);
+  }
+  .quien strong { font-size: var(--u-base); font-weight: 600; color: var(--azul); }
+  .quien a:hover strong { text-decoration: underline; }
+  .quien small { font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  .cuando { display: flex; flex-direction: column; gap: 1px; }
+  .cuando small {
+    font-size: var(--u-xs);
+    color: var(--tinta-suave);
+    max-width: min(34ch, 100%);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .tel { white-space: nowrap; }
+  .nada { color: var(--tinta-tenue); white-space: normal; }
+
+  /* ---------- páginas ---------- */
+  .paginas { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 14px; }
+  .paginas__cuenta { font-size: var(--u-xs); color: var(--tinta-tenue); }
+</style>
