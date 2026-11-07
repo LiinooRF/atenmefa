@@ -195,10 +195,16 @@ const plural = (n: number, uno: string, varios: string) => `${n} ${n === 1 ? uno
                 después, y el BCV de entonces no se puede recuperar desde acá.</>
             )}
             {tasaDeHoy && (
-              <> El dólar está en <strong class="cifra">{dinero(tasaDeHoy.bolivares)} Bs</strong>
+              /* Todo en una expresión: dos seguidas dentro de un fragmento de
+                 Astro dejan un espacio antes de la coma al compilar, y
+                 fechaCorta ya termina en punto ("06-nov."), así que el punto
+                 final sale doble si se agrega aparte. */
+              <>{' '}El dólar está en{' '}
+                <strong class="cifra">{dinero(tasaDeHoy.bolivares)} Bs</strong>
                 {tasaDeHoy.fecha === hoyEnCaracas()
-                  ? ', publicado hoy'
-                  : `, lo último que publicó el BCV: ${fechaCorta(tasaDeHoy.fecha)}`}.</>
+                  ? ', publicado hoy.'
+                  : `, lo último que publicó el BCV (${fechaCorta(tasaDeHoy.fecha)})`}
+              </>
             )}
             {seConvirtio && faltaronTasas && (
               <> Quedaron fuera {plural(equivalente.sinTasa, 'monto', 'montos')} porque
