@@ -84,7 +84,9 @@ const activo = atajos.find((a) => a.desde === desde && a.hasta === hasta);
 
   .rango__atajos { display: flex; flex-wrap: wrap; gap: 6px; }
   .rango__atajo {
-    min-height: 38px;
+    /* 44 px, como todo lo que se toca con el dedo. Estaba en 38 por una
+       cuestión de aire y nada más, y es un botón que se usa en el teléfono. */
+    min-height: 44px;
     padding: 0 14px;
     border: 1px solid var(--linea);
     border-radius: 999px;
@@ -106,7 +108,7 @@ const activo = atajos.find((a) => a.desde === desde && a.hasta === hasta);
   .rango__par { display: flex; align-items: center; gap: 8px; }
   .rango__libre label { font-size: var(--u-xs); color: var(--tinta-tenue); font-weight: 600; text-transform: uppercase; letter-spacing: 0.05em; }
   .rango__libre input {
-    min-height: 42px;
+    min-height: 44px;
     padding: 8px 11px;
     border: 1px solid var(--linea);
     border-radius: 8px;
@@ -117,5 +119,7 @@ const activo = atajos.find((a) => a.desde === desde && a.hasta === hasta);
     color: var(--tinta);
   }
   .rango__libre input:focus { outline: 2px solid var(--azul-medio); border-color: var(--azul-medio); }
-  .rango__libre .sis-boton { min-height: 42px; }
+  /* El "Ver" se queda con los 44 px que le da la hoja del panel: la regla
+     que había acá se los bajaba a 42 y era el único botón del sistema por
+     debajo del mínimo. */
 </style>

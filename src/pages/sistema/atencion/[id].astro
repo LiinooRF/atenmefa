@@ -105,7 +105,18 @@ const etiqueta = {
   <header class="cab">
     <div>
       <div class="cab__linea">
-        <h1>{caso.paciente}</h1>
+        {/* El nombre lleva a la ficha de la persona: desde una atención se
+            llega a sus otras atenciones, sus antecedentes y sus alergias.
+            Si el rol no puede ver el registro, queda como texto y ya. */}
+        <h1>
+          {puede(usuario.rol as string, 'ver_pacientes') ? (
+            <a class="cab__persona" href={`/sistema/pacientes/${caso.pacienteId}`}>
+              {caso.paciente}
+            </a>
+          ) : (
+            caso.paciente
+          )}
+        </h1>
         <span class:list={['chapa', `chapa--${etiqueta.clase}`]}>{etiqueta.texto}</span>
       </div>
       <p class="cab__meta">
@@ -219,6 +230,10 @@ const etiqueta = {
 </Sistema>
 
 <style>
+  .cab__persona { color: inherit; text-decoration: none; }
+  .cab__persona:hover,
+  .cab__persona:focus-visible { color: var(--azul); text-decoration: underline; }
+
   .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
   .miga a { color: var(--tinta-suave); text-decoration: none; }
   .miga a:hover { color: var(--azul); text-decoration: underline; }

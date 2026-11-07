@@ -12,7 +12,7 @@
  * su caja. Lo que se le exige es lo mismo que a todo lo demás: que no
  * arrastre la página entera ni deje botones por debajo de 44 px.
  */
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import {
   CORRIDA, anchos, borrarPacientes, borrarServicios, cargarAMano, cedulaDePrueba,
   crearAtencionCerrada, crearBorrador, entrar, mesDeLaAtencion,
@@ -28,6 +28,16 @@ const SERVICIO = `Servicio angosto de prueba ${CORRIDA}`;
 /** Se arman en beforeAll porque las rutas llevan el id del caso. */
 const rutas: string[] = [];
 let documento = '';
+
+/** Las pantallas del menú, leídas del menú: una nueva entra sola a las
+    pruebas en vez de esperar a que alguien se acuerde de anotarla acá. */
+async function rutasDelMenu(page: Page) {
+  await page.goto('/sistema');
+  const enlaces = await page.locator('.sis__nav a').evaluateAll((lista) =>
+    lista.map((e) => new URL((e as HTMLAnchorElement).href).pathname));
+  expect(enlaces.length, 'el menú no cargó, no se probó nada').toBeGreaterThan(4);
+  return enlaces;
+}
 
 test.beforeAll(async ({ browser }) => {
   /* Los datos se cargan con la ventana grande: lo que se está probando es
@@ -106,16 +116,10 @@ test('la pantalla de entrada no desborda a 390 px', async ({ page }) => {
 test('ninguna pantalla del panel desborda a 390 px', async ({ page }) => {
   await entrar(page, 'administracion');
 
-  /* Las pantallas del menú se leen del propio menú y no de una lista escrita
-     a mano: así una pantalla nueva queda revisada desde el día que se agrega,
-     en vez de esperar a que alguien se acuerde de anotarla acá. La lista de
-     arriba es solo para las rutas que llevan el id de un caso y no salen en
-     el menú. Administración no ve las del médico: esas ya están en la lista. */
-  const delMenu = await page.locator('.sis__nav a').evaluateAll((enlaces) =>
-    enlaces.map((e) => new URL((e as HTMLAnchorElement).href).pathname));
-  expect(delMenu.length).toBeGreaterThan(4); // si el menú no cargó, no se prueba nada
-
-  for (const ruta of [...new Set([...delMenu, ...rutas])]) {
+  /* La lista de arriba es solo para las rutas que llevan el id de un caso y
+     no salen en el menú. Administración no ve las del médico: esas ya están
+     anotadas ahí. */
+  for (const ruta of [...new Set([...(await rutasDelMenu(page)), ...rutas])]) {
     await page.goto(ruta);
     const medida = await anchos(page);
     /* Un píxel de tolerancia: el redondeo de un borde a mitad de píxel no
@@ -151,16 +155,42 @@ test('la barra del panel y el pie de guardar caben sin desplazar', async ({ page
 
 /* La regla de la casa: 44 px de alto para todo lo que se toca con el dedo.
    .sis-boton arrancaba en 42 y los botones secundarios quedaban 2 px por
-   debajo; el mínimo está unificado en la hoja del panel. */
+   debajo; el mínimo está unificado en la hoja del panel.
+
+   Esta prueba decía que sí y no estaba mirando. Abría UNA pantalla
+   (/sistema/atencion/nueva, que ni siquiera lleva el filtro de fechas) y
+   medía solo .sis-boton, así que no alcanzaba los controles de Rango.astro,
+   que se bajaban el mínimo a 38 px en los atajos y a 42 en los campos y en
+   el botón Ver. Estuvieron meses en verde incumpliendo la regla. Ahora
+   recorre el menú entero y mide todo lo que se pulsa.
+
+   Quedan fuera las casillas y los radios: el navegador los dibuja de 13 px y
+   lo que el dedo busca es su rótulo, que se mide de otra manera. */
+const SE_TOCA = [
+  'button:visible',
+  'select:visible',
+  'summary:visible', // un <details> se despliega con el dedo igual que un botón
+  '.sis-boton:visible',
+  'input:visible:not([type=hidden]):not([type=checkbox]):not([type=radio])',
+].join(', ');
+
 test('todo lo que se toca mide 44 px de alto', async ({ page }) => {
   await entrar(page, 'administracion');
-  await page.goto('/sistema/atencion/nueva?cedula=V-99.800.000');
+  const porRevisar = [...new Set([...(await rutasDelMenu(page)), ...rutas])];
 
-  const botones = page.locator('.sis-boton');
-  for (let i = 0; i < (await botones.count()); i++) {
-    const caja = await botones.nth(i).boundingBox();
-    const rotulo = (await botones.nth(i).innerText()).trim();
-    expect.soft(caja?.height ?? 0, `el botón "${rotulo}" mide ${caja?.height}`).toBeGreaterThanOrEqual(44);
+  for (const ruta of porRevisar) {
+    await page.goto(ruta);
+    const cosas = page.locator(SE_TOCA);
+    for (let i = 0; i < (await cosas.count()); i++) {
+      const caja = await cosas.nth(i).boundingBox();
+      if (!caja) continue; // fuera de pantalla: no se toca
+      const texto = (await cosas.nth(i).innerText()).replace(/\s+/g, ' ').trim();
+      const nombre = texto || (await cosas.nth(i).getAttribute('aria-label'))
+        || (await cosas.nth(i).getAttribute('name')) || (await cosas.nth(i).getAttribute('type'));
+      expect
+        .soft(caja.height, `${ruta}: "${nombre}" mide ${Math.round(caja.height)} px`)
+        .toBeGreaterThanOrEqual(44);
+    }
   }
 });
 

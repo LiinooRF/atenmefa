@@ -11,7 +11,8 @@ import Sistema from '../../layouts/Sistema.astro';
 import Icono from '../../components/Icono.astro';
 import { exigir } from '../../sistema/lib/guardia';
 import { bd, esquema } from '../../sistema/lib/base';
-import { desc, eq, and, gte, lte, type SQL } from 'drizzle-orm';
+import { desc, eq, and, gte, lte, sql, type SQL } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 
 export const prerender = false;
 
@@ -30,6 +31,14 @@ if (queHizo) filtros.push(eq(esquema.bitacora.accion, queHizo));
 if (desdeTxt) filtros.push(gte(esquema.bitacora.momento, new Date(`${desdeTxt}T00:00:00`)));
 if (hastaTxt) filtros.push(lte(esquema.bitacora.momento, new Date(`${hastaTxt}T23:59:59`)));
 
+/* Los movimientos sobre una persona (abrir su ficha, corregirle el teléfono)
+   no cuelgan de ninguna atención: llevan el id del paciente en `detalle`. Sin
+   este segundo join la columna "Sobre qué" salía con un guion y el registro
+   decía que alguien leyó datos de salud sin decir de quién, que es lo único
+   que justifica anotarlo. El filtro por forma de uuid es necesario: `detalle`
+   es libre y un ->> que no sea uuid revienta el cast. */
+const suPaciente = alias(esquema.paciente, 'su_paciente');
+
 const filas = await bd
   .select({
     id: esquema.bitacora.id,
@@ -39,6 +48,8 @@ const filas = await bd
     atencionId: esquema.bitacora.atencionId,
     numero: esquema.atencion.numero,
     paciente: esquema.paciente.nombre,
+    sueltoId: suPaciente.id,
+    suelto: suPaciente.nombre,
     usuario: esquema.user.name,
     usuarioId: esquema.user.id,
   })
@@ -46,6 +57,11 @@ const filas = await bd
   .leftJoin(esquema.user, eq(esquema.user.id, esquema.bitacora.usuarioId))
   .leftJoin(esquema.atencion, eq(esquema.atencion.id, esquema.bitacora.atencionId))
   .leftJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+  .leftJoin(
+    suPaciente,
+    sql`${esquema.bitacora.detalle}->>'paciente' ~ '^[0-9a-f-]{36}$'
+        AND ${suPaciente.id} = (${esquema.bitacora.detalle}->>'paciente')::uuid`,
+  )
   .where(filtros.length ? and(...filtros) : undefined)
   .orderBy(desc(esquema.bitacora.momento))
   .limit(300);
@@ -73,6 +89,8 @@ const COMO_SE_LEE: Record<string, string> = {
   cambio_rol: 'Cambió un rol',
   cambio_clave: 'Cambió la clave de alguien',
   cambio_su_clave: 'Cambió su propia clave',
+  vio_paciente: 'Abrió la ficha del paciente',
+  cambio_telefono: 'Corrigió un teléfono',
 };
 
 const ACCIONES = Object.keys(COMO_SE_LEE);
@@ -133,6 +151,8 @@ const hayFiltro = Boolean(quien || queHizo || desdeTxt || hastaTxt);
                   <a href={`/sistema/atencion/${f.atencionId}`}>
                     N° {f.numero} · {f.paciente}
                   </a>
+                ) : f.sueltoId ? (
+                  <a href={`/sistema/pacientes/${f.sueltoId}`}>{f.suelto}</a>
                 ) : (
                   <span class="nada">—</span>
                 )}
@@ -151,7 +171,8 @@ const hayFiltro = Boolean(quien || queHizo || desdeTxt || hastaTxt);
 
   .filtros { display: flex; flex-wrap: wrap; gap: 8px; margin: 18px 0 16px; }
   .filtros select, .filtros input {
-    min-height: 42px;
+    /* 44 px: es la regla de la casa para todo lo que se toca. */
+    min-height: 44px;
     padding: 8px 11px;
     border: 1px solid var(--linea);
     border-radius: 8px;
@@ -160,7 +181,8 @@ const hayFiltro = Boolean(quien || queHizo || desdeTxt || hastaTxt);
     font-family: var(--ui);
     font-size: var(--u-sm);
   }
-  .filtros .sis-boton { min-height: 42px; }
+  /* El botón se queda con los 44 px de la hoja del panel: la regla que
+     había acá se los bajaba a 42. */
 
   .vacio { text-align: center; padding-block: 48px; }
   .vacio h2 { font-size: var(--u-lg); }

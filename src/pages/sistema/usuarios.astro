@@ -230,7 +230,8 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
   .gente__acciones { display: flex; flex-wrap: wrap; gap: 8px; }
   .enlinea { display: flex; gap: 7px; align-items: center; }
   .enlinea select, .enlinea input {
-    min-height: 40px;
+    /* 44 px: cambiar el rol de alguien se hace también desde el teléfono. */
+    min-height: 44px;
     padding: 7px 10px;
     border: 1px solid var(--linea);
     border-radius: 8px;
@@ -239,7 +240,7 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
     font-size: var(--u-sm);
     background: var(--papel);
   }
-  .enlinea .sis-boton { min-height: 40px; padding: 7px 14px; }
+  .enlinea .sis-boton { padding: 7px 14px; } /* el alto lo pone el panel: 44 px */
 
   .gente__clave summary {
     list-style: none;
@@ -247,8 +248,12 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
     font-size: var(--u-sm);
     color: var(--azul);
     font-weight: 600;
+    /* Se despliega con el dedo como cualquier botón, así que mide lo mismo.
+       El relleno va en el alto, no abajo, para que no empuje la fila. */
+    display: flex;
+    align-items: center;
     padding: 6px 0;
-    min-height: 32px;
+    min-height: 44px;
   }
   .gente__clave summary::-webkit-details-marker { display: none; }
   .gente__clave summary:hover { color: var(--rojo); }
