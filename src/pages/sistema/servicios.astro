@@ -14,6 +14,7 @@ import {
   dinero, porCategoria, rotuloCategoria,
 } from '../../sistema/lib/cobro';
 import { asegurarTasa, tasaPara, enBolivares, MONEDA_BASE } from '../../sistema/lib/tasa';
+import { cargarExamenesAlCatalogo, examenesDelArchivo } from '../../sistema/lib/laboratorio';
 import { hoyEnCaracas } from '../../sistema/lib/fechas';
 
 export const prerender = false;
@@ -42,13 +43,27 @@ let error = '';
 /* Lo tipeado vuelve a la pantalla si el alta falla: nadie quiere escribir
    el mismo servicio dos veces. */
 let nuevo = { nombre: '', categoria: 'consulta', precio: '', moneda: 'USD' };
+let aviso = '';
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
   const accion = form.get('accion');
 
   try {
-    if (accion === 'desactivar' || accion === 'reactivar') {
+    if (accion === 'cargar-laboratorio') {
+      /* Los treinta y cinco exámenes del archivo del laboratorio, de un
+         golpe. Entran en cero: no tenemos sus precios y un precio inventado
+         termina cobrado. Ver cargarExamenesAlCatalogo. */
+      const { agregados } = await cargarExamenesAlCatalogo();
+      if (agregados.length === 0) {
+        aviso = 'Ya estaban todos los exámenes del archivo del laboratorio.';
+      } else {
+        await anotar(usuario.id, 'servicio', undefined, {
+          accion: 'cargo_laboratorio', cuantos: agregados.length,
+        });
+        aviso = `Se cargaron ${agregados.length} exámenes, todos sin precio. Póngales el suyo acá abajo.`;
+      }
+    } else if (accion === 'desactivar' || accion === 'reactivar') {
       const cambiado = await activarServicio(String(form.get('id') ?? ''), accion === 'reactivar');
       await anotar(usuario.id, 'servicio', undefined, { accion, servicio: cambiado.nombre });
       /* Al desactivar se muestran también los apagados: si la fila
@@ -75,6 +90,14 @@ if (Astro.request.method === 'POST') {
 
 const servicios = await catalogo(true);
 const activos = servicios.filter((s) => s.activo);
+/* Cuántos exámenes del archivo del laboratorio todavía no están en el
+   catálogo, y cuántos de los que están siguen en cero. Las dos cifras son
+   la misma pregunta vista de cerca: qué falta para que recepción pueda
+   marcar un examen y que salga con su precio. */
+const delArchivo = await examenesDelArchivo();
+const conocidos = new Set(servicios.map((s) => s.nombre.toLocaleLowerCase('es')));
+const faltanDelArchivo = delArchivo.filter((e) => !conocidos.has(e.toLocaleLowerCase('es'))).length;
+const sinPrecio = servicios.filter((s) => s.activo && Number(s.precio) === 0).length;
 const visibles = verTodos ? servicios : activos;
 const grupos = porCategoria(visibles);
 const apagados = servicios.length - activos.length;
@@ -116,6 +139,52 @@ const apagados = servicios.length - activos.length;
     <p class="sis-error alta__error">
       <Icono nombre="escudo" tam={18} />
       {error}
+    </p>
+  )}
+
+  {aviso && (
+    <p class="msj--bien">
+      <Icono nombre="escudo" tam={18} />
+      {aviso}
+    </p>
+  )}
+
+  {/* El selector de exámenes de la orden sale de este catálogo, así que
+      mientras esté vacío recepción no puede marcar nada. Los nombres los
+      tenemos: son las hojas del archivo del laboratorio del centro. */}
+  {faltanDelArchivo > 0 && (
+    <section class="sis-tarjeta lab">
+      <h2>Los exámenes del laboratorio</h2>
+      <p>
+        El archivo del laboratorio tiene <strong>{delArchivo.length} exámenes</strong> y
+        {' '}{faltanDelArchivo === delArchivo.length
+          ? 'ninguno está en el catálogo'
+          : `${faltanDelArchivo} no están en el catálogo`}.
+        Mientras falten, recepción no los puede marcar en la orden y la cuenta
+        no sale.
+      </p>
+      <form method="post">
+        <input type="hidden" name="accion" value="cargar-laboratorio" />
+        <button type="submit" class="sis-boton sis-boton--primario">
+          <Icono nombre="mas" tam={18} />
+          Cargar los {faltanDelArchivo} exámenes
+        </button>
+      </form>
+      <p class="lab__nota">
+        Entran <strong>sin precio</strong> y se les pone acá. No se inventa
+        ninguno: un precio adivinado en el catálogo termina cobrado.
+      </p>
+    </section>
+  )}
+
+  {sinPrecio > 0 && (
+    <p class="aviso-precio">
+      <Icono nombre="escudo" tam={18} />
+      <span>
+        Hay <strong>{sinPrecio} {sinPrecio === 1 ? 'servicio' : 'servicios'} sin precio</strong>.
+        Se pueden marcar en una orden —queda registrado qué se le hizo— pero no
+        suman al total hasta que tengan el suyo.
+      </span>
     </p>
   )}
 
@@ -218,6 +287,39 @@ const apagados = servicios.length - activos.length;
 </Sistema>
 
 <style>
+  .msj--bien {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-top: 16px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+    font-size: var(--u-sm);
+  }
+  .msj--bien :global(svg) { flex: none; margin-top: 1px; }
+
+  .lab { margin-top: 18px; border-color: var(--azul-medio); }
+  .lab h2 { font-size: var(--u-lg); }
+  .lab p { margin: 9px 0 14px; font-size: var(--u-sm); color: var(--tinta-suave); line-height: 1.55; max-width: 72ch; }
+  .lab__nota { margin: 12px 0 0 !important; font-size: var(--u-xs) !important; color: var(--tinta-tenue) !important; }
+
+  .aviso-precio {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-top: 16px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #fdf0d9;
+    color: #7a5200;
+    font-size: var(--u-sm);
+    line-height: 1.5;
+  }
+  .aviso-precio :global(svg) { flex: none; margin-top: 2px; }
+
   .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
   .miga a { color: var(--tinta-suave); text-decoration: none; }
   .miga a:hover { color: var(--azul); text-decoration: underline; }

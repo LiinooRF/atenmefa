@@ -36,6 +36,7 @@ import {
   examenesPedidos, guardarResultados, leerResultados, plantillasDeExamen, sinNombre,
 } from '../../../../sistema/lib/laboratorio';
 import type { Resultado } from '../../../../sistema/laboratorio';
+import { CALCULOS_EN_LLAVES } from '../../../../sistema/calculos';
 
 export const prerender = false;
 
@@ -182,7 +183,9 @@ const fechaLarga = (f: string) =>
       {error && <p class="sis-error form__aviso"><Icono nombre="escudo" tam={18} />{error}</p>}
       {aviso && <p class="form__aviso form__aviso--bien"><Icono nombre="escudo" tam={18} />{aviso}</p>}
 
-      <div class="tablon">
+      {/* Las cuentas del archivo del laboratorio. Viajan acá para que el
+          campo se llene mientras se teclea, sin ir y volver al servidor. */}
+      <div class="tablon" data-calculos={JSON.stringify(CALCULOS_EN_LLAVES)}>
         <table class="res">
           <thead>
             <tr>
@@ -250,6 +253,15 @@ const fechaLarga = (f: string) =>
         de otro.
       </p>
 
+      <p class="nota-ref">
+        Ocho analitos <strong>se calculan solos</strong> con las fórmulas de
+        ese mismo archivo —el LDL, el VLDL, la bilirrubina indirecta, las
+        globulinas, la relación A/G, el CHCM, el volumen por minuto y la
+        depuración de creatinina—: aparecen en cuanto están sus insumos y se
+        vuelven a calcular si uno cambia. Si escribe encima, el suyo manda y
+        deja de recalcularse.
+      </p>
+
       <div class="pie">
         <div class="pie__int">
           <span class="pie__estado">
@@ -296,6 +308,128 @@ const fechaLarga = (f: string) =>
       });
       return fila;
     };
+
+    /* ---------- las cuentas ---------- */
+
+    type Op =
+      | { tipo: 'resta' } | { tipo: 'division' } | { tipo: 'dividirPor'; por: number }
+      | { tipo: 'porCienSobre' } | { tipo: 'productoSobre' };
+    type Calculo = {
+      resultado: string; insumos: string[]; operacion: Op;
+      decimales: number; comoSeLee: string;
+    };
+
+    const tablon = cuerpo.closest('[data-calculos]') as HTMLElement | null;
+    let calculos: Calculo[] = [];
+    try { calculos = JSON.parse(tablon?.dataset.calculos ?? '[]'); } catch { calculos = []; }
+
+    /* La misma normalización que en sistema/calculos.ts. Se repite acá a
+       propósito: el script del navegador no importa módulos del servidor, y
+       copiar cuatro líneas es más barato que armar un paquete compartido
+       para esto. Si una cambia, cambia la otra. */
+    const MISMO: Record<string, string> = {
+      globulina: 'globulinas',
+      'relaciona/g': 'relacionag',
+      'relacionaa/g': 'relacionag',
+    };
+    const llave = (n: string) => {
+      const plano = n.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/\s+/g, '').trim();
+      return MISMO[plano] ?? plano;
+    };
+
+    /** Lee un número escrito a la venezolana: «13,4» y «13.4» valen igual. */
+    const numero = (t: string): number | null => {
+      const limpio = t.trim().replace(/\s/g, '').replace(',', '.');
+      if (!limpio || !/^-?\d*\.?\d+$/.test(limpio)) return null;
+      const n = Number(limpio);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    /** Lo escribe como se lee acá: coma decimal. */
+    const comoSeEscribe = (n: number, decimales: number) =>
+      n.toFixed(decimales).replace('.', ',');
+
+    const hacerCuentas = () => {
+      const filas = [...cuerpo.querySelectorAll<HTMLTableRowElement>('tr')];
+      const dame = (f: HTMLTableRowElement, n: string) =>
+        f.querySelector<HTMLInputElement>(`input[name="${n}"]`);
+
+      /* Por nombre de analito: la última fila con ese nombre gana, que es lo
+         que se ve en pantalla. */
+      const porLlave = new Map<string, HTMLTableRowElement>();
+      for (const f of filas) {
+        const nombre = dame(f, 'examen')?.value.trim();
+        if (nombre) porLlave.set(llave(nombre), f);
+      }
+
+      /* Dos pasadas: el LDL necesita el VLDL, que también se calcula. Con
+         dos alcanza para la única cadena que hay. */
+      for (let vuelta = 0; vuelta < 2; vuelta++) {
+        for (const c of calculos) {
+          const fila = porLlave.get(c.resultado);
+          if (!fila) continue;
+          const campo = dame(fila, 'valor');
+          if (!campo || campo.dataset.aMano !== undefined) continue;
+
+          const valores = c.insumos.map((i) => {
+            const f = porLlave.get(i);
+            return f ? numero(dame(f, 'valor')?.value ?? '') : null;
+          });
+
+          if (valores.some((v) => v === null)) {
+            // Faltan insumos: se limpia lo que esta misma cuenta había puesto.
+            if (campo.dataset.calculado !== undefined) {
+              campo.value = '';
+              delete campo.dataset.calculado;
+            }
+            continue;
+          }
+
+          const v = valores as number[];
+          let r: number | null = null;
+          switch (c.operacion.tipo) {
+            case 'resta': r = v.slice(1).reduce((t, x) => t - x, v[0]); break;
+            case 'division': r = v[1] === 0 ? null : v[0] / v[1]; break;
+            case 'dividirPor': r = v[0] / c.operacion.por; break;
+            case 'porCienSobre': r = v[1] === 0 ? null : (v[0] * 100) / v[1]; break;
+            case 'productoSobre': r = v[2] === 0 ? null : (v[0] * v[1]) / v[2]; break;
+          }
+          if (r === null || !Number.isFinite(r)) continue;
+
+          campo.value = comoSeEscribe(r, c.decimales);
+          campo.dataset.calculado = '';
+          campo.title = `Calculado: ${c.comoSeLee}. Se puede escribir encima.`;
+        }
+      }
+    };
+
+    /* Si alguien escribe en un campo, el suyo manda y esa celda deja de
+       recalcularse: un valor que no se puede corregir es peor que uno
+       tecleado, y el equipo puede dar otra cosa que la fórmula.
+       
+       Se marca SIEMPRE que se teclee, también sobre un calculado. La
+       primera versión solo marcaba los que no estaban calculados —al revés
+       de lo que hacía falta— y la cuenta volvía a pisar el valor escrito a
+       mano en cuanto cambiaba un insumo.
+       
+       Esto no se dispara cuando la cuenta escribe: asignar .value desde el
+       script no genera un evento 'input'.
+       
+       Y si se vacía, vuelve a calcularse: un campo en blanco es «hágala
+       usted». */
+    cuerpo.addEventListener('input', (e) => {
+      const campo = e.target as HTMLInputElement;
+      if (campo.name === 'valor') {
+        if (campo.value.trim()) {
+          campo.dataset.aMano = '';
+          delete campo.dataset.calculado;
+        } else {
+          delete campo.dataset.aMano;
+        }
+      }
+      if (campo.name === 'valor' || campo.name === 'examen') hacerCuentas();
+    });
 
     mas.addEventListener('click', () => {
       const fila = nuevaFila();
@@ -348,8 +482,12 @@ const fechaLarga = (f: string) =>
         }
         elige.value = '';
         primera?.focus();
+        hacerCuentas();
       });
     }
+
+    // Y al cargar: una orden a medio llenar ya puede tener sus insumos.
+    hacerCuentas();
 
     cuerpo.addEventListener('click', (e) => {
       const boton = (e.target as HTMLElement).closest('[data-quitar]');
@@ -445,6 +583,13 @@ const fechaLarga = (f: string) =>
   .res input:hover { border-color: var(--linea); }
   .res input:focus { outline: 2px solid var(--azul-medio); border-color: var(--azul-medio); background: var(--papel); }
   .res input[name='valor'] { font-weight: 600; }
+  /* Un valor que puso la cuenta se ve distinto de uno tecleado: si no, el
+     bioanalista no sabe qué firmó él y qué firmó la fórmula. */
+  .res input[data-calculado] {
+    background: var(--azul-tenue);
+    border-color: var(--azul-tenue);
+    color: var(--azul);
+  }
 
   .res__quitar { width: 44px; }
   .quitar {

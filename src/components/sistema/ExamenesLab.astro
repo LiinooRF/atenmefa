@@ -16,7 +16,7 @@
 import { dinero } from '../../sistema/lib/cobro';
 import type { ExamenDelCatalogo } from '../../sistema/lib/laboratorio';
 import type { Tasa } from '../../sistema/lib/tasa';
-import { EXAMENES } from '../../sistema/laboratorio';
+
 
 interface Props {
   catalogo: readonly ExamenDelCatalogo[];
@@ -25,9 +25,19 @@ interface Props {
   tasa: Tasa | null;
   /** Para avisar a quien puede resolverlo que el catálogo está vacío. */
   puedeEditarCatalogo: boolean;
+  /** Cuántos exámenes trae el archivo del laboratorio, para el aviso. */
+  cuantosEnElArchivo?: number;
 }
-const { catalogo, marcados, tasa, puedeEditarCatalogo } = Astro.props;
+const {
+  catalogo, marcados, tasa, puedeEditarCatalogo, cuantosEnElArchivo = 0,
+} = Astro.props;
 const yaEsta = new Set(marcados);
+
+/* Un examen cargado en cero no tiene precio todavía: se puede marcar —queda
+   registrado qué se le hizo— pero no suma. Mostrarlo como «0,00» haría
+   pensar que es gratis. */
+const sinPrecio = (e: ExamenDelCatalogo) => Number(e.precio) === 0;
+const cuantosSinPrecio = catalogo.filter(sinPrecio).length;
 
 const fechaTasa = tasa
   ? new Date(`${tasa.fecha}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })
@@ -36,17 +46,24 @@ const fechaTasa = tasa
 
 {catalogo.length === 0 ? (
   /* Catálogo vacío: la orden se registra igual, escribiendo los exámenes
-     abajo. Lo que no se hace es inventarles un precio. */
+     abajo. Lo que no se hace es inventarles un precio.
+
+     Los nombres los tenemos —son las hojas del archivo del laboratorio— así
+     que esto no es «escríbalos usted»: es un botón en Servicios y precios
+     que los carga de un golpe. Acá se señala el camino. */
   <div class="vacio">
-    <strong>El catálogo de exámenes está vacío.</strong>
+    <strong>Todavía no hay exámenes en el catálogo.</strong>
     <p>
       La orden se puede registrar igual escribiendo los exámenes en
-      «Otros exámenes». Para que se marquen de una lista y generen el precio,
-      hay que cargarlos en el catálogo con la categoría Laboratorio.
-      {puedeEditarCatalogo && <> <a href="/sistema/servicios">Cargarlos ahora</a>.</>}
-    </p>
-    <p class="vacio__folleto">
-      Los del folleto del centro: {EXAMENES.flatMap((g) => g.items).join(', ')}.
+      «Otros exámenes», pero no sale la cuenta.
+      {puedeEditarCatalogo ? (
+        <> Los {cuantosEnElArchivo} del archivo del laboratorio se cargan de
+          una vez desde <a href="/sistema/servicios">Servicios y precios</a>.</>
+      ) : (
+        <> Administración los carga desde Servicios y precios: son los
+          {' '}{cuantosEnElArchivo} del archivo del laboratorio y entran de
+          una vez.</>
+      )}
     </p>
   </div>
 ) : (
@@ -60,13 +77,18 @@ const fechaTasa = tasa
             <input
               type="checkbox" name="examen" value={e.id}
               checked={yaEsta.has(e.id)}
-              data-precio={e.moneda === 'USD' ? e.precio : ''}
+              data-precio={e.moneda === 'USD' && !sinPrecio(e) ? e.precio : ''}
               data-moneda={e.moneda}
+              data-sin-precio={sinPrecio(e) ? '' : undefined}
             />
             <span class="ex__nombre">{e.nombre}</span>
-            <span class="ex__precio cifra">
-              {e.moneda === 'USD' ? '$' : 'Bs '}{dinero(e.precio)}
-            </span>
+            {sinPrecio(e) ? (
+              <span class="ex__precio ex__precio--falta">sin precio</span>
+            ) : (
+              <span class="ex__precio cifra">
+                {e.moneda === 'USD' ? '$' : 'Bs '}{dinero(e.precio)}
+              </span>
+            )}
           </label>
         </li>
       ))}
@@ -80,6 +102,15 @@ const fechaTasa = tasa
           <small> a la tasa del {fechaTasa}</small></>}
       </span>
     </p>
+
+    {cuantosSinPrecio > 0 && (
+      <p class="ex__sin-tasa">
+        {cuantosSinPrecio === 1
+          ? 'Hay un examen sin precio cargado: se puede marcar, queda registrado, y no suma al total.'
+          : `Hay ${cuantosSinPrecio} exámenes sin precio cargado: se pueden marcar, quedan registrados, y no suman al total.`}
+        {puedeEditarCatalogo && <> <a href="/sistema/servicios">Ponérselo</a>.</>}
+      </p>
+    )}
 
     {!tasa && (
       <p class="ex__sin-tasa">
@@ -118,9 +149,15 @@ const fechaTasa = tasa
          un número, que es exactamente lo que el resto del sistema evita. */
       const suma = marcados.reduce((t, c) => t + (Number(c.dataset.precio) || 0), 0);
       const enBs = marcados.some((c) => c.dataset.moneda !== 'USD');
+      const faltan = marcados.filter((c) => c.dataset.sinPrecio !== undefined).length;
+
+      const aclara = [
+        enBs ? 'los cargados en bolívares' : '',
+        faltan ? `${faltan} sin precio` : '',
+      ].filter(Boolean);
 
       cuantos.textContent = `${marcados.length} ${marcados.length === 1 ? 'examen' : 'exámenes'}`;
-      usd.textContent = plata(suma) + (enBs ? ' + los cargados en bolívares' : '');
+      usd.textContent = plata(suma) + (aclara.length ? ` + ${aclara.join(' y ')}` : '');
       if (ves && tasa) ves.textContent = plata(suma * tasa);
     };
 
@@ -163,6 +200,7 @@ const fechaTasa = tasa
   .ex__lista input { width: 20px; height: 20px; flex: none; accent-color: var(--azul); }
   .ex__nombre { flex: 1; min-width: 0; }
   .ex__precio { flex: none; color: var(--tinta-tenue); font-size: var(--u-xs); }
+  .ex__precio--falta { color: #7a5200; font-weight: 700; }
   .ex__lista input:checked ~ .ex__nombre { font-weight: 600; color: var(--azul); }
   .ex__lista input:checked ~ .ex__precio { color: var(--tinta); }
 
@@ -186,5 +224,4 @@ const fechaTasa = tasa
   }
   .vacio strong { display: block; color: var(--azul); font-size: var(--u-sm); }
   .vacio p { margin: 7px 0 0; font-size: var(--u-sm); color: var(--tinta-suave); line-height: 1.5; }
-  .vacio__folleto { color: var(--tinta-tenue); }
 </style>

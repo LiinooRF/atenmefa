@@ -22,7 +22,7 @@
  */
 import { test, expect } from '@playwright/test';
 import {
-  conBase, entrar, cedulaDePrueba, sembrarExamen, borrarExamen, idDeLaFicha, FICHA,
+  conBase, entrar, cedulaDePrueba, sembrarExamen, borrarExamen, idDeLaFicha, FICHA, llenar,
 } from './apoyo';
 
 test.describe.configure({ mode: 'serial' });
@@ -31,6 +31,8 @@ const CEDULA = cedulaDePrueba(13, 0);
 const CEDULA_GENERAL = cedulaDePrueba(13, 1);
 const CEDULA_PEDIDOS = cedulaDePrueba(13, 2);
 const CEDULA_PLANTILLA = cedulaDePrueba(13, 3);
+const CEDULA_CALCULO = cedulaDePrueba(13, 4);
+const CEDULA_SIN_PRECIO = cedulaDePrueba(13, 5);
 const NOMBRE = 'Carmen Rosa Laboratorio de Prueba';
 
 const EXAMEN_A = 'Hematología completa de prueba';
@@ -38,7 +40,8 @@ const EXAMEN_B = 'Glicemia de prueba';
 
 const limpiar = () =>
   conBase(async (sql) => {
-    for (const c of [CEDULA, CEDULA_GENERAL, CEDULA_PEDIDOS, CEDULA_PLANTILLA]) {
+    for (const c of [CEDULA, CEDULA_GENERAL, CEDULA_PEDIDOS, CEDULA_PLANTILLA,
+                     CEDULA_CALCULO, CEDULA_SIN_PRECIO]) {
       const busca = c.replace(/\D/g, '');
       const suyas = sql`SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
                          WHERE p.cedula_busca = ${busca}`;
@@ -581,4 +584,196 @@ test('poner una plantilla llena los renglones, y ponerla dos veces no los duplic
   const hdl = (guardada.resultados as { examen: string; valor: string; referencia: string }[])
     .find((r) => r.examen === 'HDL-COLESTEROL');
   expect(hdl).toMatchObject({ valor: '55', unidad: 'mg/dl', referencia: '> 40' });
+});
+
+test('se registra una orden para las cuentas', async ({ page }) => {
+  await entrar(page, 'recepcionista');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_CALCULO)}`);
+  await page.locator('#c-nombre').fill('Calculo de Prueba Briceno');
+  await page.locator('#c-edad').fill('44');
+  await page.locator('#c-sexo').selectOption('Masculino');
+  await page.getByRole('button', { name: 'Guardar la orden' }).click();
+  await expect(page).toHaveURL(FICHA);
+});
+
+/* ------------------------------------------------------------------
+   Las cuentas del archivo.
+   ------------------------------------------------------------------
+
+   «En ese Excel está configurado para que tú coloques un valor y otro
+   valor, y él lo calcula». Las fórmulas son las de su archivo, leídas de
+   las celdas: ver src/sistema/calculos.ts.
+   ------------------------------------------------------------------ */
+
+test('el perfil lipídico se calcula solo, en cadena', async ({ page }) => {
+  const [orden] = await conBase((sql) => sql`
+    SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
+     WHERE p.cedula_busca = ${CEDULA_CALCULO.replace(/\D/g, '')} AND a.tipo = 'laboratorio'`);
+
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${orden.id}/resultados`);
+  await page.locator('#res-plantilla').selectOption('PERFIL LIPIDICO');
+  await page.getByRole('button', { name: 'Poner' }).click();
+
+  const campo = (analito: string) =>
+    page.locator('#res-cuerpo tr')
+      .filter({ has: page.locator(`input[name="examen"]`) })
+      .nth(['COLESTEROL TOTAL', 'HDL-COLESTEROL', 'LDL-COLESTEROL', 'VLDL-COLESTEROL', 'TRIGLICERIDOS']
+        .indexOf(analito))
+      .locator('input[name="valor"]');
+
+  /* Triglicéridos 150 → VLDL = 150/5 = 30. Y con colesterol 200 y HDL 50,
+     el LDL = 200 − 50 − 30 = 120. El LDL depende del VLDL, que también se
+     calcula: esa es la cadena. */
+  await campo('TRIGLICERIDOS').fill('150');
+  await expect(campo('VLDL-COLESTEROL')).toHaveValue('30,0');
+
+  await campo('COLESTEROL TOTAL').fill('200');
+  await campo('HDL-COLESTEROL').fill('50');
+  await expect(campo('LDL-COLESTEROL')).toHaveValue('120,0');
+
+  // Con coma decimal, como se escribe acá.
+  await campo('TRIGLICERIDOS').fill('155,5');
+  await expect(campo('VLDL-COLESTEROL')).toHaveValue('31,1');
+  await expect(campo('LDL-COLESTEROL')).toHaveValue('118,9');
+
+  // Y lo calculado se guarda como cualquier otro resultado.
+  await page.getByRole('button', { name: 'Guardar y seguir después' }).click();
+  await expect(page.locator('.form__aviso--bien')).toBeVisible();
+
+  const [guardada] = await conBase((sql) => sql`
+    SELECT resultados FROM atencion WHERE id = ${orden.id}`);
+  const r = guardada.resultados as { examen: string; valor: string }[];
+  expect(r.find((x) => x.examen === 'LDL-COLESTEROL')?.valor).toBe('118,9');
+});
+
+test('escribir encima de un calculado lo deja quieto', async ({ page }) => {
+  /* Un valor calculado que no se puede corregir es peor que uno tecleado:
+     el equipo puede dar otra cosa y quien firma es quien mide. */
+  const [orden] = await conBase((sql) => sql`
+    SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
+     WHERE p.cedula_busca = ${CEDULA_CALCULO.replace(/\D/g, '')} AND a.tipo = 'laboratorio'`);
+
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${orden.id}/resultados`);
+
+  /* Por el nombre del analito y no por la posición: al recargar, las filas
+     salen del orden de lo PEDIDO, que no es el de la plantilla. */
+  const cual = async (analito: string) => {
+    const nombres = await page.locator('#res-cuerpo input[name="examen"]').evaluateAll(
+      (is) => is.map((i) => (i as HTMLInputElement).value),
+    );
+    return nombres.indexOf(analito);
+  };
+  const valorDe = async (analito: string) =>
+    page.locator('#res-cuerpo tr').nth(await cual(analito)).locator('input[name="valor"]');
+
+  const vldl = await valorDe('VLDL-COLESTEROL');
+  await expect(vldl).toHaveValue('31,1');
+  await vldl.fill('99');
+
+  // Cambiar el insumo ya no lo mueve.
+  await (await valorDe('TRIGLICERIDOS')).fill('200');
+  await expect(vldl).toHaveValue('99');
+});
+
+test('sin todos los insumos no inventa nada', async ({ page }) => {
+  /* La orden de CEDULA_CALCULO sigue abierta; la otra ya se entregó en una
+     prueba anterior y una entregada no se vuelve a cargar. */
+  const [orden] = await conBase((sql) => sql`
+    SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
+     WHERE p.cedula_busca = ${CEDULA_CALCULO.replace(/\D/g, '')} AND a.tipo = 'laboratorio'`);
+
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${orden.id}/resultados`);
+  await page.locator('#res-plantilla').selectOption('PROT');
+  await page.getByRole('button', { name: 'Poner' }).click();
+
+  /* Por nombre y no por posición: la orden ya tiene los renglones del
+     perfil lipídico de las pruebas anteriores. */
+  const valorDe = async (analito: string) => {
+    const nombres = await page.locator('#res-cuerpo input[name="examen"]').evaluateAll(
+      (is) => is.map((i) => (i as HTMLInputElement).value),
+    );
+    return page.locator('#res-cuerpo tr').nth(nombres.indexOf(analito)).locator('input[name="valor"]');
+  };
+
+  /* PROT son cuatro: proteínas totales, albúmina, globulina y relación A/G.
+     Las dos últimas se calculan y arrancan vacías. */
+  await expect(await valorDe('GLOBULINA')).toHaveValue('');
+  await expect(await valorDe('RELACION A/G')).toHaveValue('');
+
+  // Falta la albúmina: ni globulina ni relación.
+  await (await valorDe('PROTEINAS TOTALES')).fill('7,0');
+  await expect(await valorDe('GLOBULINA')).toHaveValue('');
+  await expect(await valorDe('RELACION A/G')).toHaveValue('');
+
+  // 7,0 − 4,0 = 3,00 y 4,0 ÷ 3,00 = 1,33.
+  await (await valorDe('ALBUMINA')).fill('4,0');
+  await expect(await valorDe('GLOBULINA')).toHaveValue('3,00');
+  await expect(await valorDe('RELACION A/G')).toHaveValue('1,33');
+});
+
+/* ------------------------------------------------------------------
+   Llenar el catálogo de exámenes.
+   ------------------------------------------------------------------ */
+
+test('administración carga los exámenes del archivo de una vez', async ({ page }) => {
+  /* El selector de la orden sale del catálogo de precios, y el catálogo
+     arranca vacío: la pantalla decía «todavía no hay exámenes» y la única
+     salida era teclear treinta y cinco nombres. */
+  /* Se limpia el catálogo para probar el camino desde cero. Los renglones
+     que lo apuntan primero: un servicio con cobro cargado no se borra, y
+     las pruebas de arriba cargaron varios. */
+  await conBase(async (sql) => {
+    await sql`DELETE FROM renglon WHERE servicio_id IN (
+                SELECT id FROM servicio WHERE categoria = 'laboratorio')`;
+    await sql`DELETE FROM servicio WHERE categoria = 'laboratorio'`;
+  });
+
+  await entrar(page, 'administracion');
+  await page.goto('/sistema/servicios');
+
+  await expect(page.locator('.lab')).toContainText('35 exámenes');
+  await page.getByRole('button', { name: /Cargar los 35 exámenes/ }).click();
+  await expect(page.locator('.msj--bien')).toContainText('35 exámenes, todos sin precio');
+
+  const [n] = await conBase((sql) => sql`
+    SELECT COUNT(*)::int AS n FROM servicio WHERE categoria = 'laboratorio'`);
+  expect(n.n).toBe(35);
+
+  /* Entran en cero: no tenemos sus precios y uno inventado termina cobrado.
+     La pantalla lo dice en la cara. */
+  await expect(page.locator('.aviso-precio')).toContainText('35 servicios sin precio');
+
+  // Correrlo otra vez no duplica nada.
+  await page.goto('/sistema/servicios');
+  await expect(page.locator('.lab')).toHaveCount(0);
+});
+
+test('un examen sin precio se puede marcar y no suma al total', async ({ page }) => {
+  await entrar(page, 'recepcionista');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_SIN_PRECIO)}`);
+  await llenar(page, { nombre: 'Sin Precio de Prueba', edad: '33', sexo: 'Femenino' });
+  await page.locator('[data-ir="1"]').click();
+
+  // Dice «sin precio» y no «0,00», que haría pensar que es gratis.
+  const fila = page.locator('.ex__lista li').first();
+  await expect(fila).toContainText('sin precio');
+
+  await fila.locator('input[name="examen"]').check();
+  await expect(page.locator('#ex-usd')).toContainText('1 sin precio');
+
+  await page.getByRole('button', { name: 'Guardar la orden' }).click();
+  await expect(page).toHaveURL(FICHA);
+
+  /* Y queda registrado qué se le hizo, en cero: lo que importa es que el
+     expediente diga el examen, no que la cuenta cuadre todavía. */
+  const renglones = await conBase((sql) => sql`
+    SELECT r.precio::text AS precio FROM renglon r
+      JOIN atencion a ON a.id = r.atencion_id
+      JOIN paciente p ON p.id = a.paciente_id
+     WHERE p.cedula_busca = ${CEDULA_SIN_PRECIO.replace(/\D/g, '')}`);
+  expect(renglones.length).toBe(1);
+  expect(Number(renglones[0].precio)).toBe(0);
 });

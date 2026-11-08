@@ -16,6 +16,7 @@
 import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
 import { bd, esquema } from './base';
 import { pagadorSugerido } from './cobro';
+import { normalizar } from './atenciones';
 import type { Resultado } from '../laboratorio';
 
 /** La categoría del catálogo de precios donde viven los exámenes. */
@@ -152,6 +153,65 @@ export async function plantillasDeExamen() {
   }
 
   return [...porExamen.entries()].map(([examen, analitos]) => ({ examen, analitos }));
+}
+
+/**
+ * Los nombres de examen que trae el archivo del laboratorio.
+ *
+ * Es la lista real de lo que el centro hace, en las palabras del propio
+ * cliente: salen de las hojas de su Excel. Sirve para dos cosas distintas y
+ * conviene no confundirlas: la plantilla dice qué analitos tiene cada
+ * examen, y esto dice qué exámenes existen.
+ */
+export async function examenesDelArchivo(): Promise<string[]> {
+  const filas = await bd
+    .selectDistinct({ examen: esquema.plantillaExamen.examen })
+    .from(esquema.plantillaExamen)
+    .orderBy(asc(esquema.plantillaExamen.examen));
+  return filas.map((f) => f.examen);
+}
+
+/**
+ * Carga al catálogo de precios los exámenes del archivo que falten.
+ *
+ * El selector de exámenes sale del catálogo, y el catálogo arranca vacío:
+ * la pantalla de la orden decía «el catálogo de exámenes está vacío» y no
+ * había forma razonable de llenarlo salvo teclear treinta y cinco nombres a
+ * mano. Esto los pone de un golpe.
+ *
+ * LOS DEJA EN CERO, Y ESO NO ES UN DESCUIDO
+ *
+ * No tenemos sus precios, y un precio inventado en un catálogo termina
+ * cobrado. Entran en 0 y la pantalla los muestra como «sin precio» —no como
+ * «0,00»— y no los suma al total: recepción puede registrar hoy qué se le
+ * hace al paciente, y la cuenta dice en la cara cuántos exámenes todavía no
+ * tienen precio.
+ *
+ * No toca los que ya están: se compara por nombre normalizado, así que
+ * correrlo dos veces no duplica nada ni pisa un precio ya puesto.
+ */
+export async function cargarExamenesAlCatalogo(): Promise<{ agregados: string[] }> {
+  const delArchivo = await examenesDelArchivo();
+
+  const yaEstan = await bd
+    .select({ nombre: esquema.servicio.nombre })
+    .from(esquema.servicio);
+  const conocidos = new Set(yaEstan.map((s) => normalizar(s.nombre)));
+
+  const faltan = delArchivo.filter((e) => !conocidos.has(normalizar(e)));
+  if (faltan.length === 0) return { agregados: [] };
+
+  await bd.insert(esquema.servicio).values(
+    faltan.map((nombre) => ({
+      nombre,
+      categoria: CATEGORIA,
+      precio: '0.00',
+      moneda: 'USD',
+      activo: true,
+    })),
+  );
+
+  return { agregados: faltan };
 }
 
 /** Lo que se le pidió, como se lee en el informe. Uno por línea. */

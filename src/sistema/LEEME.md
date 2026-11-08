@@ -40,6 +40,21 @@ licenciado va a colocar, de esos exámenes, los resultados».
   posible era un toque de más entre la cédula y el formulario.
 - La orden se registra en dos pasos y no nueve: no hay examen físico ni
   diagnóstico que escribir.
+- **El catálogo de exámenes se llena de un botón.** El selector de la orden
+  sale del catálogo de precios, y ese arrancaba vacío: la pantalla decía
+  «todavía no hay exámenes» y la única salida era teclear 35 nombres. Ahora
+  administración los carga de una vez desde Servicios y precios. Entran
+  **sin precio** —no tenemos los suyos y uno inventado termina cobrado— y la
+  pantalla los muestra como «sin precio», no como «0,00»: se pueden marcar
+  en una orden, queda registrado qué se le hizo, y no suman al total.
+- **Ocho analitos se calculan solos**, con las fórmulas de su propio
+  archivo: VLDL (triglicéridos ÷ 5), LDL (total − HDL − VLDL), bilirrubina
+  indirecta, globulinas, relación A/G, CHCM, volumen de orina por minuto y
+  depuración de creatinina. Se resuelven en cadena —el LDL necesita el VLDL,
+  que también se calcula— y el campo queda **editable**: si quien mide
+  escribe encima, el suyo manda y deja de recalcularse. Ver
+  `src/sistema/calculos.ts`, que explica también las cuatro fórmulas de la
+  hoja HEMA que NO se programaron porque no calculan nada.
 - **Las plantillas de examen salen del archivo del cliente**
   (`LABORATORIO CA.xls`): 35 exámenes y 188 analitos con su unidad. El
   bioanalista elige el examen y le aparecen los renglones. 92 de los 188
