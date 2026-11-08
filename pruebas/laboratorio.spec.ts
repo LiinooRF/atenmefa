@@ -33,6 +33,8 @@ const CEDULA_PEDIDOS = cedulaDePrueba(13, 2);
 const CEDULA_PLANTILLA = cedulaDePrueba(13, 3);
 const CEDULA_CALCULO = cedulaDePrueba(13, 4);
 const CEDULA_SIN_PRECIO = cedulaDePrueba(13, 5);
+const CEDULA_HEMA = cedulaDePrueba(13, 6);
+const CEDULA_COAG = cedulaDePrueba(13, 7);
 const NOMBRE = 'Carmen Rosa Laboratorio de Prueba';
 
 const EXAMEN_A = 'Hematología completa de prueba';
@@ -41,7 +43,7 @@ const EXAMEN_B = 'Glicemia de prueba';
 const limpiar = () =>
   conBase(async (sql) => {
     for (const c of [CEDULA, CEDULA_GENERAL, CEDULA_PEDIDOS, CEDULA_PLANTILLA,
-                     CEDULA_CALCULO, CEDULA_SIN_PRECIO]) {
+                     CEDULA_CALCULO, CEDULA_SIN_PRECIO, CEDULA_HEMA, CEDULA_COAG]) {
       const busca = c.replace(/\D/g, '');
       const suyas = sql`SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
                          WHERE p.cedula_busca = ${busca}`;
@@ -496,11 +498,13 @@ test('las plantillas entraron, y los rangos que entraron son los de su hoja', as
            COUNT(*) FILTER (WHERE referencia <> '')::int AS con_rango
       FROM plantilla_examen`);
   expect(n.examenes).toBe(35);
-  expect(n.analitos).toBe(188);
-  /* 92 vienen en blanco a propósito: su hoja no los decía en una columna
-     rotulada y deducirlos ponía el rango de un examen al lado del
-     resultado de otro. Ver 013-plantillas.sql. */
-  expect(n.con_rango).toBe(96);
+  expect(n.analitos).toBe(185);
+  /* 51 vienen en blanco a propósito: su hoja no los trae en ninguna
+     columna de esa fila, y deducirlos ponía el rango de un examen al lado
+     del resultado de otro. Ver 013-plantillas.sql y 015-unidades.sql: el
+     segundo rescató 41 rangos y 12 unidades que estaban escritos en las
+     hojas sin fila de cabecera, como la de coagulación. */
+  expect(n.con_rango).toBe(134);
 
   /* Cinco que se verificaron a mano contra el archivo. Si una carga futura
      los mueve, esta prueba lo dice antes de que salga impreso. */
@@ -518,6 +522,34 @@ test('las plantillas entraron, y los rangos que entraron son los de su hoja', as
     'ACIDO URICO · mg/dl · HOMBRES: 2,5 - 6,2 / MUJERES: 3,7 - 7,7',
     'GLICEMIA · mg/dl · 70 - 99',
     'ALBUMINA · g/dl · 3,5 - 4,8',
+  ]);
+
+  /* Lo que rescató el segundo pase, verificado contra las celdas. Estas
+     hojas no tienen fila de cabecera y por eso el primer pase las dejó en
+     blanco; el rango vive en la misma fila del analito, más a la derecha. */
+  const rescatados = await conBase((sql) => sql`
+    SELECT examen, orden, unidad, referencia FROM plantilla_examen
+     WHERE (examen = 'COAG.' AND orden IN (2, 4, 11))
+        OR (examen = 'DEPU.' AND orden = 11)
+        OR (examen = 'ELECTROLITOS' AND orden = 1)
+     ORDER BY examen, orden`);
+
+  expect(rescatados.map((f) => `${f.examen} ${f.orden} · ${f.unidad} · ${f.referencia}`)).toEqual([
+    'COAG. 2 · seg · ',
+    'COAG. 4 · % · ',
+    'COAG. 11 · mg/dl · 200 - 400 mg/dl',
+    'DEPU. 11 · ml/min · 70 - 140 ml / min.',
+    'ELECTROLITOS 1 · mEq/L · 135 - 145',
+  ]);
+
+  /* El VCM, el HCM y el CHCM estaban DOS veces en su hoja de hematología,
+     con rangos distintos y una de las dos parejas de fórmulas de relleno.
+     Quedó un bloque solo: doce renglones y cada analito una vez. */
+  const hema = await conBase((sql) => sql`
+    SELECT analito FROM plantilla_examen WHERE examen = 'HEMA' ORDER BY orden`);
+  expect(hema.map((f) => f.analito)).toEqual([
+    'HEMOGLOBINA', 'HEMATOCRITO', 'VCM', 'HCM', 'CHCM', 'ERITROCITOS',
+    'PLAQUETAS', 'LEUCOCITOS', 'SEGMENTADOS', 'LINFOCITOS', 'EOSINOFILOS', 'MONOCITOS',
   ]);
 
   /* Orina y heces NO están, y es a propósito: son formularios de dos
@@ -778,4 +810,158 @@ test('un examen sin precio se puede marcar y no suma al total', async ({ page })
      WHERE p.cedula_busca = ${CEDULA_SIN_PRECIO.replace(/\D/g, '')}`);
   expect(renglones.length).toBe(1);
   expect(Number(renglones[0].precio)).toBe(0);
+});
+
+/* ------------------------------------------------------------------
+   Las cuentas de la hematología y de la coagulación.
+   ------------------------------------------------------------------
+
+   Estas salieron de las celdas S19, S20 y S21 de la hoja HEMA y de las T16,
+   T17 y U24 de COAG. Las de HEMA estaban duplicadas en su archivo: cuatro
+   filas más arriba hay otro VCM y otro HCM con fórmulas de relleno
+   (=BP25*10000000+3), y esos son los que NO se programaron.
+   ------------------------------------------------------------------ */
+
+const ordenDe = async (cedula: string) => {
+  const [o] = await conBase((sql) => sql`
+    SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
+     WHERE p.cedula_busca = ${cedula.replace(/\D/g, '')} AND a.tipo = 'laboratorio'`);
+  return o.id as string;
+};
+
+/** Los nombres de los renglones, en el orden en que están en pantalla.
+    Se leen del valor y no del atributo: las líneas que pone la plantilla
+    las crea el navegador y ahí el atributo `value` se queda vacío. */
+const renglonesDe = (page: import('@playwright/test').Page) =>
+  page.locator('#res-cuerpo input[name="examen"]')
+    .evaluateAll((campos) => campos.map((c) => (c as HTMLInputElement).value.trim()));
+
+/** El campo de un analito, por el nombre escrito en su renglón. */
+const campoDe = async (
+  page: import('@playwright/test').Page, analito: string, cual = 0,
+) => {
+  const nombres = await renglonesDe(page);
+  const donde = nombres.reduce<number[]>((t, n, i) => (n === analito ? [...t, i] : t), []);
+  expect(donde.length, `no hay renglón «${analito}» en la pantalla`).toBeGreaterThan(cual);
+  return page.locator('#res-cuerpo tr').nth(donde[cual]).locator('input[name="valor"]');
+};
+
+test('se registran dos órdenes para la hematología y la coagulación', async ({ page }) => {
+  await entrar(page, 'recepcionista');
+  for (const [cedula, nombre] of [
+    [CEDULA_HEMA, 'Hemograma de Prueba Goitia'],
+    [CEDULA_COAG, 'Coagulacion de Prueba Goitia'],
+  ]) {
+    await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(cedula)}`);
+    await page.locator('#c-nombre').fill(nombre);
+    await page.locator('#c-edad').fill('39');
+    await page.locator('#c-sexo').selectOption('Femenino');
+    await page.getByRole('button', { name: 'Guardar la orden' }).click();
+    await expect(page).toHaveURL(FICHA);
+  }
+});
+
+test('el VCM, el HCM y el CHCM salen del hematocrito y de los eritrocitos', async ({ page }) => {
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_HEMA)}/resultados`);
+  await page.locator('#res-plantilla').selectOption('HEMA');
+  await page.getByRole('button', { name: 'Poner' }).click();
+
+  // La plantilla quedó con un solo VCM: en su hoja estaba dos veces.
+  expect((await renglonesDe(page)).filter((n) => n === 'VCM')).toHaveLength(1);
+
+  await (await campoDe(page, 'HEMOGLOBINA')).fill('14');
+  await (await campoDe(page, 'HEMATOCRITO')).fill('42');
+  await (await campoDe(page, 'ERITROCITOS')).fill('4,7');
+
+  // =('DAT.'!F11/'DAT.'!F12)*10 → 42 / 4,7 × 10
+  await expect(await campoDe(page, 'VCM')).toHaveValue('89,4');
+  // =('DAT.'!F10/'DAT.'!F12)*10 → 14 / 4,7 × 10
+  await expect(await campoDe(page, 'HCM')).toHaveValue('29,8');
+  // =S13*100/S14 → 14 × 100 / 42
+  await expect(await campoDe(page, 'CHCM')).toHaveValue('33,3');
+});
+
+test('el diferencial que no suma cien avisa', async ({ page }) => {
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_HEMA)}/resultados`);
+  /* La prueba de arriba no guardó: las líneas de una plantilla viven en la
+     pantalla hasta que alguien aprieta guardar. Así que se pone otra vez. */
+  await page.locator('#res-plantilla').selectOption('HEMA');
+  await page.getByRole('button', { name: 'Poner' }).click();
+
+  const aviso = page.locator('#res-suma');
+  await expect(aviso).toBeHidden();
+
+  await (await campoDe(page, 'SEGMENTADOS')).fill('40');
+  await (await campoDe(page, 'LINFOCITOS')).fill('40');
+  await (await campoDe(page, 'EOSINOFILOS')).fill('5');
+  // Con tres cargados todavía no dice nada: a medio llenar nunca suma cien.
+  await expect(aviso).toBeHidden();
+
+  await (await campoDe(page, 'MONOCITOS')).fill('5');
+  await expect(aviso).toBeVisible();
+  await expect(aviso).toContainText('suma 90');
+
+  await (await campoDe(page, 'LINFOCITOS')).fill('50');
+  await expect(aviso).toBeHidden();
+});
+
+test('los dos bloques de coagulación no se mezclan', async ({ page }) => {
+  /* La hoja de coagulación tiene dos renglones «TIEMPO CONTROL» y dos
+     «TIEMPO PACIENTE»: uno del tiempo de protrombina y otro del PTT.
+     Buscando los insumos por nombre, la actividad agarraba el control del
+     PTT —que está más abajo— y daba cualquier cosa. */
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_COAG)}/resultados`);
+  await page.locator('#res-plantilla').selectOption('COAG.');
+  await page.getByRole('button', { name: 'Poner' }).click();
+
+  expect((await renglonesDe(page)).filter((n) => n === 'TIEMPO CONTROL')).toHaveLength(2);
+
+  // Protrombina: control 12, paciente 14.
+  await (await campoDe(page, 'TIEMPO CONTROL', 0)).fill('12');
+  await (await campoDe(page, 'TIEMPO PACIENTE', 0)).fill('14');
+  // =(U14-7.2)/(T15-7.2)*100 → (12 − 7,2) / (14 − 7,2) × 100
+  await expect(await campoDe(page, 'ACTIVIDAD')).toHaveValue('70,6');
+  // =T15/U14 → 14 / 12
+  await expect(await campoDe(page, 'RAZON P/C:')).toHaveValue('1,17');
+
+  // PTT, abajo: control 32, paciente 38. =T23-U22 → 38 − 32
+  await (await campoDe(page, 'TIEMPO CONTROL', 1)).fill('32');
+  await (await campoDe(page, 'TIEMPO PACIENTE', 1)).fill('38');
+  await expect(await campoDe(page, 'DIFERENCIA P-C')).toHaveValue('6,0');
+
+  // Y la actividad del primer bloque no se movió: usa sus propios tiempos.
+  await expect(await campoDe(page, 'ACTIVIDAD')).toHaveValue('70,6');
+
+  // El INR no se calcula: depende del ISI del reactivo y va escrito a mano.
+  await expect(await campoDe(page, 'INR')).toHaveValue('');
+});
+
+test('el informe impreso separa los bloques de la hoja', async ({ page }) => {
+  await entrar(page, 'bioanalista');
+  const orden = await ordenDe(CEDULA_COAG);
+  await page.goto(`/sistema/atencion/${orden}/resultados`);
+  // Las líneas de la plantilla viven en la pantalla hasta que se guardan.
+  await page.locator('#res-plantilla').selectOption('COAG.');
+  await page.getByRole('button', { name: 'Poner' }).click();
+
+  /* Solo el bloque de la protrombina: el del PTT se queda vacío a
+     propósito, para ver que su subtítulo no se imprime. */
+  await (await campoDe(page, 'TIEMPO CONTROL', 0)).fill('12');
+  await (await campoDe(page, 'TIEMPO PACIENTE', 0)).fill('14');
+
+  await page.getByRole('button', { name: 'Dar por listos' }).click();
+  await expect(page).toHaveURL(new RegExp(`/sistema/atencion/${orden}$`));
+
+  await page.goto(`/sistema/atencion/${orden}/documento`);
+  const tabla = page.locator('table.valores');
+  /* El renglón «TIEMPO DE PROTROMBINA:» no trae valor ni unidad ni rango:
+     es el título del bloque, y se imprime como tal. */
+  await expect(tabla.locator('.valores__seccion')).toContainText(['TIEMPO DE PROTROMBINA:']);
+  /* El del PTT quedó sin nada cargado debajo, así que no se imprime: un
+     subtítulo vacío en un informe firmado es un hueco. */
+  await expect(tabla.locator('.valores__seccion'))
+    .not.toContainText(['TIEMPO DE TROMBOPLASTINA PARCIAL ACTIVADA']);
 });

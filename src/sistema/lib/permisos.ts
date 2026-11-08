@@ -160,6 +160,18 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
   ],
 };
 
+/**
+ * A dónde cae cada uno al entrar.
+ *
+ * El bioanalista y recepción caían en «Casos», que es la lista de
+ * atenciones generales: para ellos está vacía y no es su trabajo. Su
+ * pantalla es la cola del laboratorio, que es donde pasan el día.
+ */
+export const dondeEmpieza = (rol: string | null | undefined) =>
+  puede(rol, 'cola_laboratorio') && !puede(rol, 'ver_cierre')
+    ? '/sistema/laboratorio'
+    : '/sistema';
+
 export function puede(rol: string | null | undefined, permiso: Permiso): boolean {
   if (!rol) return false;
   return (TABLA[rol as Rol] ?? []).includes(permiso);

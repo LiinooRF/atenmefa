@@ -1,5 +1,8 @@
 ---
 import Sistema from '../../layouts/Sistema.astro';
+import { dondeEmpieza } from '../../sistema/lib/permisos';
+import { bd, esquema } from '../../sistema/lib/base';
+import { eq } from 'drizzle-orm';
 import Icono from '../../components/Icono.astro';
 import { auth } from '../../sistema/lib/auth';
 
@@ -26,7 +29,21 @@ if (Astro.request.method === 'POST') {
         // Better Auth devuelve la cookie de sesión en la respuesta;
         // hay que pasarla a la redirección o el login no persiste.
         const cookies = r.headers.getSetCookie?.() ?? [];
-        const salida = Astro.redirect('/sistema');
+        /* Cada rol a su pantalla: el bioanalista y recepción al
+           laboratorio, que es donde trabajan.
+           
+           El rol se consulta por correo y no se saca de la respuesta de
+           Better Auth: con asResponse no hay cuerpo parseado, y `rol` es
+           una columna nuestra que su respuesta no promete traer. */
+        const [quien] = await bd
+          .select({ rol: esquema.user.rol })
+          .from(esquema.user)
+          /* En minúscula: así se guardan al crear la cuenta, y quien
+             teclea su correo con una mayúscula entra igual pero caía en la
+             pantalla equivocada. */
+          .where(eq(esquema.user.email, correo.toLowerCase()))
+          .limit(1);
+        const salida = Astro.redirect(dondeEmpieza(quien?.rol));
         for (const c of cookies) salida.headers.append('set-cookie', c);
         return salida;
       }

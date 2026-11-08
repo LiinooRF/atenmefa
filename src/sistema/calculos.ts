@@ -15,7 +15,7 @@
  *
  * LO QUE NO SE PROGRAMÓ, Y POR QUÉ
  *
- * En la hoja HEMA hay celdas con fórmula que NO son cuentas clínicas:
+ * En la hoja HEMA hay cuatro celdas con fórmula que NO son cuentas:
  *
  *     VCM        = BP25*10000000+3
  *     HCM        = BP26*10000000
@@ -23,11 +23,17 @@
  *     LEUCOCITOS = S14*100000+(S14*100000*10%)+355000
  *
  * Eso no calcula nada: son números con los que alguien estuvo jugando para
- * que la hoja de ejemplo mostrara algo. El VCM y el HCM SÍ tienen fórmula
- * de verdad —salen del hematocrito y de los eritrocitos— pero su archivo no
- * la tiene y no se va a inventar: si él la quiere, la dice y se agrega acá.
- * El CHCM sí está bien en su hoja y es el que se programó.
+ * que la hoja de ejemplo mostrara algo. Pero la misma hoja trae, cuatro
+ * filas más abajo, el VCM y el HCM DE VERDAD —S19 y S20, contra los
+ * eritrocitos— y esos sí están acá. Su archivo tiene las tres cuentas
+ * rojas duplicadas: una pareja sirve y la otra no.
  *
+ * El INR no se calcula: en su hoja es un número escrito a mano (1,08) y lo
+ * correcto es así, porque depende del ISI del reactivo del lote. Si se
+ * calculara con la razón pelada saldría un INR falso.
+ *
+ * El 7,2 de la actividad protrombínica es una constante de su método: está
+ * metida en la fórmula de su celda y se respeta tal cual.
  * CÓMO SE COMPORTA EN PANTALLA
  *
  * El campo se llena solo cuando están todos sus insumos, y se vuelve a
@@ -37,9 +43,9 @@
  */
 
 /**
- * Las cinco formas de cuenta que de verdad hay en su archivo. Van como
- * datos y no como funciones porque esta lista viaja al navegador: la
- * pantalla recalcula mientras se teclea, sin ir y volver al servidor.
+ * Las formas de cuenta que de verdad hay en su archivo. Van como datos y no
+ * como funciones porque esta lista viaja al navegador: la pantalla
+ * recalcula mientras se teclea, sin ir y volver al servidor.
  */
 export type Operacion =
   /** El primero menos todos los demás: total − HDL − VLDL. */
@@ -48,10 +54,19 @@ export type Operacion =
   | { tipo: 'division' }
   /** El primero dividido una constante: triglicéridos ÷ 5. */
   | { tipo: 'dividirPor'; por: number }
-  /** Por cien sobre el segundo: hemoglobina × 100 ÷ hematocrito. */
-  | { tipo: 'porCienSobre' }
+  /**
+   * El primero sobre el segundo, por un factor. Con 100 es el CHCM
+   * (hemoglobina × 100 ÷ hematocrito) y con 10 el VCM y el HCM.
+   */
+  | { tipo: 'divisionEscalada'; factor: number }
   /** Los dos primeros multiplicados, sobre el tercero. */
-  | { tipo: 'productoSobre' };
+  | { tipo: 'productoSobre' }
+  /**
+   * La actividad protrombínica de su hoja: a los dos tiempos se les
+   * descuenta una constante antes de dividirlos, y el resultado va en por
+   * ciento. =(U14-7.2)/(T15-7.2)*100
+   */
+  | { tipo: 'relacionDescontada'; descuento: number };
 
 export interface Calculo {
   /** El analito que se calcula, como se llama en las plantillas. */
@@ -103,10 +118,28 @@ export const CALCULOS: readonly Calculo[] = [
     comoSeLee: 'albúmina ÷ globulinas',
   },
   {
-    /* =S13*100/S14: hemoglobina × 100 / hematocrito. */
+    /* =('DAT.'!F11/'DAT.'!F12)*10, la celda S19 de HEMA: hematocrito sobre
+       eritrocitos, por diez. */
+    resultado: 'VCM',
+    insumos: ['HEMATOCRITO', 'ERITROCITOS'],
+    operacion: { tipo: 'divisionEscalada', factor: 10 },
+    decimales: 1,
+    comoSeLee: 'hematocrito ÷ eritrocitos × 10',
+  },
+  {
+    /* =('DAT.'!F10/'DAT.'!F12)*10, la celda S20. */
+    resultado: 'HCM',
+    insumos: ['HEMOGLOBINA', 'ERITROCITOS'],
+    operacion: { tipo: 'divisionEscalada', factor: 10 },
+    decimales: 1,
+    comoSeLee: 'hemoglobina ÷ eritrocitos × 10',
+  },
+  {
+    /* =S13*100/S14: hemoglobina × 100 / hematocrito. Es la celda S17; la
+       S21 hace la misma cuenta con las celdas de DAT. */
     resultado: 'CHCM',
     insumos: ['HEMOGLOBINA', 'HEMATOCRITO'],
-    operacion: { tipo: 'porCienSobre' },
+    operacion: { tipo: 'divisionEscalada', factor: 100 },
     decimales: 1,
     comoSeLee: 'hemoglobina × 100 ÷ hematocrito',
   },
@@ -126,7 +159,49 @@ export const CALCULOS: readonly Calculo[] = [
     decimales: 2,
     comoSeLee: '(creatinina en orina × volumen de 24 h) ÷ creatinina sérica',
   },
+  {
+    /* =(U14-7.2)/(T15-7.2)*100. El control va arriba y el del paciente
+       abajo: así está en su celda y así se deja.
+
+       Las dos filas se llaman igual en la hoja de coagulación —el tiempo
+       de protrombina y el PTT tienen cada uno su «TIEMPO CONTROL»— y los
+       insumos se buscan en las filas de arriba, no por nombre en toda la
+       orden. Si no, la actividad agarraba el control del PTT. */
+    resultado: 'ACTIVIDAD',
+    insumos: ['TIEMPO CONTROL', 'TIEMPO PACIENTE'],
+    operacion: { tipo: 'relacionDescontada', descuento: 7.2 },
+    decimales: 1,
+    comoSeLee: '(tiempo control − 7,2) ÷ (tiempo del paciente − 7,2) × 100',
+  },
+  {
+    /* =T15/U14. El nombre lleva los dos puntos que trae su hoja. */
+    resultado: 'RAZON P/C:',
+    insumos: ['TIEMPO PACIENTE', 'TIEMPO CONTROL'],
+    operacion: { tipo: 'division' },
+    decimales: 2,
+    comoSeLee: 'tiempo del paciente ÷ tiempo control',
+  },
+  {
+    /* =T23-U22, en el bloque del PTT. */
+    resultado: 'DIFERENCIA P-C',
+    insumos: ['TIEMPO PACIENTE', 'TIEMPO CONTROL'],
+    operacion: { tipo: 'resta' },
+    decimales: 1,
+    comoSeLee: 'tiempo del paciente − tiempo control',
+  },
 ];
+
+/**
+ * El diferencial tiene que sumar cien. Su hoja lo comprueba en una celda
+ * aparte (=F18+F19+F20+F21) que no se imprime, así que acá no es un
+ * analito más: es un aviso en pantalla.
+ */
+export const SUMAN_CIEN = {
+  partes: ['SEGMENTADOS', 'LINFOCITOS', 'EOSINOFILOS', 'MONOCITOS'],
+  total: 100,
+  /** Cuánto se tolera sin avisar. */
+  margen: 0,
+} as const;
 
 /**
  * Los mismos nombres escritos distinto en su archivo. «RELACION A /G» con
@@ -165,10 +240,14 @@ export function calcular(c: Calculo, valores: readonly (number | null)[]): numbe
       return v[1] === 0 ? null : v[0] / v[1];
     case 'dividirPor':
       return v[0] / c.operacion.por;
-    case 'porCienSobre':
-      return v[1] === 0 ? null : (v[0] * 100) / v[1];
+    case 'divisionEscalada':
+      return v[1] === 0 ? null : (v[0] / v[1]) * c.operacion.factor;
     case 'productoSobre':
       return v[2] === 0 ? null : (v[0] * v[1]) / v[2];
+    case 'relacionDescontada': {
+      const d = c.operacion.descuento;
+      return v[1] - d === 0 ? null : ((v[0] - d) / (v[1] - d)) * 100;
+    }
   }
 }
 

@@ -165,11 +165,17 @@ const ROTULO = {
             </a>
           )}
 
-          {o.enCola === 'entregada' && o.wa && (
-            <a class="cola__wa" href={o.wa} target="_blank" rel="noopener"
-               aria-label={`Avisarle por WhatsApp a ${o.paciente}`}>
+          {/* Si no hay número usable el aviso no desaparece: lleva a la
+              pantalla de enviar, donde se puede escribir uno. Antes
+              desaparecía sin decir nada y parecía que el botón no servía. */}
+          {o.enCola === 'entregada' && (
+            <a class="cola__wa" href={o.wa ?? `/sistema/atencion/${o.id}/enviar`}
+               target={o.wa ? '_blank' : undefined} rel={o.wa ? 'noopener' : undefined}
+               aria-label={o.wa
+                 ? `Avisarle por WhatsApp a ${o.paciente}`
+                 : `${o.paciente} no tiene número cargado: ponerle uno`}>
               <Icono nombre="whatsapp" tam={18} />
-              <span>Avisar</span>
+              <span>{o.wa ? 'Avisar' : 'Sin número'}</span>
             </a>
           )}
 
@@ -232,6 +238,8 @@ const ROTULO = {
     font-weight: 700;
   }
   .cola__wa:hover { background: #e9f6ef; }
+  /* Sin número: el mismo lugar, apagado, y lleva a ponerle uno. */
+  .cola__wa[aria-label*='no tiene'] { color: var(--tinta-tenue); font-weight: 600; }
 
   .cola__imprimir {
     display: flex;

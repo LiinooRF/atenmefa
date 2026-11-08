@@ -161,6 +161,36 @@ test('sin un número usable no se ofrece el botón', async ({ page }) => {
 
   await entrar(page, 'medico');
   await page.goto(`/sistema/atencion/${caso}/enviar`);
+  // El botón está, pero apagado: no abre un chat con un número inexistente.
   await expect(page.getByRole('link', { name: 'Abrir el chat' })).toHaveCount(0);
-  await expect(page.locator('.sis-tarjeta').last()).toContainText('no tiene un número');
+  await expect(page.locator('[data-wa-abrir]')).toHaveAttribute('aria-disabled', 'true');
+  await expect(page.locator('.sis-tarjeta').last()).toContainText('Todavía no hay un número');
+});
+
+test('se le puede poner un número ahí mismo y el botón se prende', async ({ page }) => {
+  /* Era lo que faltaba: si recepción no había cargado un teléfono, en esta
+     pantalla no había ningún botón ni desde dónde poner uno. */
+  await entrar(page, 'medico');
+  await page.goto(`/sistema/atencion/${caso}/enviar`);
+
+  const campo = page.getByLabel('Número del paciente');
+  await campo.fill('0414-8939176');
+
+  // Sin guardar nada: el enlace se arma mientras se escribe.
+  const boton = page.locator('[data-wa-abrir]');
+  await expect(boton).toHaveAttribute('href', /wa\.me\/584148939176\?text=/);
+  await expect(boton).not.toHaveAttribute('aria-disabled', 'true');
+
+  // A medio escribir se apaga otra vez.
+  await campo.fill('0414-89');
+  await expect(boton).toHaveAttribute('aria-disabled', 'true');
+
+  // Y guardarlo lo deja en la ficha para la próxima.
+  await campo.fill('0414-8939176');
+  await page.getByRole('button', { name: 'Guardar el número' }).click();
+  await expect(page.locator('.msj--bien')).toContainText('abre el chat');
+
+  const [persona] = await conBase((sql) => sql`
+    SELECT whatsapp FROM paciente WHERE cedula_busca = ${CEDULA.replace(/\D/g, '')}`);
+  expect(persona.whatsapp).toBe('0414-8939176');
 });

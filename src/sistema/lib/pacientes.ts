@@ -630,7 +630,14 @@ function revisarContacto(bruto: { telefono?: unknown; whatsapp?: unknown; correo
   const numero = (texto: string, cual: string) => {
     const digitos = soloDigitos(texto);
     if (texto && (digitos.length < 7 || digitos.length > 15)) {
-      throw new Error(`El ${cual} tiene que tener entre 7 y 15 dígitos, por ejemplo 0414-8939176.`);
+      /* Dice cuántos contó. El mensaje de antes mostraba un ejemplo
+         correcto al lado de lo que la persona había escrito y no se
+         entendía qué estaba mal: un guion de más o un dígito de menos se
+         ven iguales en pantalla. */
+      throw new Error(
+        `El ${cual} tiene ${digitos.length} ${digitos.length === 1 ? 'dígito' : 'dígitos'} y ` +
+        'tiene que tener entre 7 y 15. Un celular va así: 0414-8939176.',
+      );
     }
     if (texto && !/^[+\d\s().-]+$/.test(texto)) {
       throw new Error(`El ${cual} lleva solo números, espacios y los signos + ( ) - y punto.`);

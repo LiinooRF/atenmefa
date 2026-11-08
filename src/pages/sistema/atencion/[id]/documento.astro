@@ -76,6 +76,30 @@ const d = (caso.datos ?? {}) as Record<string, string>;
 const esLab = caso.tipo === 'laboratorio';
 const resultados = (caso.resultados ?? []) as Resultado[];
 const conValor = resultados.filter((r) => r.valor);
+
+/* Los subtítulos del informe.
+   
+   Las hojas del laboratorio no son una lista plana: la de coagulación
+   tiene dos bloques —«TIEMPO DE PROTROMBINA:» y el PTT— y la de depuración
+   tres. Esos renglones traen nombre y nada más: ni valor, ni unidad, ni
+   rango. Filtrando por «tiene valor» desaparecían, y el informe impreso
+   salía como una lista corrida donde el tiempo control del PTT quedaba
+   pegado al del protrombina sin que se supiera cuál era cuál.
+   
+   Un subtítulo sin nada debajo tampoco se imprime: si el bioanalista cargó
+   solo el primer bloque, el encabezado del segundo no tiene por qué salir. */
+const esTitulo = (r: Resultado) =>
+  Boolean(r.examen?.trim()) && !r.valor?.trim() && !r.unidad?.trim() && !r.referencia?.trim();
+
+const aImprimir = resultados.filter((r, i) => {
+  if (r.valor?.trim()) return true;
+  if (!esTitulo(r)) return false;
+  for (let j = i + 1; j < resultados.length; j++) {
+    if (esTitulo(resultados[j])) return false;
+    if (resultados[j].valor?.trim()) return true;
+  }
+  return false;
+});
 const pedidos = esLab ? await examenesPedidos(caso.id) : [];
 
 const examenesPedidosTexto = esLab
@@ -318,13 +342,19 @@ const vitales = [
                     </tr>
                   </thead>
                   <tbody>
-                    {conValor.map((r) => (
-                      <tr>
-                        <td>{r.examen}</td>
-                        <td class="valores__dato cifra">{r.valor}</td>
-                        <td>{r.unidad}</td>
-                        <td>{r.referencia}</td>
-                      </tr>
+                    {aImprimir.map((r) => (
+                      esTitulo(r) ? (
+                        <tr class="valores__seccion">
+                          <th colspan="4" scope="colgroup">{r.examen}</th>
+                        </tr>
+                      ) : (
+                        <tr>
+                          <td>{r.examen}</td>
+                          <td class="valores__dato cifra">{r.valor}</td>
+                          <td>{r.unidad}</td>
+                          <td>{r.referencia}</td>
+                        </tr>
+                      )
                     ))}
                   </tbody>
                 </table>
@@ -643,6 +673,22 @@ const vitales = [
       .valores th:nth-child(3), .valores td:nth-child(3) { width: 20mm; }
       .valores th:nth-child(4), .valores td:nth-child(4) { width: 46mm; }
       .valores__dato { font-weight: 700; color: var(--azul); }
+
+      /* El subtítulo de bloque, como en las hojas del laboratorio: pegado a
+         la izquierda, sin rango al lado y sin la línea que separa los
+         resultados entre sí. El :nth-child de los anchos no lo toca porque
+         ocupa las cuatro columnas de una vez. */
+      .valores__seccion th {
+        padding: 9px 6px 3px;
+        border-bottom: 1px solid var(--tinta);
+        text-align: left;
+        text-transform: none;
+        letter-spacing: 0;
+        font-size: 9.5pt;
+        font-weight: 700;
+        color: var(--tinta);
+      }
+      .valores__seccion:first-child th { padding-top: 3px; }
 
       .suelto { margin: 4px 0 0; font-size: 10pt; line-height: 1.5; }
       .suelto--ojo { margin-top: 8px; color: var(--gris); font-size: 9pt; }

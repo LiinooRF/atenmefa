@@ -36,7 +36,7 @@ import {
   examenesPedidos, guardarResultados, leerResultados, plantillasDeExamen, sinNombre,
 } from '../../../../sistema/lib/laboratorio';
 import type { Resultado } from '../../../../sistema/laboratorio';
-import { CALCULOS_EN_LLAVES } from '../../../../sistema/calculos';
+import { CALCULOS_EN_LLAVES, CALCULOS, SUMAN_CIEN } from '../../../../sistema/calculos';
 
 export const prerender = false;
 
@@ -100,9 +100,15 @@ const pedidos = await examenesPedidos(caso.id);
 
 /* Las plantillas del archivo del cliente: elegir una pone sus renglones con
    el analito y la unidad ya escritos. Van al navegador porque el agregado
-   es inmediato —son 188 renglones en total, unos 12 KB— y pedirle al
+   es inmediato —son unos 185 renglones en total, 12 KB— y pedirle al
    servidor una lista de ocho nombres sería un viaje por nada. */
 const plantillas = await plantillasDeExamen();
+
+/* Cuántos renglones vienen sin rango. Se cuenta del dato y no se escribe a
+   mano: ya pasó que la pantalla dijera «92 de 188» cuando la cifra había
+   cambiado, y una cifra vieja en una advertencia la vuelve mentira. */
+const renglones = plantillas.flatMap((p) => p.analitos);
+const sinRango = renglones.filter((a) => !a.referencia.trim()).length;
 
 /**
  * Las líneas que se dibujan.
@@ -196,7 +202,8 @@ const fechaLarga = (f: string) =>
 
       {/* Las cuentas del archivo del laboratorio. Viajan acá para que el
           campo se llene mientras se teclea, sin ir y volver al servidor. */}
-      <div class="tablon" data-calculos={JSON.stringify(CALCULOS_EN_LLAVES)}>
+      <div class="tablon" data-calculos={JSON.stringify(CALCULOS_EN_LLAVES)}
+           data-suman-cien={JSON.stringify(SUMAN_CIEN)}>
         <table class="res">
           <thead>
             <tr>
@@ -235,6 +242,8 @@ const fechaLarga = (f: string) =>
         </table>
       </div>
 
+      <p class="suma" id="res-suma" hidden></p>
+
       <div class="agregar">
         <button type="button" class="sis-boton sis-boton--suave" id="res-mas">
           <Icono nombre="mas" tam={17} />
@@ -257,21 +266,33 @@ const fechaLarga = (f: string) =>
 
       <p class="nota-ref">
         Las plantillas salen del archivo de laboratorio del centro: traen el
-        analito y su unidad, y el valor de referencia cuando la hoja lo decía
-        en su columna. <strong>Reviselo antes de firmar</strong>: 92 de los
-        188 analitos vienen sin rango porque su hoja no lo señalaba, y
-        deducirlo habría puesto el rango de un examen al lado del resultado
-        de otro.
+        analito, su unidad y su valor de referencia.
+        <strong>Reviselo antes de firmar</strong>: {sinRango} de los{' '}
+        {renglones.length} analitos vienen sin rango porque su hoja no lo
+        traía en ninguna columna de esa fila, y deducirlo habría puesto el
+        rango de un examen al lado del resultado de otro.
       </p>
 
-      <p class="nota-ref">
-        Ocho analitos <strong>se calculan solos</strong> con las fórmulas de
-        ese mismo archivo —el LDL, el VLDL, la bilirrubina indirecta, las
-        globulinas, la relación A/G, el CHCM, el volumen por minuto y la
-        depuración de creatinina—: aparecen en cuanto están sus insumos y se
-        vuelven a calcular si uno cambia. Si escribe encima, el suyo manda y
-        deja de recalcularse.
-      </p>
+      <details class="cuentas">
+        <summary>
+          {CALCULOS.length} analitos <strong>se calculan solos</strong> con las
+          fórmulas de ese mismo archivo
+        </summary>
+        <p class="nota-ref">
+          Aparecen en cuanto están sus insumos y se vuelven a calcular si uno
+          cambia. Si escribe encima, el suyo manda y deja de recalcularse.
+        </p>
+        <ul class="cuentas__lista">
+          {CALCULOS.map((c) => (
+            <li><strong>{c.resultado}</strong> = {c.comoSeLee}</li>
+          ))}
+        </ul>
+        <p class="nota-ref">
+          El INR no está en esa lista a propósito: depende del ISI del
+          reactivo de cada lote, y en el archivo del centro también va
+          escrito a mano.
+        </p>
+      </details>
 
       <div class="pie">
         <div class="pie__int">
@@ -324,7 +345,8 @@ const fechaLarga = (f: string) =>
 
     type Op =
       | { tipo: 'resta' } | { tipo: 'division' } | { tipo: 'dividirPor'; por: number }
-      | { tipo: 'porCienSobre' } | { tipo: 'productoSobre' };
+      | { tipo: 'divisionEscalada'; factor: number } | { tipo: 'productoSobre' }
+      | { tipo: 'relacionDescontada'; descuento: number };
     type Calculo = {
       resultado: string; insumos: string[]; operacion: Op;
       decimales: number; comoSeLee: string;
@@ -365,26 +387,37 @@ const fechaLarga = (f: string) =>
       const filas = [...cuerpo.querySelectorAll<HTMLTableRowElement>('tr')];
       const dame = (f: HTMLTableRowElement, n: string) =>
         f.querySelector<HTMLInputElement>(`input[name="${n}"]`);
+      const nombreDe = (f: HTMLTableRowElement) => dame(f, 'examen')?.value.trim() ?? '';
+      const llaves = filas.map((f) => llave(nombreDe(f)));
 
-      /* Por nombre de analito: la última fila con ese nombre gana, que es lo
-         que se ve en pantalla. */
-      const porLlave = new Map<string, HTMLTableRowElement>();
-      for (const f of filas) {
-        const nombre = dame(f, 'examen')?.value.trim();
-        if (nombre) porLlave.set(llave(nombre), f);
-      }
+      /* Cada insumo se busca desde la fila que se calcula hacia ARRIBA, y
+         solo si no aparece, hacia abajo.
 
-      /* Dos pasadas: el LDL necesita el VLDL, que también se calcula. Con
-         dos alcanza para la única cadena que hay. */
+         No por nombre en toda la orden: en coagulación hay dos filas
+         «TIEMPO CONTROL» —una del tiempo de protrombina y otra del PTT— y
+         buscando por nombre la actividad agarraba la del PTT, que está más
+         abajo. Lo mismo con la albúmina cuando una orden lleva dos exámenes
+         que la traen: cada relación A/G tiene que usar la de su bloque.
+         La fila de arriba es la de su propio bloque. */
+      const buscar = (desde: number, clave: string) => {
+        for (let i = desde - 1; i >= 0; i--) if (llaves[i] === clave) return filas[i];
+        for (let i = desde + 1; i < filas.length; i++) if (llaves[i] === clave) return filas[i];
+        return null;
+      };
+
+      /* Dos pasadas: el LDL necesita el VLDL, que también se calcula y en
+         su hoja va en la fila de abajo. Con dos alcanza para las cadenas
+         que hay. */
       for (let vuelta = 0; vuelta < 2; vuelta++) {
-        for (const c of calculos) {
-          const fila = porLlave.get(c.resultado);
-          if (!fila) continue;
-          const campo = dame(fila, 'valor');
+        for (let i = 0; i < filas.length; i++) {
+          const c = calculos.find((x) => x.resultado === llaves[i]);
+          if (!c) continue;
+
+          const campo = dame(filas[i], 'valor');
           if (!campo || campo.dataset.aMano !== undefined) continue;
 
-          const valores = c.insumos.map((i) => {
-            const f = porLlave.get(i);
+          const valores = c.insumos.map((ins) => {
+            const f = buscar(i, ins);
             return f ? numero(dame(f, 'valor')?.value ?? '') : null;
           });
 
@@ -403,8 +436,14 @@ const fechaLarga = (f: string) =>
             case 'resta': r = v.slice(1).reduce((t, x) => t - x, v[0]); break;
             case 'division': r = v[1] === 0 ? null : v[0] / v[1]; break;
             case 'dividirPor': r = v[0] / c.operacion.por; break;
-            case 'porCienSobre': r = v[1] === 0 ? null : (v[0] * 100) / v[1]; break;
+            case 'divisionEscalada':
+              r = v[1] === 0 ? null : (v[0] / v[1]) * c.operacion.factor; break;
             case 'productoSobre': r = v[2] === 0 ? null : (v[0] * v[1]) / v[2]; break;
+            case 'relacionDescontada': {
+              const d = c.operacion.descuento;
+              r = v[1] - d === 0 ? null : ((v[0] - d) / (v[1] - d)) * 100;
+              break;
+            }
           }
           if (r === null || !Number.isFinite(r)) continue;
 
@@ -413,6 +452,44 @@ const fechaLarga = (f: string) =>
           campo.title = `Calculado: ${c.comoSeLee}. Se puede escribir encima.`;
         }
       }
+
+      revisarDiferencial(filas, dame, llaves);
+    };
+
+    /* El diferencial tiene que sumar cien. En su hoja hay una celda aparte
+       que lo suma y no se imprime; acá es un aviso debajo de la tabla. No
+       bloquea nada: avisa. Un diferencial que suma 97 casi siempre es una
+       cifra mal tecleada, y se ve antes de firmar. */
+    const PARTES = JSON.parse(tablon?.dataset.sumanCien ?? '{"partes":[],"total":100}') as
+      { partes: string[]; total: number };
+    const avisoSuma = document.getElementById('res-suma');
+
+    const revisarDiferencial = (
+      filas: HTMLTableRowElement[],
+      dame: (f: HTMLTableRowElement, n: string) => HTMLInputElement | null,
+      llaves: string[],
+    ) => {
+      if (!avisoSuma || !PARTES.partes.length) return;
+
+      const buscadas = PARTES.partes.map((p) => llave(p));
+      let suma = 0;
+      let cuantas = 0;
+      for (let i = 0; i < filas.length; i++) {
+        if (!buscadas.includes(llaves[i])) continue;
+        const n = numero(dame(filas[i], 'valor')?.value ?? '');
+        if (n === null) continue;
+        suma += n;
+        cuantas++;
+      }
+
+      // Solo avisa cuando están todas: a medio llenar nunca suma cien.
+      if (cuantas < buscadas.length || Math.round(suma) === PARTES.total) {
+        avisoSuma.hidden = true;
+        return;
+      }
+      avisoSuma.hidden = false;
+      avisoSuma.textContent =
+        `El diferencial suma ${comoSeEscribe(suma, 0)} %, y tiene que sumar ${PARTES.total} %.`;
     };
 
     /* Si alguien escribe en un campo, el suyo manda y esa celda deja de
@@ -513,6 +590,28 @@ const fechaLarga = (f: string) =>
 </script>
 
 <style>
+  .suma {
+    margin-top: 12px;
+    padding: 10px 13px;
+    border: 1px solid #e2b23d;
+    border-left: 4px solid #e2b23d;
+    border-radius: 8px;
+    background: #fdf6e4;
+    font-size: var(--u-sm);
+    font-weight: 600;
+  }
+
+  .cuentas { margin-top: 12px; }
+  .cuentas summary { cursor: pointer; font-size: var(--u-sm); }
+  .cuentas__lista {
+    margin: 10px 0 0;
+    padding-left: 18px;
+    display: grid;
+    gap: 5px;
+    font-size: var(--u-sm);
+    color: var(--tinta-suave);
+  }
+
   .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
   .miga a { color: var(--tinta-suave); text-decoration: none; }
   .miga a:hover { color: var(--azul); text-decoration: underline; }

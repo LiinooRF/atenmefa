@@ -151,7 +151,13 @@ export async function entrar(page: Page, quien: Quien = 'medico') {
   await page.getByLabel('Correo').fill(cuenta.correo);
   await page.getByLabel('Clave').fill(cuenta.clave);
   await page.getByRole('button', { name: 'Entrar' }).click();
-  await expect(page).toHaveURL(/\/sistema$/);
+  /* Cada rol cae en su pantalla: el bioanalista y recepción en la cola del
+     laboratorio, que es donde trabajan; el médico y administración en los
+     casos. Ver dondeEmpieza en lib/permisos.ts. */
+  const suya = quien === 'bioanalista' || quien === 'recepcionista'
+    ? /\/sistema\/laboratorio$/
+    : /\/sistema$/;
+  await expect(page).toHaveURL(suya);
   return cuenta;
 }
 

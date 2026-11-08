@@ -2,6 +2,7 @@ import { defineMiddleware } from 'astro:middleware';
 import { auth } from './sistema/lib/auth';
 import { entorno } from './sistema/lib/entorno';
 import { medirPaginaPublica } from './sistema/lib/visitas';
+import { dondeEmpieza } from './sistema/lib/permisos';
 
 /* Los orígenes desde los que se aceptan formularios. URL_BASE es el
    público; localhost queda para desarrollo y para las pruebas. */
@@ -74,7 +75,9 @@ export const onRequest = defineMiddleware(async (ctx, siguiente) => {
     }
     return ctx.redirect('/sistema/entrar');
   }
-  if (ctx.locals.usuario && esEntrar) return ctx.redirect('/sistema');
+  if (ctx.locals.usuario && esEntrar) {
+    return ctx.redirect(dondeEmpieza(ctx.locals.usuario.rol as string));
+  }
 
   const respuesta = await siguiente();
   // El sistema no se indexa nunca, pase lo que pase con robots.txt.

@@ -116,7 +116,11 @@ const dominioCorto = dondeVive.replace(/^https?:\/\//, '');
    visita vieja vuelve a ofrecer justo el número equivocado. La ficha es el
    único lugar donde vive el contacto, y pacienteDe la mantiene al día con
    cada guardado. */
-const numeroWa = paraWhatsApp(caso.whatsapp ?? caso.telefono);
+/* El número que se va a usar. Arranca en el de la ficha y se puede cambiar
+   en la pantalla, igual que el correo: eso era lo que faltaba. Antes, si
+   recepción no había cargado un teléfono, acá no aparecía ningún botón y no
+   había desde dónde poner uno; el botón «no funcionaba» porque no existía. */
+let numeroEscrito = caso.whatsapp ?? caso.telefono ?? '';
 
 /* El mensaje predeterminado, con el nombre del paciente. Vive en
    sistema/mensajes.ts porque sale desde tres pantallas y tiene que ser el
@@ -130,75 +134,100 @@ let correoEscrito = caso.correo ?? '';
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
-  correoEscrito = String(form.get('correo') ?? '').trim();
-  const guardarEnFicha = form.get('guardar') === 'si';
+  const accion = String(form.get('accion') ?? 'correo');
 
-  const destino = correoUsable(correoEscrito);
-  if (!destino) {
-    error = 'Esa dirección de correo no parece válida. Revísela antes de enviar.';
-  } else {
-    /* Se guarda ANTES de enviar y no después: si el envío falla por algo del
-       otro lado, la corrección del dato no se pierde y no hay que volver a
-       escribirla. */
-    if (guardarEnFicha && destino !== caso.correo) {
-      await bd
-        .update(esquema.paciente)
-        .set({ correo: destino })
-        .where(eq(esquema.paciente.id, caso.pacienteId));
-    }
-
-    const paraElInforme: DatosDelInforme = {
-      tipo: esLab ? 'laboratorio' : 'general',
-      numero: caso.numero,
-      fecha: caso.fecha,
-      paciente: caso.paciente,
-      cedula: documentoComoSeLee(caso.tipoDoc, caso.cedula),
-      edad: d.edad,
-      sexo: d.sexo,
-      aseguradora: caso.aseguradora,
-      examenes: [
-        ...pedidos.map((p) => p.nombre),
-        ...(esLab ? (d.examenes ?? '').split('\n').map((t) => t.trim()).filter(Boolean) : []),
-      ],
-      resultados,
-      observaciones: esLab ? d.observaciones_lab : undefined,
-      recipe: d.recipe,
-      indicaciones: d.indicaciones,
-      /* Con su código CIE-10 si se eligió del catálogo: el correo lo puede
-         reenviar el paciente a su seguro. */
-      idx: d.idx ? (d.idx_codigo ? `${d.idx} (${d.idx_codigo})` : d.idx) : undefined,
-      firma: {
-        nombre: firmante?.nombre ?? caso.medico,
-        colegiatura: firmante?.colegiatura ?? caso.colegiatura,
-        rol: esLab ? 'Bioanalista' : 'Médico que atiende',
-      },
-      verificacion: { url: urlVerificacion, pin: caso.pin, dominioCorto },
-      centro: {
-        nombre: clinica.nombre,
-        direccion: `${clinica.direccion.calle} · ${clinica.direccion.ciudad}`,
-        telefono: clinica.contacto.whatsapp.visible,
-      },
-    };
-
-    const salida = await enviarCorreo({
-      a: destino,
-      asunto: asuntoDe(paraElInforme),
-      html: htmlDelInforme(paraElInforme),
-      texto: textoDelInforme(paraElInforme),
-    });
-
-    if (salida.estado === 'enviado') {
-      /* En bitácora queda a dónde se mandó. Es un dato de salud saliendo del
-         centro: tiene que poder reconstruirse quién lo mandó y adónde. */
-      await anotar(usuario.id, 'envio', caso.id, { medio: 'correo', a: destino });
-      aviso = `Enviado a ${destino}.`;
-    } else if (salida.estado === 'simulado') {
-      simulado = salida.motivo;
+  if (accion === 'numero') {
+    numeroEscrito = String(form.get('whatsapp') ?? '').trim();
+    const usable = paraWhatsApp(numeroEscrito);
+    if (!usable) {
+      error =
+        'Ese número no sirve para abrir WhatsApp. Tiene que ser un número ' +
+        'venezolano de diez dígitos, con su código: 0414-1234567.';
     } else {
-      error = salida.motivo;
+        if (form.get('guardar_wa') === 'si' && usable !== paraWhatsApp(caso.whatsapp)) {
+          await bd
+            .update(esquema.paciente)
+            .set({ whatsapp: telefonoComoSeLee(usable) })
+            .where(eq(esquema.paciente.id, caso.pacienteId));
+          await anotar(usuario.id, 'cambio_contacto', caso.id, { medio: 'whatsapp' });
+        }
+        aviso = 'Listo. El botón de abajo abre el chat con ese número.';
+      }
+  } else {
+    correoEscrito = String(form.get('correo') ?? '').trim();
+    const guardarEnFicha = form.get('guardar') === 'si';
+
+    const destino = correoUsable(correoEscrito);
+    if (!destino) {
+      error = 'Esa dirección de correo no parece válida. Revísela antes de enviar.';
+    } else {
+      /* Se guarda ANTES de enviar y no después: si el envío falla por algo del
+         otro lado, la corrección del dato no se pierde y no hay que volver a
+         escribirla. */
+      if (guardarEnFicha && destino !== caso.correo) {
+        await bd
+          .update(esquema.paciente)
+          .set({ correo: destino })
+          .where(eq(esquema.paciente.id, caso.pacienteId));
+      }
+
+      const paraElInforme: DatosDelInforme = {
+        tipo: esLab ? 'laboratorio' : 'general',
+        numero: caso.numero,
+        fecha: caso.fecha,
+        paciente: caso.paciente,
+        cedula: documentoComoSeLee(caso.tipoDoc, caso.cedula),
+        edad: d.edad,
+        sexo: d.sexo,
+        aseguradora: caso.aseguradora,
+        examenes: [
+          ...pedidos.map((p) => p.nombre),
+          ...(esLab ? (d.examenes ?? '').split('\n').map((t) => t.trim()).filter(Boolean) : []),
+        ],
+        resultados,
+        observaciones: esLab ? d.observaciones_lab : undefined,
+        recipe: d.recipe,
+        indicaciones: d.indicaciones,
+        /* Con su código CIE-10 si se eligió del catálogo: el correo lo puede
+           reenviar el paciente a su seguro. */
+        idx: d.idx ? (d.idx_codigo ? `${d.idx} (${d.idx_codigo})` : d.idx) : undefined,
+        firma: {
+          nombre: firmante?.nombre ?? caso.medico,
+          colegiatura: firmante?.colegiatura ?? caso.colegiatura,
+          rol: esLab ? 'Bioanalista' : 'Médico que atiende',
+        },
+        verificacion: { url: urlVerificacion, pin: caso.pin, dominioCorto },
+        centro: {
+          nombre: clinica.nombre,
+          direccion: `${clinica.direccion.calle} · ${clinica.direccion.ciudad}`,
+          telefono: clinica.contacto.whatsapp.visible,
+        },
+      };
+
+      const salida = await enviarCorreo({
+        a: destino,
+        asunto: asuntoDe(paraElInforme),
+        html: htmlDelInforme(paraElInforme),
+        texto: textoDelInforme(paraElInforme),
+      });
+
+      if (salida.estado === 'enviado') {
+        /* En bitácora queda a dónde se mandó. Es un dato de salud saliendo del
+           centro: tiene que poder reconstruirse quién lo mandó y adónde. */
+        await anotar(usuario.id, 'envio', caso.id, { medio: 'correo', a: destino });
+        aviso = `Enviado a ${destino}.`;
+      } else if (salida.estado === 'simulado') {
+        simulado = salida.motivo;
+      } else {
+        error = salida.motivo;
+      }
     }
   }
 }
+
+/* Después del POST: si acaban de escribir otro número, el botón tiene que
+   abrir ESE y no el que estaba en la ficha. */
+const numeroWa = paraWhatsApp(numeroEscrito);
 
 const fechaLarga = (f: string) =>
   new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -295,35 +324,69 @@ const fechaLarga = (f: string) =>
     <section class="sis-tarjeta">
       <h2><Icono nombre="whatsapp" tam={19} /> Por WhatsApp</h2>
 
+      <form method="post" class="forma" data-wa>
+        <input type="hidden" name="accion" value="numero" />
+        <div class="sis-campo">
+          <label for="whatsapp">Número del paciente</label>
+          <input
+            id="whatsapp" name="whatsapp" type="tel" value={numeroEscrito}
+            autocomplete="off" placeholder="0414-1234567" inputmode="tel"
+          />
+          <span class="pista">
+            {caso.whatsapp || caso.telefono
+              ? 'Es el que tiene registrado. Si está mal, corríjalo acá.'
+              : 'No tiene ninguno registrado. Escriba a cuál avisarle.'}
+          </span>
+        </div>
+
+        <label class="marca">
+          {/* Con su propio nombre: en esta pantalla hay dos formularios y
+              los dos tienen una casilla de guardar. */}
+          <input type="checkbox" name="guardar_wa" value="si" checked />
+          <span>Guardarlo en la ficha del paciente para la próxima vez</span>
+        </label>
+
+        <div class="forma__par">
+          {numeroWa ? (
+            <a class="sis-boton sis-boton--primario" data-wa-abrir
+               href={enlaceDeWhatsApp(numeroWa, mensajeWa)}
+               target="_blank" rel="noopener">
+              <Icono nombre="whatsapp" tam={18} />
+              Abrir el chat
+            </a>
+          ) : (
+            <span class="sis-boton sis-boton--primario" data-wa-abrir aria-disabled="true">
+              <Icono nombre="whatsapp" tam={18} />
+              Abrir el chat
+            </span>
+          )}
+          <button type="submit" class="sis-boton sis-boton--suave">Guardar el número</button>
+        </div>
+      </form>
+
       {numeroWa ? (
         <>
           <p class="nota">
-            Abre el chat con <strong>{telefonoComoSeLee(caso.whatsapp ?? caso.telefono)}</strong> y
+            El botón abre el chat con <strong>{telefonoComoSeLee(numeroEscrito)}</strong> y
             deja el mensaje escrito. El envío lo hace usted desde WhatsApp.
           </p>
           <pre class="previo">{mensajeWa}</pre>
-          <a class="sis-boton sis-boton--primario"
-             href={enlaceDeWhatsApp(numeroWa, mensajeWa)}
-             target="_blank" rel="noopener">
-            <Icono nombre="whatsapp" tam={18} />
-            Abrir el chat
-          </a>
-          {!esCelular(caso.whatsapp ?? caso.telefono) && (
+          {!esCelular(numeroEscrito) && (
             <p class="nota nota--ojo">
               Ese número no parece un celular, así que el chat puede no existir.
               Conviene confirmarlo antes de dar el aviso por hecho.
             </p>
           )}
-
           <p class="nota">
             El documento no viaja por acá: WhatsApp no deja adjuntar un archivo
             desde un enlace. El mensaje dice dónde retirarlo.
           </p>
         </>
       ) : (
-        <p class="nota">
-          Este paciente no tiene un número con el que se pueda abrir WhatsApp.
-          Cárguelo en su ficha y vuelva.
+        <p class="nota nota--ojo">
+          Todavía no hay un número con el que se pueda abrir WhatsApp. Escriba
+          uno arriba —diez dígitos con su código, 0414-1234567— y el botón se
+          prende.
         </p>
       )}
     </section>
@@ -393,6 +456,14 @@ const fechaLarga = (f: string) =>
 
   .nota { margin-top: 14px; font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.6; max-width: 62ch; }
   .nota strong { color: var(--tinta-suave); }
+  .forma__par { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+  /* El botón apagado: se ve que está, y se ve que todavía no se puede usar. */
+  [data-wa-abrir][aria-disabled='true'] {
+    opacity: 0.5;
+    cursor: not-allowed;
+    pointer-events: none;
+  }
+
   .nota--ojo { color: #7a5200; }
 
   /* El mensaje tal como va a salir. Se ve antes de abrir el chat: así nadie
@@ -411,3 +482,41 @@ const fechaLarga = (f: string) =>
     word-break: break-word;
   }
 </style>
+
+<script>
+  /* El enlace se arma mientras se escribe: así se puede avisar a un número
+     que no es el de la ficha sin guardarlo primero. Si lo escrito todavía no
+     es un número usable, el botón queda apagado en vez de abrir un chat con
+     un número inexistente, que es peor que no tener botón. */
+  const forma = document.querySelector<HTMLFormElement>('[data-wa]');
+  const campo = forma?.querySelector<HTMLInputElement>('#whatsapp');
+  const boton = forma?.querySelector<HTMLElement>('[data-wa-abrir]');
+  const mensaje = document.querySelector<HTMLElement>('.previo')?.textContent ?? '';
+
+  if (campo && boton) {
+    /* La misma normalización de sistema/lib/telefono.ts. Se repite acá
+       porque este script no importa módulos del servidor. */
+    const paraWhatsApp = (crudo: string) => {
+      let n = crudo.replace(/\D/g, '');
+      if (n.startsWith('58')) n = n.slice(2);
+      if (n.startsWith('0')) n = n.slice(1);
+      return n.length === 10 ? `58${n}` : null;
+    };
+
+    const refrescar = () => {
+      const n = paraWhatsApp(campo.value);
+      if (n) {
+        boton.setAttribute('href', `https://wa.me/${n}?text=${encodeURIComponent(mensaje)}`);
+        boton.setAttribute('target', '_blank');
+        boton.setAttribute('rel', 'noopener');
+        boton.removeAttribute('aria-disabled');
+      } else {
+        boton.removeAttribute('href');
+        boton.setAttribute('aria-disabled', 'true');
+      }
+    };
+
+    campo.addEventListener('input', refrescar);
+    refrescar();
+  }
+</script>
