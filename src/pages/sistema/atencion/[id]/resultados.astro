@@ -148,6 +148,8 @@ const fechaLarga = (f: string) =>
       </p>
       <div class="trabada__acciones">
         <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}`}>Ver la orden</a>
+        <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}/documento`}
+           target="_blank" rel="noopener">Imprimir el informe</a>
         <a class="sis-boton sis-boton--suave" href="/sistema/laboratorio">Volver al laboratorio</a>
       </div>
     </section>
@@ -177,7 +179,16 @@ const fechaLarga = (f: string) =>
             </p>
           )}
         </div>
-        <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}`}>Ver la orden</a>
+        <div class="form__acciones">
+          {/* Imprimir desde acá y no solo desde la ficha: el bioanalista
+              carga, mira cómo quedó y lo saca, sin salir de la pantalla. */}
+          <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}/documento`}
+             target="_blank" rel="noopener">
+            <Icono nombre="recibo" tam={18} />
+            Imprimir
+          </a>
+          <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}`}>Ver la orden</a>
+        </div>
       </header>
 
       {error && <p class="sis-error form__aviso"><Icono nombre="escudo" tam={18} />{error}</p>}
@@ -529,6 +540,7 @@ const fechaLarga = (f: string) =>
     color: #7a5200;
   }
   .form__nota--ojo :global(svg) { flex: none; margin-top: 2px; }
+  .form__acciones { display: flex; flex-wrap: wrap; gap: 9px; }
 
   .chapa {
     font-size: var(--u-xs);

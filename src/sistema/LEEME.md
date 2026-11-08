@@ -40,13 +40,29 @@ licenciado va a colocar, de esos exámenes, los resultados».
   posible era un toque de más entre la cédula y el formulario.
 - La orden se registra en dos pasos y no nueve: no hay examen físico ni
   diagnóstico que escribir.
+- **Perfiles: combos de exámenes.** El cliente lo explicó con una
+  hamburguesa: «un combo con papas y Coca-Cola, pero se deben poder
+  deseleccionar algún examen, porque un perfil puede tener 5 y yo solo
+  quiero 3». Un perfil **no tiene precio propio**: si lo tuviera, quitarle
+  un examen lo cobraría igual. Es un atajo para marcar; lo que se cobra es
+  la suma de lo que quede marcado.
+  
+  La estructura salió de su propio Excel: cada hoja es un perfil y sus
+  renglones son los exámenes. Por eso el catálogo tiene las **141
+  determinaciones** y no las 35 hojas: sin precio por determinación no se
+  puede cobrar «3 de los 5». Administración arma los suyos en
+  `/sistema/perfiles` —él nombró cinco y tres no existen como hoja— y puede
+  renombrar los que vinieron con el nombre de la pestaña del Excel
+  («COAG.», «TRANS-BIL-PROT»).
 - **El catálogo de exámenes se llena de un botón.** El selector de la orden
   sale del catálogo de precios, y ese arrancaba vacío: la pantalla decía
   «todavía no hay exámenes» y la única salida era teclear 35 nombres. Ahora
   administración los carga de una vez desde Servicios y precios. Entran
   **sin precio** —no tenemos los suyos y uno inventado termina cobrado— y la
   pantalla los muestra como «sin precio», no como «0,00»: se pueden marcar
-  en una orden, queda registrado qué se le hizo, y no suman al total.
+  en una orden, queda registrado qué se le hizo, y no suman al total. Con
+  141 exámenes la lista se filtra, y **lo marcado no se esconde al
+  filtrar**: perder de vista algo ya elegido es como se cobra de menos.
 - **Ocho analitos se calculan solos**, con las fórmulas de su propio
   archivo: VLDL (triglicéridos ÷ 5), LDL (total − HDL − VLDL), bilirrubina
   indirecta, globulinas, relación A/G, CHCM, volumen de orina por minuto y

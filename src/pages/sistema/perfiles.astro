@@ -1,0 +1,311 @@
+---
+/**
+ * Los perfiles del laboratorio: combos de exámenes.
+ *
+ * El cliente lo explicó con una hamburguesa: «es como un combo con papas y
+ * Coca-Cola, pero se deben poder deseleccionar algún examen si lo quiero
+ * quitar, porque un perfil puede tener 5 exámenes y yo solo quiero 3».
+ *
+ * Un perfil NO tiene precio propio. Si lo tuviera, quitarle un examen lo
+ * cobraría igual, que es justo lo que él no quiere. El perfil es un atajo
+ * para marcar; lo que se cobra son los exámenes que queden marcados. Acá se
+ * muestra lo que costaría completo, de referencia.
+ *
+ * Los que salieron de su archivo traen el nombre de la pestaña del Excel
+ * —«COAG.», «TRANS-BIL-PROT»— que sirve para trabajar ahí y no para que
+ * recepción lo lea. Por eso se pueden renombrar.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { anotar } from '../../sistema/lib/atenciones';
+import { catalogo, dinero } from '../../sistema/lib/cobro';
+import {
+  CATEGORIA, activarPerfil, crearPerfil, guardarPerfil, listarPerfiles, perfilPorId,
+} from '../../sistema/lib/laboratorio';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'editar_catalogo');
+if (corte) return corte;
+
+const usuario = Astro.locals.usuario!;
+let error = '';
+let aviso = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const accion = String(form.get('accion') ?? '');
+  const id = String(form.get('id') ?? '');
+
+  try {
+    if (accion === 'crear') {
+      const creado = await crearPerfil(form.get('nombre'));
+      await anotar(usuario.id, 'servicio', undefined, { accion: 'creo_perfil', perfil: creado.nombre });
+      return Astro.redirect(`/sistema/perfiles?editar=${creado.id}&nuevo=1`);
+    }
+    if (accion === 'guardar') {
+      const examenes = form.getAll('examen').map((v) => String(v));
+      const guardado = await guardarPerfil(id, form.get('nombre'), examenes);
+      await anotar(usuario.id, 'servicio', undefined, {
+        accion: 'guardo_perfil', perfil: guardado.nombre, examenes: guardado.cuantos,
+      });
+      aviso = guardado.cuantos === 0
+        ? `${guardado.nombre} quedó sin exámenes: así no aparece en la orden.`
+        : `${guardado.nombre}: ${guardado.cuantos} ${guardado.cuantos === 1 ? 'examen' : 'exámenes'}.`;
+    }
+    if (accion === 'apagar' || accion === 'prender') {
+      const cambiado = await activarPerfil(id, accion === 'prender');
+      await anotar(usuario.id, 'servicio', undefined, { accion: `${accion}_perfil`, perfil: cambiado.nombre });
+      aviso = accion === 'apagar'
+        ? `${cambiado.nombre} ya no sale en la orden. Sigue acá.`
+        : `${cambiado.nombre} vuelve a salir en la orden.`;
+    }
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo guardar el perfil.';
+  }
+}
+
+const perfiles = await listarPerfiles();
+const examenes = (await catalogo()).filter((s) => s.categoria === CATEGORIA);
+
+const editando = Astro.url.searchParams.get('editar');
+const abierto = editando ? await perfilPorId(editando) : null;
+const suyos = new Set(abierto?.examenes ?? []);
+const recienCreado = Astro.url.searchParams.get('nuevo') === '1';
+
+/* Los cinco que nombró el cliente. Los que ya están no se repiten en la
+   lista de sugeridos: la lista es para lo que falta armar. */
+const PEDIDOS = ['Perfil lipídico', 'Perfil básico', 'Perfil hepático', 'Control prenatal', 'Perfil tiroideo'];
+const hechos = new Set(perfiles.map((p) => p.nombre.toLocaleLowerCase('es')));
+const faltanPedidos = PEDIDOS.filter((p) => !hechos.has(p.toLocaleLowerCase('es')));
+---
+
+<Sistema titulo="Perfiles">
+  <nav class="miga"><a href="/sistema/servicios">Servicios</a> <span>/</span> Perfiles</nav>
+
+  <header class="cab">
+    <div>
+      <h1>Perfiles del laboratorio</h1>
+      <p class="cab__nota">
+        Un perfil marca varios exámenes de un toque, y recepción puede quitar
+        el que no haga falta. <strong>No tiene precio propio</strong>: lo que
+        se cobra es la suma de los que queden marcados.
+      </p>
+    </div>
+  </header>
+
+  {error && <p class="sis-error msj"><Icono nombre="escudo" tam={18} />{error}</p>}
+  {aviso && <p class="msj msj--bien"><Icono nombre="escudo" tam={18} />{aviso}</p>}
+  {recienCreado && (
+    <p class="msj msj--bien">
+      <Icono nombre="escudo" tam={18} />
+      Perfil creado. Marque abajo qué exámenes lleva.
+    </p>
+  )}
+
+  {examenes.length === 0 ? (
+    <div class="sis-tarjeta vacio">
+      <h2>Todavía no hay exámenes en el catálogo</h2>
+      <p>
+        Un perfil agrupa exámenes, así que primero hay que tenerlos.
+        Se cargan de una vez desde <a href="/sistema/servicios">Servicios y precios</a>.
+      </p>
+    </div>
+  ) : (
+    <div class="col">
+      <section class="sis-tarjeta">
+        <h2>Los perfiles <span class="cuantos">{perfiles.length}</span></h2>
+
+        {perfiles.length === 0 ? (
+          <p class="suelto">Todavía no hay ninguno.</p>
+        ) : (
+          <ul class="lista">
+            {perfiles.map((p) => (
+              <li class:list={[!p.activo && 'lista--apagado']}>
+                <a class="lista__que" href={`/sistema/perfiles?editar=${p.id}`}>
+                  <strong>{p.nombre}</strong>
+                  <small>
+                    {p.cuantos} {p.cuantos === 1 ? 'examen' : 'exámenes'}
+                    {Number(p.suma) > 0 && ` · completo $${dinero(p.suma)}`}
+                    {!p.activo && ' · apagado'}
+                  </small>
+                </a>
+                <form method="post" class="enlinea">
+                  <input type="hidden" name="id" value={p.id} />
+                  <button type="submit" name="accion" value={p.activo ? 'apagar' : 'prender'}
+                          class="sis-boton sis-boton--suave">
+                    {p.activo ? 'Apagar' : 'Prender'}
+                  </button>
+                </form>
+              </li>
+            ))}
+          </ul>
+        )}
+
+        <form method="post" class="alta">
+          <input type="hidden" name="accion" value="crear" />
+          <div class="sis-campo">
+            <label for="nombre">Un perfil nuevo</label>
+            <input id="nombre" name="nombre" required autocomplete="off"
+                   placeholder="Control prenatal" />
+          </div>
+          <button type="submit" class="sis-boton sis-boton--primario">Crear</button>
+        </form>
+
+        {faltanPedidos.length > 0 && (
+          <p class="suelto suelto--nota">
+            De los que usted nombró todavía no está:
+            {' '}{faltanPedidos.join(', ')}.
+          </p>
+        )}
+      </section>
+
+      <section class="sis-tarjeta">
+        {abierto ? (
+          <form method="post">
+            <input type="hidden" name="accion" value="guardar" />
+            <input type="hidden" name="id" value={abierto.id} />
+
+            <h2>Qué lleva este perfil</h2>
+
+            <div class="sis-campo">
+              <label for="nombre-editar">Nombre</label>
+              <input id="nombre-editar" name="nombre" required autocomplete="off"
+                     value={abierto.nombre} />
+              <span class="pista">
+                Los que salieron de su archivo traen el nombre de la pestaña
+                del Excel. Acá se le pone el que recepción tiene que leer.
+              </span>
+            </div>
+
+            <p class="suelto suelto--nota">
+              Marque los exámenes. Recepción va a poder quitar cualquiera en
+              la orden, así que conviene dejar el perfil completo.
+            </p>
+
+            <ul class="examenes">
+              {examenes.map((e) => (
+                <li>
+                  <label>
+                    <input type="checkbox" name="examen" value={e.id} checked={suyos.has(e.id)} />
+                    <span>{e.nombre}</span>
+                    <em>{Number(e.precio) === 0 ? 'sin precio' : `$${dinero(e.precio)}`}</em>
+                  </label>
+                </li>
+              ))}
+            </ul>
+
+            <div class="pie">
+              <button type="submit" class="sis-boton sis-boton--primario">Guardar el perfil</button>
+              <a class="sis-boton sis-boton--suave" href="/sistema/perfiles">Cerrar</a>
+            </div>
+          </form>
+        ) : (
+          <>
+            <h2>Elija un perfil</h2>
+            <p class="suelto">
+              Toque uno de la lista para ver y cambiar qué exámenes lleva, o
+              cree uno nuevo.
+            </p>
+          </>
+        )}
+      </section>
+    </div>
+  )}
+</Sistema>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 76ch; line-height: 1.55; }
+  .cab__nota strong { color: var(--tinta); }
+
+  .msj { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; font-size: var(--u-sm); }
+  .msj--bien {
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+  }
+
+  .col { display: grid; gap: 16px; margin-top: 18px; align-items: start; }
+  @media (min-width: 900px) { .col { grid-template-columns: 1fr 1.1fr; } }
+
+  .col h2 { display: flex; align-items: center; gap: 10px; font-size: var(--u-lg); margin-bottom: 12px; }
+  .cuantos {
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--azul-tenue);
+    color: var(--azul);
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+
+  .suelto { font-size: var(--u-sm); color: var(--tinta-suave); line-height: 1.55; }
+  .suelto--nota { margin: 12px 0; font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  .lista { list-style: none; margin: 0 0 16px; padding: 0; }
+  .lista li {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    padding: 7px 0;
+    border-top: 1px solid var(--linea-tenue);
+  }
+  .lista li:first-child { border-top: 0; }
+  .lista--apagado { opacity: 0.55; }
+  .lista__que {
+    flex: 1;
+    min-width: 0;
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    min-height: 44px;
+    justify-content: center;
+    text-decoration: none;
+    color: var(--tinta);
+  }
+  .lista__que:hover strong { color: var(--azul); text-decoration: underline; }
+  .lista__que strong { font-size: var(--u-sm); font-weight: 600; }
+  .lista__que small { font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  .alta { display: grid; gap: 10px; justify-items: start; padding-top: 14px; border-top: 1px solid var(--linea); }
+  .alta .sis-campo { width: 100%; max-width: 34ch; }
+  .enlinea { display: flex; }
+
+  .examenes {
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+    max-height: 50vh;
+    overflow-y: auto;
+    border: 1px solid var(--linea);
+    border-radius: 10px;
+  }
+  .examenes label {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    min-height: 44px;
+    padding: 0 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: var(--u-sm);
+  }
+  .examenes label:hover { background: var(--bruma); }
+  .examenes input { width: 20px; height: 20px; flex: none; accent-color: var(--azul); }
+  .examenes span { flex: 1; min-width: 0; }
+  .examenes em { flex: none; font-style: normal; font-size: var(--u-xs); color: var(--tinta-tenue); }
+  .examenes input:checked ~ span { font-weight: 600; color: var(--azul); }
+
+  .pie { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 16px; }
+  .vacio { margin-top: 18px; }
+  .vacio h2 { font-size: var(--u-lg); }
+  .vacio p { margin-top: 9px; font-size: var(--u-sm); color: var(--tinta-suave); }
+</style>

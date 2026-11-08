@@ -14,7 +14,9 @@ import {
   dinero, porCategoria, rotuloCategoria,
 } from '../../sistema/lib/cobro';
 import { asegurarTasa, tasaPara, enBolivares, MONEDA_BASE } from '../../sistema/lib/tasa';
-import { cargarExamenesAlCatalogo, examenesDelArchivo } from '../../sistema/lib/laboratorio';
+import {
+  cargarExamenesAlCatalogo, determinacionesDelArchivo, faltanEnElCatalogo,
+} from '../../sistema/lib/laboratorio';
 import { hoyEnCaracas } from '../../sistema/lib/fechas';
 
 export const prerender = false;
@@ -51,17 +53,21 @@ if (Astro.request.method === 'POST') {
 
   try {
     if (accion === 'cargar-laboratorio') {
-      /* Los treinta y cinco exámenes del archivo del laboratorio, de un
-         golpe. Entran en cero: no tenemos sus precios y un precio inventado
-         termina cobrado. Ver cargarExamenesAlCatalogo. */
-      const { agregados } = await cargarExamenesAlCatalogo();
-      if (agregados.length === 0) {
-        aviso = 'Ya estaban todos los exámenes del archivo del laboratorio.';
+      /* Lo que trae el archivo del laboratorio, de un golpe: las
+         determinaciones como exámenes con precio y las hojas como perfiles.
+         Entran en cero: no tenemos sus precios y uno inventado termina
+         cobrado. Ver cargarExamenesAlCatalogo. */
+      const r = await cargarExamenesAlCatalogo();
+      if (r.examenes === 0 && r.perfiles === 0) {
+        aviso = 'Ya estaba todo lo del archivo del laboratorio.';
       } else {
-        await anotar(usuario.id, 'servicio', undefined, {
-          accion: 'cargo_laboratorio', cuantos: agregados.length,
-        });
-        aviso = `Se cargaron ${agregados.length} exámenes, todos sin precio. Póngales el suyo acá abajo.`;
+        await anotar(usuario.id, 'servicio', undefined, { accion: 'cargo_laboratorio', ...r });
+        const partes = [
+          r.examenes > 0 ? `${r.examenes} exámenes, todos sin precio` : '',
+          r.perfiles > 0 ? `${r.perfiles} perfiles` : '',
+          r.apagados > 0 ? `y se apagaron ${r.apagados} renglones viejos que ahora son perfiles` : '',
+        ].filter(Boolean);
+        aviso = `Se cargaron ${partes.join(', ')}. Póngales el precio acá abajo.`;
       }
     } else if (accion === 'desactivar' || accion === 'reactivar') {
       const cambiado = await activarServicio(String(form.get('id') ?? ''), accion === 'reactivar');
@@ -94,9 +100,8 @@ const activos = servicios.filter((s) => s.activo);
    catálogo, y cuántos de los que están siguen en cero. Las dos cifras son
    la misma pregunta vista de cerca: qué falta para que recepción pueda
    marcar un examen y que salga con su precio. */
-const delArchivo = await examenesDelArchivo();
-const conocidos = new Set(servicios.map((s) => s.nombre.toLocaleLowerCase('es')));
-const faltanDelArchivo = delArchivo.filter((e) => !conocidos.has(e.toLocaleLowerCase('es'))).length;
+const delArchivo = await determinacionesDelArchivo();
+const faltanDelArchivo = await faltanEnElCatalogo();
 const sinPrecio = servicios.filter((s) => s.activo && Number(s.precio) === 0).length;
 const visibles = verTodos ? servicios : activos;
 const grupos = porCategoria(visibles);
@@ -167,12 +172,14 @@ const apagados = servicios.length - activos.length;
         <input type="hidden" name="accion" value="cargar-laboratorio" />
         <button type="submit" class="sis-boton sis-boton--primario">
           <Icono nombre="mas" tam={18} />
-          Cargar los {faltanDelArchivo} exámenes
+          Cargar los exámenes y los perfiles
         </button>
       </form>
       <p class="lab__nota">
         Entran <strong>sin precio</strong> y se les pone acá. No se inventa
-        ninguno: un precio adivinado en el catálogo termina cobrado.
+        ninguno: un precio adivinado en el catálogo termina cobrado. Cada
+        hoja del archivo con varios exámenes queda también como
+        <a href="/sistema/perfiles">perfil</a>, para marcarlos de un toque.
       </p>
     </section>
   )}

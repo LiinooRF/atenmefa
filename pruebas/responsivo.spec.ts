@@ -185,15 +185,29 @@ test('todo lo que se toca mide 44 px de alto', async ({ page }) => {
     await page.evaluate(() => {
       document.querySelectorAll('[data-grupo]').forEach((d) => ((d as HTMLDetailsElement).open = true));
     });
-    const cosas = page.locator(SE_TOCA);
-    for (let i = 0; i < (await cosas.count()); i++) {
-      const caja = await cosas.nth(i).boundingBox();
-      if (!caja) continue; // fuera de pantalla: no se toca
-      const texto = (await cosas.nth(i).innerText()).replace(/\s+/g, ' ').trim();
-      const nombre = texto || (await cosas.nth(i).getAttribute('aria-label'))
-        || (await cosas.nth(i).getAttribute('name')) || (await cosas.nth(i).getAttribute('type'));
+    /* Todo en UNA llamada al navegador y no una por elemento. Con el
+       catálogo del laboratorio cargado, la pantalla de servicios pasó de
+       veinte elementos a más de doscientos, y doscientas idas y vueltas
+       tardaban más que el límite de la prueba: fallaba por lenta, no por
+       un botón chico. */
+    const medidos = await page.locator(SE_TOCA).evaluateAll((nodos) =>
+      nodos.map((n) => {
+        const caja = n.getBoundingClientRect();
+        const texto = (n as HTMLElement).innerText?.replace(/\s+/g, ' ').trim();
+        return {
+          alto: caja.height,
+          ancho: caja.width,
+          nombre: texto || n.getAttribute('aria-label') || n.getAttribute('name')
+            || n.getAttribute('type') || '(sin nombre)',
+        };
+      }),
+    );
+
+    for (const m of medidos) {
+      // Sin caja es que no está en pantalla: no se toca.
+      if (m.alto === 0 && m.ancho === 0) continue;
       expect
-        .soft(caja.height, `${ruta}: "${nombre}" mide ${Math.round(caja.height)} px`)
+        .soft(m.alto, `${ruta}: "${m.nombre}" mide ${Math.round(m.alto)} px`)
         .toBeGreaterThanOrEqual(44);
     }
   }

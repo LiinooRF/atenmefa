@@ -18,8 +18,16 @@ import type { ExamenDelCatalogo } from '../../sistema/lib/laboratorio';
 import type { Tasa } from '../../sistema/lib/tasa';
 
 
+interface Perfil {
+  id: string;
+  nombre: string;
+  examenes: { id: string; nombre: string }[];
+}
+
 interface Props {
   catalogo: readonly ExamenDelCatalogo[];
+  /** Los combos: marcan varios de un golpe y se puede destildar cualquiera. */
+  perfiles?: readonly Perfil[];
   /** Los que ya están pedidos en esta orden. */
   marcados: readonly string[];
   tasa: Tasa | null;
@@ -29,7 +37,7 @@ interface Props {
   cuantosEnElArchivo?: number;
 }
 const {
-  catalogo, marcados, tasa, puedeEditarCatalogo, cuantosEnElArchivo = 0,
+  catalogo, perfiles = [], marcados, tasa, puedeEditarCatalogo, cuantosEnElArchivo = 0,
 } = Astro.props;
 const yaEsta = new Set(marcados);
 
@@ -70,9 +78,41 @@ const fechaTasa = tasa
   <fieldset class="ex" data-tasa={tasa?.bolivares ?? ''}>
     <legend>Qué se le va a hacer</legend>
 
+    {/* Los perfiles: un toque marca los suyos y después se destilda lo que
+        no haga falta. El cliente lo explicó con una hamburguesa: «un combo
+        con papas y Coca-Cola, pero si un perfil tiene 5 exámenes y yo solo
+        quiero 3, se deben poder deseleccionar».
+
+        No tienen precio propio a propósito: lo que se cobra es la suma de
+        los que queden marcados, porque si el combo tuviera precio fijo,
+        quitarle uno lo cobraría igual. */}
+    {perfiles.length > 0 && (
+      <ul class="ex__perfiles" data-perfiles={JSON.stringify(perfiles)}>
+        {perfiles.map((p) => (
+          <li>
+            <button type="button" class="ex__perfil" data-perfil={p.id}>
+              {p.nombre}
+              <em>{p.examenes.length}</em>
+            </button>
+          </li>
+        ))}
+      </ul>
+    )}
+
+    {/* Con ciento cuarenta exámenes la lista no se recorre con el dedo: se
+        filtra. Lo marcado NO se esconde al filtrar —ver el script—, porque
+        perder de vista lo que uno ya eligió es como se cobra de menos. */}
+    {catalogo.length > 12 && (
+      <div class="ex__filtro">
+        <input type="search" id="ex-filtro" placeholder="Filtrar: glicemia, orina, hemo…"
+               aria-label="Filtrar exámenes" autocomplete="off" />
+        <span class="ex__cuantos" id="ex-filtrados"></span>
+      </div>
+    )}
+
     <ul class="ex__lista">
       {catalogo.map((e) => (
-        <li>
+        <li data-busca={e.nombre.toLocaleLowerCase('es')}>
           <label>
             <input
               type="checkbox" name="examen" value={e.id}
@@ -161,8 +201,82 @@ const fechaTasa = tasa
       if (ves && tasa) ves.textContent = plata(suma * tasa);
     };
 
-    casillas.forEach((c) => c.addEventListener('change', recontar));
+    casillas.forEach((c) => c.addEventListener('change', () => { recontar(); pintarPerfiles(); }));
+
+    /* ---------- los perfiles ---------- */
+
+    type Perfil = { id: string; nombre: string; examenes: { id: string; nombre: string }[] };
+    const listaPerfiles = caja.querySelector<HTMLElement>('.ex__perfiles');
+    let perfiles: Perfil[] = [];
+    try { perfiles = JSON.parse(listaPerfiles?.dataset.perfiles ?? '[]'); } catch { perfiles = []; }
+
+    const porId = new Map(casillas.map((c) => [c.value, c]));
+
+    /* El botón dice en qué estado está el perfil: todos marcados, algunos, o
+       ninguno. Sin eso, con cinco exámenes marcados de los cinco el botón se
+       ve igual que sin ninguno y no se sabe si ya se tocó. */
+    const pintarPerfiles = () => {
+      for (const p of perfiles) {
+        const boton = caja.querySelector<HTMLButtonElement>(`[data-perfil="${p.id}"]`);
+        if (!boton) continue;
+        const suyos = p.examenes.map((e) => porId.get(e.id)).filter(Boolean) as HTMLInputElement[];
+        const puestos = suyos.filter((c) => c.checked).length;
+        boton.dataset.estado = puestos === 0 ? 'nada' : puestos === suyos.length ? 'todo' : 'parte';
+        boton.setAttribute('aria-pressed', String(puestos > 0));
+        boton.title = puestos === 0
+          ? `Marca sus ${suyos.length} exámenes. Después se puede quitar el que no haga falta.`
+          : puestos === suyos.length
+            ? `Los ${suyos.length} están marcados. Tocar otra vez los quita.`
+            : `${puestos} de ${suyos.length} marcados.`;
+      }
+    };
+
+    for (const p of perfiles) {
+      const boton = caja.querySelector<HTMLButtonElement>(`[data-perfil="${p.id}"]`);
+      if (!boton) continue;
+      boton.addEventListener('click', () => {
+        const suyos = p.examenes.map((e) => porId.get(e.id)).filter(Boolean) as HTMLInputElement[];
+        if (!suyos.length) return;
+        /* Si ya están todos, el mismo botón los quita: es el camino de
+           vuelta cuando uno se equivocó de perfil. */
+        const quitar = suyos.every((c) => c.checked);
+        for (const c of suyos) c.checked = !quitar;
+        recontar();
+        pintarPerfiles();
+      });
+    }
+
+    /* ---------- el filtro ---------- */
+
+    const filtro = document.getElementById('ex-filtro') as HTMLInputElement | null;
+    const cuantosFiltrados = document.getElementById('ex-filtrados');
+
+    const filtrar = () => {
+      const q = (filtro?.value ?? '').trim().toLocaleLowerCase('es')
+        .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+      let visibles = 0;
+      for (const c of casillas) {
+        const li = c.closest('li') as HTMLElement | null;
+        if (!li) continue;
+        const nombre = (li.dataset.busca ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
+        /* Lo marcado se queda siempre a la vista: esconder un examen ya
+           elegido porque no calza con el filtro es como se cobra de menos. */
+        const calza = !q || nombre.includes(q) || c.checked;
+        li.hidden = !calza;
+        if (calza) visibles++;
+      }
+      if (cuantosFiltrados) {
+        cuantosFiltrados.textContent = q
+          ? `${visibles} de ${casillas.length}`
+          : `${casillas.length} exámenes`;
+      }
+    };
+
+    filtro?.addEventListener('input', filtrar);
+
     recontar();
+    pintarPerfiles();
+    filtrar();
   }
 </script>
 
@@ -182,7 +296,65 @@ const fechaTasa = tasa
     color: var(--azul);
   }
 
+  /* Los perfiles, arriba y a la vista: son el atajo de todos los días. */
+  .ex__perfiles {
+    list-style: none;
+    margin: 0 0 12px;
+    padding: 0 0 12px;
+    border-bottom: 1px solid var(--linea-tenue);
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .ex__perfil {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 44px;
+    padding: 0 13px;
+    border: 1px solid var(--linea);
+    border-radius: 999px;
+    background: var(--papel);
+    color: var(--tinta);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+    text-align: left;
+    cursor: pointer;
+  }
+  .ex__perfil:hover { border-color: var(--azul-medio); background: var(--bruma); }
+  .ex__perfil em {
+    font-style: normal;
+    font-size: var(--u-xs);
+    font-weight: 700;
+    color: var(--tinta-tenue);
+  }
+  .ex__perfil[data-estado='todo'] { border-color: var(--azul); background: var(--azul); color: #fff; }
+  .ex__perfil[data-estado='todo'] em { color: rgb(255 255 255 / 0.72); }
+  /* A medias se ve a medias: con el borde marcado y el fondo claro. */
+  .ex__perfil[data-estado='parte'] { border-color: var(--azul); background: var(--azul-tenue); color: var(--azul); }
+  .ex__perfil[data-estado='parte'] em { color: var(--azul); }
+
+  .ex__filtro { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+  .ex__filtro input {
+    flex: 1 1 220px;
+    min-width: 0;
+    min-height: 44px;
+    padding: 8px 12px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background: var(--papel);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+  }
+  .ex__cuantos { flex: none; font-size: var(--u-xs); color: var(--tinta-tenue); }
+
   .ex__lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .ex__lista li[hidden] { display: none; }
+  /* Con muchos exámenes la lista se desplaza dentro de su caja en vez de
+     estirar la página hasta lo imposible. */
+  .ex__lista { max-height: 44vh; overflow-y: auto; }
   @media (min-width: 760px) { .ex__lista { grid-template-columns: 1fr 1fr; gap: 2px 18px; } }
 
   .ex__lista label {

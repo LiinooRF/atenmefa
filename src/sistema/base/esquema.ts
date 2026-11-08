@@ -129,6 +129,28 @@ export const servicio = pgTable('servicio', {
   activo: boolean('activo').notNull().default(true),
 });
 
+/**
+ * Combos de exámenes. No tienen precio propio: se cobra la suma de los que
+ * queden marcados. Ver 014-perfiles.sql.
+ */
+export const perfil = pgTable('perfil', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  nombre: text('nombre').notNull(),
+  nombreBusca: text('nombre_busca').notNull().unique(),
+  activo: boolean('activo').notNull().default(true),
+  orden: integer('orden'),
+  creado: timestamp('creado', { withTimezone: true }).notNull().defaultNow(),
+});
+
+export const perfilExamen = pgTable('perfil_examen', {
+  perfilId: uuid('perfil_id').notNull().references(() => perfil.id, { onDelete: 'cascade' }),
+  servicioId: uuid('servicio_id').notNull().references(() => servicio.id),
+  orden: integer('orden').notNull().default(1),
+}, (t) => [
+  primaryKey({ columns: [t.perfilId, t.servicioId] }),
+  index('perfil_examen_servicio_idx').on(t.servicioId),
+]);
+
 export const renglon = pgTable('renglon', {
   id: uuid('id').primaryKey().defaultRandom(),
   atencionId: uuid('atencion_id').notNull().references(() => atencion.id, { onDelete: 'cascade' }),

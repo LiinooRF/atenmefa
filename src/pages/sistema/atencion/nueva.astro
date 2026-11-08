@@ -35,7 +35,7 @@ import { asegurarPin } from '../../../sistema/lib/verificacion';
 import { puede } from '../../../sistema/lib/permisos';
 import ExamenesLab from '../../../components/sistema/ExamenesLab.astro';
 import {
-  catalogoDeExamenes, sincronizarExamenes,
+  catalogoDeExamenes, examenesDelArchivo, perfilesConSusExamenes, sincronizarExamenes,
 } from '../../../sistema/lib/laboratorio';
 import { tasaPara } from '../../../sistema/lib/tasa';
 import { eq, desc, and, ne, sql } from 'drizzle-orm';
@@ -204,7 +204,11 @@ const abrirFormulario = hayPaciente;
    decir cuánto es en bolívares. Solo se piden si de verdad se va a dibujar
    el formulario de laboratorio. */
 const catalogo = esLaboratorio && abrirFormulario ? await catalogoDeExamenes() : [];
+const perfiles = esLaboratorio && abrirFormulario ? await perfilesConSusExamenes() : [];
 const tasaHoy = esLaboratorio && abrirFormulario ? await tasaPara(hoyEnVenezuela()) : null;
+/* Para el aviso de cuántos trae el archivo cuando el catálogo está vacío. */
+const enElArchivo = esLaboratorio && abrirFormulario && catalogo.length === 0
+  ? (await examenesDelArchivo()).length : 0;
 
 /* Lo que quedó marcado. En una atención nueva empieza vacío; si el guardado
    rebota con un error, vuelve lo que la persona había tildado y no una
@@ -425,9 +429,11 @@ const fechaLarga = (f: string) =>
           <ExamenesLab
             slot="extra"
             catalogo={catalogo}
+            perfiles={perfiles}
             marcados={examenesMarcados}
             tasa={tasaHoy}
             puedeEditarCatalogo={puede(usuario.rol as string, 'editar_catalogo')}
+            cuantosEnElArchivo={enElArchivo}
           />
         )}
       </Pasos>

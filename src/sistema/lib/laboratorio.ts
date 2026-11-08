@@ -13,14 +13,37 @@
  * iguales —la de lo que se le hace y la de lo que se le cobra— porque dos
  * listas se separan el primer día que alguien corrige una sola.
  */
-import { and, asc, desc, eq, inArray, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { bd, esquema } from './base';
 import { pagadorSugerido } from './cobro';
-import { normalizar } from './atenciones';
+import { esIdentificador, normalizar } from './atenciones';
 import type { Resultado } from '../laboratorio';
 
 /** La categoría del catálogo de precios donde viven los exámenes. */
 export const CATEGORIA = 'laboratorio';
+
+/**
+ * Renglones del archivo que NO son exámenes: son rótulos de sección dentro
+ * de una hoja («ANALISIS QUIMICO:», «CARACTERES FISICOS:») o datos de la
+ * muestra («TIPO DE MUESTRA:», «Fecha de entrada:»).
+ *
+ * La lista es a mano y corta porque no hay regla: hay rótulos que terminan
+ * en dos puntos y analitos que también —«Volumen de Orina/ 24 hrs:» y
+ * «RAZON P/C:» son exámenes de verdad—, así que filtrar por los dos puntos
+ * habría tirado cosas buenas. Se leyeron los dieciocho y se listaron los
+ * siete que no van. Siguen apareciendo en la plantilla de resultados, que es
+ * donde sirven de encabezado; lo que no hacen es entrar al catálogo de
+ * precios como si se cobraran.
+ */
+const NO_SON_EXAMENES = new Set([
+  'analisis microscopico:',
+  'analisis quimico:',
+  'caracteres fisicos:',
+  'examen solicitado:',
+  'fecha de entrada:',
+  'otras determinaciones:',
+  'tipo de muestra:',
+]);
 
 /** Los exámenes que el centro cobra, con su precio. */
 export function catalogoDeExamenes() {
@@ -156,12 +179,8 @@ export async function plantillasDeExamen() {
 }
 
 /**
- * Los nombres de examen que trae el archivo del laboratorio.
- *
- * Es la lista real de lo que el centro hace, en las palabras del propio
- * cliente: salen de las hojas de su Excel. Sirve para dos cosas distintas y
- * conviene no confundirlas: la plantilla dice qué analitos tiene cada
- * examen, y esto dice qué exámenes existen.
+ * Los nombres de HOJA del archivo del laboratorio. Cada hoja con más de un
+ * analito es un perfil.
  */
 export async function examenesDelArchivo(): Promise<string[]> {
   const filas = await bd
@@ -172,46 +191,349 @@ export async function examenesDelArchivo(): Promise<string[]> {
 }
 
 /**
- * Carga al catálogo de precios los exámenes del archivo que falten.
+ * Las DETERMINACIONES del archivo: los renglones de sus hojas, sin repetir.
  *
- * El selector de exámenes sale del catálogo, y el catálogo arranca vacío:
- * la pantalla de la orden decía «el catálogo de exámenes está vacío» y no
- * había forma razonable de llenarlo salvo teclear treinta y cinco nombres a
- * mano. Esto los pone de un golpe.
+ * Son las que entran al catálogo con precio, porque es el nivel al que de
+ * verdad se cobra: «un perfil puede tener 5 exámenes y yo solo quiero 3».
+ * Sin los rótulos de sección, que no se le cobran a nadie.
+ */
+export async function determinacionesDelArchivo(): Promise<string[]> {
+  const filas = await bd
+    .selectDistinct({ analito: esquema.plantillaExamen.analito })
+    .from(esquema.plantillaExamen)
+    .orderBy(asc(esquema.plantillaExamen.analito));
+
+  /* Se cuentan igual que las carga el cargador: por nombre normalizado. Dos
+     hojas escriben «DEPURACION DE CREATININA» y «Depuración de creatinina»,
+     que son el mismo examen y un solo precio. Contarlas distinto hacía que
+     la pantalla ofreciera cargar 143 y cargara 141. */
+  const unicos = new Map<string, string>();
+  for (const f of filas) {
+    const llave = normalizar(f.analito);
+    if (NO_SON_EXAMENES.has(llave)) continue;
+    if (!unicos.has(llave)) unicos.set(llave, f.analito);
+  }
+  return [...unicos.values()];
+}
+
+/**
+ * Cuántas determinaciones del archivo todavía no están en el catálogo.
+ *
+ * Lo compara con la MISMA normalización que usa el cargador. Comparar de
+ * otra manera hacía que la pantalla ofreciera cargar 143 y el cargador
+ * cargara 141, y la tarjeta de «cargar» no se iba nunca porque creía que
+ * faltaban dos.
+ */
+export async function faltanEnElCatalogo(): Promise<number> {
+  const delArchivo = await determinacionesDelArchivo();
+  const enCatalogo = await bd
+    .select({ nombre: esquema.servicio.nombre })
+    .from(esquema.servicio);
+  const conocidos = new Set(enCatalogo.map((s) => normalizar(s.nombre)));
+  return delArchivo.filter((d) => !conocidos.has(normalizar(d))).length;
+}
+
+/**
+ * Carga al catálogo lo que trae el archivo del laboratorio: las
+ * determinaciones como exámenes con precio, y las hojas como perfiles.
+ *
+ * El selector de la orden sale del catálogo, y el catálogo arranca vacío:
+ * la pantalla decía «todavía no hay exámenes» y la única salida era teclear
+ * ciento cincuenta nombres a mano. Esto los pone de un golpe.
+ *
+ * QUÉ ES EXAMEN Y QUÉ ES PERFIL
+ *
+ * Lo decide el propio archivo. Una hoja con varios analitos es un perfil y
+ * sus analitos son los exámenes: el perfil lipídico trae colesterol total,
+ * HDL, LDL, VLDL y triglicéridos. Una hoja con uno solo —gota gruesa,
+ * helicotest— es un examen y nada más.
+ *
+ * Así se puede cobrar «tres de los cinco», que es lo que el cliente pidió:
+ * el perfil marca y lo que se cobra son los exámenes que queden marcados.
  *
  * LOS DEJA EN CERO, Y ESO NO ES UN DESCUIDO
  *
  * No tenemos sus precios, y un precio inventado en un catálogo termina
  * cobrado. Entran en 0 y la pantalla los muestra como «sin precio» —no como
  * «0,00»— y no los suma al total: recepción puede registrar hoy qué se le
- * hace al paciente, y la cuenta dice en la cara cuántos exámenes todavía no
- * tienen precio.
+ * hace al paciente, y la cuenta dice en la cara cuántos no tienen precio.
  *
- * No toca los que ya están: se compara por nombre normalizado, así que
- * correrlo dos veces no duplica nada ni pisa un precio ya puesto.
+ * Es idempotente: compara por nombre normalizado, así que correrlo dos
+ * veces no duplica nada ni pisa un precio ya puesto.
  */
-export async function cargarExamenesAlCatalogo(): Promise<{ agregados: string[] }> {
-  const delArchivo = await examenesDelArchivo();
+export async function cargarExamenesAlCatalogo(): Promise<{
+  examenes: number; perfiles: number; apagados: number;
+}> {
+  const filas = await bd
+    .select({
+      examen: esquema.plantillaExamen.examen,
+      analito: esquema.plantillaExamen.analito,
+      orden: esquema.plantillaExamen.orden,
+    })
+    .from(esquema.plantillaExamen)
+    .orderBy(asc(esquema.plantillaExamen.examen), asc(esquema.plantillaExamen.orden));
+
+  /* Las determinaciones, sin repetir: «GLICEMIA» está en tres hojas y es un
+     solo examen del catálogo con un solo precio. */
+  const determinaciones = new Map<string, string>();
+  for (const f of filas) {
+    const llave = normalizar(f.analito);
+    if (NO_SON_EXAMENES.has(llave)) continue;
+    determinaciones.set(llave, f.analito);
+  }
 
   const yaEstan = await bd
-    .select({ nombre: esquema.servicio.nombre })
+    .select({ id: esquema.servicio.id, nombre: esquema.servicio.nombre })
     .from(esquema.servicio);
-  const conocidos = new Set(yaEstan.map((s) => normalizar(s.nombre)));
+  const porNombre = new Map(yaEstan.map((s) => [normalizar(s.nombre), s.id]));
 
-  const faltan = delArchivo.filter((e) => !conocidos.has(normalizar(e)));
-  if (faltan.length === 0) return { agregados: [] };
+  const faltan = [...determinaciones.entries()].filter(([llave]) => !porNombre.has(llave));
+  if (faltan.length) {
+    const creados = await bd
+      .insert(esquema.servicio)
+      .values(faltan.map(([, nombre]) => ({
+        nombre,
+        categoria: CATEGORIA,
+        precio: '0.00',
+        moneda: 'USD',
+        activo: true,
+      })))
+      .returning({ id: esquema.servicio.id, nombre: esquema.servicio.nombre });
+    for (const c of creados) porNombre.set(normalizar(c.nombre), c.id);
+  }
 
-  await bd.insert(esquema.servicio).values(
-    faltan.map((nombre) => ({
-      nombre,
-      categoria: CATEGORIA,
-      precio: '0.00',
-      moneda: 'USD',
-      activo: true,
-    })),
-  );
+  /* Los perfiles: una hoja con más de un analito. */
+  const porHoja = new Map<string, { analito: string; orden: number }[]>();
+  for (const f of filas) {
+    const lista = porHoja.get(f.examen) ?? [];
+    lista.push({ analito: f.analito, orden: f.orden });
+    porHoja.set(f.examen, lista);
+  }
 
-  return { agregados: faltan };
+  const yaPerfiles = await bd
+    .select({ nombreBusca: esquema.perfil.nombreBusca })
+    .from(esquema.perfil);
+  const perfilesConocidos = new Set(yaPerfiles.map((p) => p.nombreBusca));
+
+  let perfilesNuevos = 0;
+  for (const [hoja, miembros] of porHoja) {
+    if (miembros.length < 2) continue;
+    const llave = normalizar(hoja);
+    if (perfilesConocidos.has(llave)) continue;
+
+    const [creado] = await bd
+      .insert(esquema.perfil)
+      .values({ nombre: hoja, nombreBusca: llave, orden: perfilesNuevos + 1 })
+      .returning({ id: esquema.perfil.id });
+
+    /* Sin repetir: hay hojas que listan el mismo analito dos veces —HEMA
+       tiene VCM, HCM y CHCM duplicados, QUIMICA COMPLETA el ácido úrico— y
+       un perfil contiene un examen una sola vez. */
+    const vistos = new Set<string>();
+    const aInsertar = miembros
+      .map((m) => ({
+        perfilId: creado.id,
+        servicioId: porNombre.get(normalizar(m.analito)),
+        orden: m.orden,
+      }))
+      .filter((m): m is { perfilId: string; servicioId: string; orden: number } => {
+        /* Los rótulos de sección no tienen servicio y por eso caen acá. */
+        if (!m.servicioId || vistos.has(m.servicioId)) return false;
+        vistos.add(m.servicioId);
+        return true;
+      });
+
+    if (aInsertar.length) await bd.insert(esquema.perfilExamen).values(aInsertar);
+    perfilesNuevos++;
+  }
+
+  /* Y se apagan los renglones viejos del catálogo que eran el NOMBRE de una
+     hoja: antes cada hoja entraba como un examen con un precio, y ahora esa
+     hoja es un perfil. Dejar los dos permitiría cobrar lo mismo de dos
+     maneras. Se apagan y no se borran —nada se borra— y solo si nadie les
+     puso precio ni los cargó a una cuenta: si él ya decidió vender
+     «QUIMICA RUTINA» como una sola cosa, eso se respeta. */
+  const apagados = await bd.execute<{ nombre: string }>(sql`
+    UPDATE servicio s SET activo = false
+     WHERE s.categoria = ${CATEGORIA}
+       AND s.activo
+       AND s.precio = 0
+       AND EXISTS (SELECT 1 FROM perfil p WHERE p.nombre_busca = ${sql`lower(trim(s.nombre))`})
+       AND NOT EXISTS (SELECT 1 FROM renglon r WHERE r.servicio_id = s.id)
+    RETURNING s.nombre
+  `);
+
+  return {
+    examenes: faltan.length,
+    perfiles: perfilesNuevos,
+    apagados: apagados.length,
+  };
+}
+
+/** Los perfiles activos con sus exámenes, para la pantalla de la orden. */
+export async function perfilesConSusExamenes() {
+  const filas = await bd
+    .select({
+      perfilId: esquema.perfil.id,
+      perfil: esquema.perfil.nombre,
+      orden: esquema.perfil.orden,
+      servicioId: esquema.servicio.id,
+      examen: esquema.servicio.nombre,
+      precio: esquema.servicio.precio,
+      moneda: esquema.servicio.moneda,
+      miembroOrden: esquema.perfilExamen.orden,
+    })
+    .from(esquema.perfil)
+    .innerJoin(esquema.perfilExamen, eq(esquema.perfilExamen.perfilId, esquema.perfil.id))
+    .innerJoin(esquema.servicio, eq(esquema.servicio.id, esquema.perfilExamen.servicioId))
+    .where(and(eq(esquema.perfil.activo, true), eq(esquema.servicio.activo, true)))
+    .orderBy(
+      sql`${esquema.perfil.orden} ASC NULLS LAST`,
+      asc(esquema.perfil.nombre),
+      asc(esquema.perfilExamen.orden),
+    );
+
+  const porPerfil = new Map<string, { id: string; nombre: string; examenes: { id: string; nombre: string }[] }>();
+  for (const f of filas) {
+    const p = porPerfil.get(f.perfilId) ?? { id: f.perfilId, nombre: f.perfil, examenes: [] };
+    p.examenes.push({ id: f.servicioId, nombre: f.examen });
+    porPerfil.set(f.perfilId, p);
+  }
+  return [...porPerfil.values()];
+}
+
+/* ------------------------------------------------------------------
+   Armar perfiles a mano.
+   ------------------------------------------------------------------
+
+   El cliente nombró cinco —lipídico, básico, hepático, control prenatal y
+   tiroideo— y tres de esos no existen como hoja en su archivo. Esos los
+   arma él: no se inventa qué exámenes lleva un control prenatal.
+
+   Y los que SÍ salieron del archivo vienen con el nombre de la pestaña
+   («COAG.», «TRANS-BIL-PROT», «PBA.EMB Y OTRAS CUALI»), que sirve para
+   trabajar en Excel y no para que recepción lo lea. Por eso se pueden
+   renombrar.
+   ------------------------------------------------------------------ */
+
+/** Todos los perfiles, con cuántos exámenes trae cada uno. */
+export async function listarPerfiles() {
+  const filas = await bd
+    .select({
+      id: esquema.perfil.id,
+      nombre: esquema.perfil.nombre,
+      activo: esquema.perfil.activo,
+      orden: esquema.perfil.orden,
+      cuantos: sql<number>`(
+        SELECT COUNT(*) FROM perfil_examen pe
+          JOIN servicio s ON s.id = pe.servicio_id
+         WHERE pe.perfil_id = ${esquema.perfil.id} AND s.activo
+      )`,
+      /* Lo que costaría el perfil completo hoy, en dólares. Es de
+         referencia: lo que se cobra es lo que quede marcado. */
+      suma: sql<string>`COALESCE((
+        SELECT SUM(s.precio) FROM perfil_examen pe
+          JOIN servicio s ON s.id = pe.servicio_id
+         WHERE pe.perfil_id = ${esquema.perfil.id} AND s.activo AND s.moneda = 'USD'
+      ), 0)`,
+    })
+    .from(esquema.perfil)
+    .orderBy(sql`${esquema.perfil.orden} ASC NULLS LAST`, asc(esquema.perfil.nombre));
+
+  return filas.map((f) => ({ ...f, cuantos: Number(f.cuantos) }));
+}
+
+/** Un perfil con los exámenes que trae, para editarlo. */
+export async function perfilPorId(id: string) {
+  if (!esIdentificador(id)) return null;
+
+  const [cabecera] = await bd
+    .select()
+    .from(esquema.perfil)
+    .where(eq(esquema.perfil.id, id))
+    .limit(1);
+  if (!cabecera) return null;
+
+  const miembros = await bd
+    .select({ servicioId: esquema.perfilExamen.servicioId })
+    .from(esquema.perfilExamen)
+    .where(eq(esquema.perfilExamen.perfilId, id));
+
+  return { ...cabecera, examenes: miembros.map((m) => m.servicioId) };
+}
+
+/** Crea un perfil vacío. El nombre no se puede repetir. */
+export async function crearPerfil(nombre: unknown) {
+  const limpio = String(nombre ?? '').replace(/\s+/g, ' ').trim();
+  if (limpio.length < 3) throw new Error('El nombre del perfil hace falta, con al menos tres letras.');
+
+  const llave = normalizar(limpio);
+  const [ya] = await bd
+    .select({ nombre: esquema.perfil.nombre })
+    .from(esquema.perfil)
+    .where(eq(esquema.perfil.nombreBusca, llave))
+    .limit(1);
+  if (ya) throw new Error(`Ya hay un perfil llamado ${ya.nombre}.`);
+
+  const [creado] = await bd
+    .insert(esquema.perfil)
+    .values({ nombre: limpio, nombreBusca: llave })
+    .returning({ id: esquema.perfil.id, nombre: esquema.perfil.nombre });
+  return creado;
+}
+
+/**
+ * Guarda el nombre y los exámenes de un perfil.
+ *
+ * Los miembros se reemplazan por lo que llegue: la pantalla manda la lista
+ * completa de casillas marcadas, así que lo que no venga es lo que se
+ * destildó. Borrar y volver a insertar es más simple que calcular la
+ * diferencia, y no se pierde nada: `perfil_examen` no guarda historia.
+ */
+export async function guardarPerfil(id: string, nombre: unknown, examenes: readonly string[]) {
+  const perfil = await perfilPorId(id);
+  if (!perfil) throw new Error('Ese perfil ya no está.');
+
+  const limpio = String(nombre ?? '').replace(/\s+/g, ' ').trim();
+  if (limpio.length < 3) throw new Error('El nombre del perfil hace falta, con al menos tres letras.');
+
+  const llave = normalizar(limpio);
+  if (llave !== perfil.nombreBusca) {
+    const [otro] = await bd
+      .select({ nombre: esquema.perfil.nombre })
+      .from(esquema.perfil)
+      .where(and(eq(esquema.perfil.nombreBusca, llave), ne(esquema.perfil.id, id)))
+      .limit(1);
+    if (otro) throw new Error(`Ya hay un perfil llamado ${otro.nombre}.`);
+  }
+
+  const buenos = [...new Set(examenes.filter((e) => esIdentificador(e)))];
+
+  await bd.transaction(async (tx) => {
+    await tx.update(esquema.perfil)
+      .set({ nombre: limpio, nombreBusca: llave })
+      .where(eq(esquema.perfil.id, id));
+    await tx.delete(esquema.perfilExamen).where(eq(esquema.perfilExamen.perfilId, id));
+    if (buenos.length) {
+      await tx.insert(esquema.perfilExamen).values(
+        buenos.map((servicioId, i) => ({ perfilId: id, servicioId, orden: i + 1 })),
+      );
+    }
+  });
+
+  return { nombre: limpio, cuantos: buenos.length };
+}
+
+/** Apaga o prende un perfil. No se borra: puede estar en órdenes viejas. */
+export async function activarPerfil(id: string, activo: boolean) {
+  if (!esIdentificador(id)) throw new Error('Ese perfil ya no está.');
+  const [cambiado] = await bd
+    .update(esquema.perfil)
+    .set({ activo })
+    .where(eq(esquema.perfil.id, id))
+    .returning({ nombre: esquema.perfil.nombre });
+  if (!cambiado) throw new Error('Ese perfil ya no está.');
+  return cambiado;
 }
 
 /** Lo que se le pidió, como se lee en el informe. Uno por línea. */

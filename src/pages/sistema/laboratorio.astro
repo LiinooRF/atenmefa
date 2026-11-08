@@ -156,6 +156,15 @@ const ROTULO = {
           {/* Fuera del enlace de la fila a propósito: un enlace dentro de
               otro no es HTML válido y el toque se lo come el de afuera.
               Solo cuando ya está entregada: antes no hay nada que avisar. */}
+          {o.enCola === 'entregada' && (
+            <a class="cola__imprimir" href={`/sistema/atencion/${o.id}/documento`}
+               target="_blank" rel="noopener"
+               aria-label={`Imprimir el informe de ${o.paciente}`}>
+              <Icono nombre="recibo" tam={18} />
+              <span>Imprimir</span>
+            </a>
+          )}
+
           {o.enCola === 'entregada' && o.wa && (
             <a class="cola__wa" href={o.wa} target="_blank" rel="noopener"
                aria-label={`Avisarle por WhatsApp a ${o.paciente}`}>
@@ -223,6 +232,22 @@ const ROTULO = {
     font-weight: 700;
   }
   .cola__wa:hover { background: #e9f6ef; }
+
+  .cola__imprimir {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: none;
+    padding: 0 14px;
+    border-left: 1px solid var(--linea-tenue);
+    color: var(--azul);
+    text-decoration: none;
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+  .cola__imprimir:hover { background: var(--azul-tenue); }
+  .cola__imprimir :global(svg) { flex: none; }
+  @media (max-width: 639px) { .cola__imprimir span { display: none; } .cola__imprimir { padding: 0 12px; } }
 
   .cola__borrar {
     display: flex;

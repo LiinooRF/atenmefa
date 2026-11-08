@@ -726,6 +726,8 @@ test('administración carga los exámenes del archivo de una vez', async ({ page
      que lo apuntan primero: un servicio con cobro cargado no se borra, y
      las pruebas de arriba cargaron varios. */
   await conBase(async (sql) => {
+    await sql`DELETE FROM perfil_examen`;
+    await sql`DELETE FROM perfil`;
     await sql`DELETE FROM renglon WHERE servicio_id IN (
                 SELECT id FROM servicio WHERE categoria = 'laboratorio')`;
     await sql`DELETE FROM servicio WHERE categoria = 'laboratorio'`;
@@ -734,17 +736,17 @@ test('administración carga los exámenes del archivo de una vez', async ({ page
   await entrar(page, 'administracion');
   await page.goto('/sistema/servicios');
 
-  await expect(page.locator('.lab')).toContainText('35 exámenes');
-  await page.getByRole('button', { name: /Cargar los 35 exámenes/ }).click();
-  await expect(page.locator('.msj--bien')).toContainText('35 exámenes, todos sin precio');
+  await expect(page.locator('.lab')).toContainText('141 exámenes');
+  await page.getByRole('button', { name: /Cargar los exámenes y los perfiles/ }).click();
+  await expect(page.locator('.msj--bien')).toContainText('141 exámenes, todos sin precio');
 
   const [n] = await conBase((sql) => sql`
     SELECT COUNT(*)::int AS n FROM servicio WHERE categoria = 'laboratorio'`);
-  expect(n.n).toBe(35);
+  expect(n.n).toBe(141);
 
   /* Entran en cero: no tenemos sus precios y uno inventado termina cobrado.
      La pantalla lo dice en la cara. */
-  await expect(page.locator('.aviso-precio')).toContainText('35 servicios sin precio');
+  await expect(page.locator('.aviso-precio')).toContainText('141 servicios sin precio');
 
   // Correrlo otra vez no duplica nada.
   await page.goto('/sistema/servicios');

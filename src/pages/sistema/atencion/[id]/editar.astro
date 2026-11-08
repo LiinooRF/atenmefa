@@ -16,7 +16,8 @@ import ExamenesLab from '../../../../components/sistema/ExamenesLab.astro';
 import { exigir } from '../../../../sistema/lib/guardia';
 import { puede, puedeEditarAtencion, puedeEditarOrden } from '../../../../sistema/lib/permisos';
 import {
-  catalogoDeExamenes, examenesPedidos, sincronizarExamenes,
+  catalogoDeExamenes, examenesDelArchivo, examenesPedidos, perfilesConSusExamenes,
+  sincronizarExamenes,
 } from '../../../../sistema/lib/laboratorio';
 import { tasaPara } from '../../../../sistema/lib/tasa';
 import {
@@ -106,6 +107,9 @@ const faltanAhora = faltantes(datos, caso.tipo);
    consulta no tiene selector de exámenes. */
 const pedidos = esLab && editable ? await examenesPedidos(caso.id) : [];
 const catalogo = esLab && editable ? await catalogoDeExamenes() : [];
+const perfiles = esLab && editable ? await perfilesConSusExamenes() : [];
+const enElArchivo = esLab && editable && catalogo.length === 0
+  ? (await examenesDelArchivo()).length : 0;
 const tasaHoy = esLab && editable ? await tasaPara(caso.fecha) : null;
 
 /* En un formulario nuevo las secciones largas arrancan plegadas, pero acá ya
@@ -196,9 +200,11 @@ const fechaLarga = (f: string) =>
             <ExamenesLab
               slot="extra"
               catalogo={catalogo}
+              perfiles={perfiles}
               marcados={pedidos.map((p) => p.servicioId!).filter(Boolean)}
               tasa={tasaHoy}
               puedeEditarCatalogo={puede(usuario.rol as string, 'editar_catalogo')}
+              cuantosEnElArchivo={enElArchivo}
             />
           )}
         </Pasos>
