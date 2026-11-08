@@ -298,3 +298,20 @@ test('en el teléfono se apilan, que es donde se usa', async ({ page }) => {
   }));
   expect(m.p).toBeLessThanOrEqual(m.v + 1);
 });
+
+test('los campos del formulario se ven como campos', async ({ page }) => {
+  /* Los estilos de .sis-campo viven en la hoja del panel interno, que el
+     sitio público no carga. Con esa clase, rótulo, campo y ayuda fluían en
+     la misma línea como texto corrido. */
+  await page.setViewportSize({ width: 900, height: 800 });
+  await page.goto('/verificar');
+
+  const campo = page.locator('.ver__campo').first();
+  const rotulo = (await campo.locator('label').boundingBox())!;
+  const caja = (await campo.locator('input').boundingBox())!;
+
+  // El campo va DEBAJO de su rótulo, no al lado.
+  expect.soft(caja.y, 'el campo no quedó bajo su rótulo').toBeGreaterThan(rotulo.y + rotulo.height - 2);
+  // Y ocupa su columna, no el ancho de su texto.
+  expect(caja.width).toBeGreaterThan(150);
+});

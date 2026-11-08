@@ -55,7 +55,7 @@ const ok = resultado?.estado === 'ok' ? resultado.documento : null;
         <Verificado doc={ok} />
       ) : (
         <form method="post" class="ver__forma">
-          <div class="sis-campo">
+          <div class="ver__campo">
             <label for="numero">N° de atención</label>
             <input
               id="numero" name="numero" required autocomplete="off" autofocus
@@ -68,7 +68,7 @@ const ok = resultado?.estado === 'ok' ? resultado.documento : null;
               papel, uno al lado del otro. Separarlos obligaba a subir y
               bajar la vista entre el documento y la pantalla. */}
           <div class="ver__par">
-            <div class="sis-campo">
+            <div class="ver__campo">
               <label for="documento">Cédula del paciente</label>
               <input
                 id="documento" name="documento" required autocomplete="off"
@@ -77,7 +77,7 @@ const ok = resultado?.estado === 'ok' ? resultado.documento : null;
               <span class="pista">Como aparece en el documento. Los puntos dan igual.</span>
             </div>
 
-            <div class="sis-campo">
+            <div class="ver__campo">
               <label for="pin">PIN</label>
               <input
                 id="pin" name="pin" required autocomplete="off"
@@ -107,7 +107,30 @@ const ok = resultado?.estado === 'ok' ? resultado.documento : null;
     color: var(--azul);
   }
   .ver__guia { margin: 0 0 22px; color: var(--tinta-suave); line-height: 1.6; }
-  .ver__forma { display: grid; gap: 16px; }
+  .ver__forma { display: grid; gap: 18px; }
+  /* Los campos se visten acá y no con .sis-campo: esa clase vive en la hoja
+     del panel interno, que el sitio público no carga. Reusarla dejaba el
+     rótulo, el campo y la ayuda fluyendo en la misma línea, uno detrás de
+     otro, como si fuera texto corrido. */
+  .ver__campo { display: grid; gap: 6px; }
+  .ver__campo label { font-weight: 600; color: var(--azul); font-size: var(--u-sm); }
+  .ver__campo input {
+    width: 100%;
+    min-height: 48px;
+    padding: 11px 13px;
+    border: 1px solid var(--linea);
+    border-radius: 10px;
+    background: var(--papel);
+    font: inherit;
+    color: var(--tinta);
+  }
+  .ver__campo input:focus-visible {
+    outline: 2px solid var(--azul-medio, var(--azul));
+    outline-offset: 1px;
+    border-color: var(--azul);
+  }
+  .ver__campo .pista { font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.45; }
+
   .ver__par { display: grid; gap: 16px; }
   @media (min-width: 560px) { .ver__par { grid-template-columns: 1.4fr 1fr; } }
 </style>
