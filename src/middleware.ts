@@ -63,7 +63,17 @@ export const onRequest = defineMiddleware(async (ctx, siguiente) => {
   ctx.locals.usuario = usuario && usuario.activo !== false ? usuario : null;
 
   const esEntrar = ruta === '/sistema/entrar' || ruta === '/sistema/entrar/';
-  if (!ctx.locals.usuario && !esEntrar) return ctx.redirect('/sistema/entrar');
+  if (!ctx.locals.usuario && !esEntrar) {
+    /* A una pantalla se la manda al login; a una llamada de datos se le
+       contesta 401. Redirigir una llamada de fetch devuelve el HTML de la
+       pantalla de entrar con estado 200, y del otro lado eso llega como un
+       JSON que no se puede leer: el panel decía «sin conexión con el
+       servidor» cuando lo que pasó fue que se venció la sesión. */
+    if (ruta.startsWith('/sistema/api/')) {
+      return new Response('Sin sesión', { status: 401 });
+    }
+    return ctx.redirect('/sistema/entrar');
+  }
   if (ctx.locals.usuario && esEntrar) return ctx.redirect('/sistema');
 
   const respuesta = await siguiente();

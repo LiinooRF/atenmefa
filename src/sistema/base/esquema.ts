@@ -87,6 +87,26 @@ export const atencion = pgTable('atencion', {
   uniqueIndex('atencion_numero_idx').on(t.numero),
 ]);
 
+/**
+ * El catálogo CIE-10. Las filas las pone 011-diagnosticos.sql, generado
+ * desde el catálogo del CEMECE; `frecuente` y `orden` los pone
+ * administración desde el panel.
+ */
+export const diagnostico = pgTable('diagnostico', {
+  codigo: text('codigo').primaryKey(),
+  /** Oficial y verbatim, en mayúsculas. Se minusculiza al mostrarlo. */
+  nombre: text('nombre').notNull(),
+  busca: text('busca').notNull(),
+  capitulo: text('capitulo').notNull(),
+  consulta: boolean('consulta').notNull().default(false),
+  /** Nulo no quiere decir "para los dos": el catálogo no lo dice. */
+  sexo: text('sexo'),
+  frecuente: boolean('frecuente').notNull().default(false),
+  orden: integer('orden'),
+  marcadoPor: text('marcado_por').references(() => user.id),
+  marcadoEn: timestamp('marcado_en', { withTimezone: true }),
+});
+
 export const servicio = pgTable('servicio', {
   id: uuid('id').primaryKey().defaultRandom(),
   nombre: text('nombre').notNull(),

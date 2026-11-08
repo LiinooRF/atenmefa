@@ -127,6 +127,11 @@ const formatear = (clave: string, valor: string) => {
       day: '2-digit', month: '2-digit', year: 'numeric',
     });
   }
+  /* El diagnóstico sale con su código CIE-10 cuando se eligió del
+     catálogo. Es lo que una aseguradora busca en el papel, y es la razón
+     de ser del catálogo: sin el código impreso, codificar no sirve de
+     nada. Si se escribió a mano, va el texto solo. */
+  if (clave === 'idx' && d.idx_codigo) return `${valor} (${d.idx_codigo})`;
   return valor;
 };
 

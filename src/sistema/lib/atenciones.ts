@@ -19,6 +19,10 @@ const CLAVES = new Set([
   ...laboratorio.flatMap((s) => s.campos.map((c) => c.clave)),
   'tipo_doc',
   'tipo_atencion',
+  /* El código CIE-10 del diagnóstico. No es un campo del modelo —no se
+     escribe, se elige del catálogo— pero viaja al lado de `idx` y sin esto
+     limpiarDatos lo descartaba: el nombre se guardaba y el código no. */
+  'idx_codigo',
 ]);
 
 /** Quita tildes y pasa a minúscula, para poder buscar sin depender del acento. */

@@ -51,7 +51,9 @@ test('administración ve seis entradas en vez de diez sueltas', async ({ page })
 
   expect(await dentro('Cobros')).toEqual(['Cierre del mes', 'Servicios y precios']);
   expect(await dentro('Reportes')).toEqual(['Tablero', 'Marketing del sitio']);
-  expect(await dentro('Administración')).toEqual(['Cuentas', 'Bitácora de accesos']);
+  expect(await dentro('Administración')).toEqual([
+    'Cuentas', 'Diagnósticos frecuentes', 'Bitácora de accesos',
+  ]);
 });
 
 /* Una prueba por rol y no un bucle con los cuatro dentro de una: entrar con

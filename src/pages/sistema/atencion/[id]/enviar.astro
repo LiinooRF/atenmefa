@@ -43,6 +43,7 @@ import {
 } from '../../../../sistema/lib/telefono';
 import { entorno } from '../../../../sistema/lib/entorno';
 import { clinica } from '../../../../data/clinica';
+import { avisoDe } from '../../../../sistema/mensajes';
 import type { Resultado } from '../../../../sistema/laboratorio';
 
 export const prerender = false;
@@ -117,21 +118,10 @@ const dominioCorto = dondeVive.replace(/^https?:\/\//, '');
    cada guardado. */
 const numeroWa = paraWhatsApp(caso.whatsapp ?? caso.telefono);
 
-/* El mensaje de WhatsApp. Corto y sin un dato clínico: un chat lo lee quien
-   tenga el teléfono en la mano, que no siempre es el paciente.
-   
-   No lleva la dirección de verificación. Esa página confirma que un papel es
-   auténtico y no muestra el contenido: le sirve a la aseguradora que recibió
-   el informe, no al paciente que quiere ver su resultado. Mandársela sería
-   prometerle algo que no va a encontrar. */
-const mensajeWa = [
-  `Buenas, le escribimos de ${clinica.nombre}.`,
-  esLab
-    ? `Los resultados de sus exámenes (orden N° ${caso.numero}) ya están listos.`
-    : `Su informe de atención N° ${caso.numero} ya está listo.`,
-  `Puede retirarlo en ${clinica.direccion.calle}, o decirnos por acá si prefiere`,
-  'que se lo enviemos a su correo.',
-].join(' ');
+/* El mensaje predeterminado, con el nombre del paciente. Vive en
+   sistema/mensajes.ts porque sale desde tres pantallas y tiene que ser el
+   mismo texto en las tres. */
+const mensajeWa = avisoDe(caso.tipo, caso.paciente, caso.numero);
 
 let aviso = '';
 let error = '';
@@ -174,7 +164,9 @@ if (Astro.request.method === 'POST') {
       observaciones: esLab ? d.observaciones_lab : undefined,
       recipe: d.recipe,
       indicaciones: d.indicaciones,
-      idx: d.idx,
+      /* Con su código CIE-10 si se eligió del catálogo: el correo lo puede
+         reenviar el paciente a su seguro. */
+      idx: d.idx ? (d.idx_codigo ? `${d.idx} (${d.idx_codigo})` : d.idx) : undefined,
       firma: {
         nombre: firmante?.nombre ?? caso.medico,
         colegiatura: firmante?.colegiatura ?? caso.colegiatura,

@@ -24,7 +24,11 @@ const cuantosExigidos = s.campos.filter((c) => c.exigido).length;
       <span class="bloque__signo" aria-hidden="true"></span>
     </summary>
     <div class="bloque__rejilla">
-      {s.campos.map((c) => <Campo campo={c} valor={datos[c.clave] ?? ''} />)}
+      {/* `codigo` solo lo usa el campo del diagnóstico, que guarda el
+          nombre y su código CIE-10 en dos claves. Los demás lo ignoran. */}
+      {s.campos.map((c) => (
+        <Campo campo={c} valor={datos[c.clave] ?? ''} codigo={datos[`${c.clave}_codigo`] ?? ''} />
+      ))}
     </div>
   </details>
 </section>

@@ -22,7 +22,7 @@ import {
   entrar, crearAtencionCerrada, numeroDelCaso, cargarAMano, anularEnLaBase,
   cedulaDePrueba, historiaMinima, soloDigitos, montoDeTexto, anchos,
   pacienteEnLaBase, renglonesSumadosDe, bitacoraDePaciente,
-  borrarBitacoraDePacientes, borrarPacientes,
+  borrarBitacoraDePacientes, borrarPacientes, conBase,
 } from './apoyo';
 
 const CEDULA = cedulaDePrueba(8, 0);
@@ -238,9 +238,9 @@ test('corregir el contacto dice qué cambió y queda en bitácora', async ({ pag
 
   await page.locator('#telefono').fill('0426-1112233');
   await page.locator('#correo').fill('corregido.prueba@correo.local');
-  await page.getByRole('button', { name: 'Guardar el contacto' }).click();
+  await page.getByRole('button', { name: 'Guardar los datos' }).click();
 
-  await expect(page.locator('.msj--bien')).toContainText('Contacto guardado');
+  await expect(page.locator('.msj--bien')).toContainText('Guardado');
   /* Con tilde: el aviso dice los campos en palabras y no con el nombre de
      la columna de la base. */
   await expect(page.locator('.msj--bien')).toContainText('el teléfono');
@@ -250,7 +250,7 @@ test('corregir el contacto dice qué cambió y queda en bitácora', async ({ pag
 
   /* Lo que había antes queda en bitácora, no en pantalla: el detalle de la
      anotación lleva el valor viejo y el nuevo de cada campo que se movió. */
-  expect(await bitacoraDePaciente(paciente)).toContain('cambio_contacto');
+  expect(await bitacoraDePaciente(paciente)).toContain('cambio_paciente');
 });
 
 test('un correo imposible rebota y no se guarda', async ({ page }) => {
@@ -263,7 +263,7 @@ test('un correo imposible rebota y no se guarda', async ({ page }) => {
      que se prueba es la del servidor, que es la que de verdad protege. */
   await campo.evaluate((e: HTMLInputElement) => { e.type = 'text'; });
   await campo.fill('arroba-no-tiene');
-  await page.getByRole('button', { name: 'Guardar el contacto' }).click();
+  await page.getByRole('button', { name: 'Guardar los datos' }).click();
 
   await expect(page.locator('.sis-error')).toContainText('no parece válido');
   await expect(page.locator('#correo')).toHaveValue('arroba-no-tiene');
@@ -276,7 +276,7 @@ test('un teléfono imposible rebota y no se guarda', async ({ page }) => {
 
   const antes = (await pacienteEnLaBase(CEDULA)).telefono;
   await page.locator('#telefono').fill('123');
-  await page.getByRole('button', { name: 'Guardar el contacto' }).click();
+  await page.getByRole('button', { name: 'Guardar los datos' }).click();
 
   await expect(page.locator('.sis-error')).toContainText('entre 7 y 15 dígitos');
   // Lo tecleado vuelve a la pantalla: nadie escribe dos veces el mismo número.
@@ -371,4 +371,144 @@ test('desde una atención se llega a la ficha de la persona', async ({ page }) =
 
   await expect(page.getByRole('heading', { level: 1 }).getByRole('link', { name: NOMBRE }))
     .toHaveAttribute('href', `/sistema/pacientes/${paciente}`);
+});
+
+/* ------------------------------------------------------------------
+   Las cuatro operaciones sobre el paciente.
+   ------------------------------------------------------------------
+
+   El cliente las pidió para administración y para recepción. Lo que se
+   vigila acá es sobre todo lo que NO se puede hacer, que es la parte que
+   protege el registro:
+
+     · un documento que ya es de otro no se roba ni se fusiona en silencio;
+     · un paciente con historia no se borra;
+     · todo lo que se corrige queda en bitácora con lo que decía antes.
+   ------------------------------------------------------------------ */
+
+const CRUD = cedulaDePrueba(8, 4);
+const CRUD_OTRO = cedulaDePrueba(8, 5);
+const CRUD_CORREGIDO = cedulaDePrueba(8, 6);
+const NOMBRE_CRUD = 'Registrado A Mano de Prueba';
+
+test.describe('crear, corregir y borrar', () => {
+  test.afterAll(async () => {
+    await borrarPacientes(CRUD, CRUD_OTRO, CRUD_CORREGIDO);
+  });
+
+  test('recepción registra un paciente sin abrirle atención', async ({ page }) => {
+    await entrar(page, 'recepcionista');
+    await page.goto('/sistema/pacientes/nuevo');
+
+    await page.getByLabel('Nombres y apellidos').fill(NOMBRE_CRUD);
+    await page.locator('#documento').fill(CRUD);
+    await page.locator('#sexo').selectOption('Femenino');
+    await page.locator('#telefono').fill('0414-7778899');
+    await page.locator('#correo').fill('crud.prueba@correo.local');
+    await page.getByRole('button', { name: 'Registrar' }).click();
+
+    await expect(page).toHaveURL(/\/sistema\/pacientes\/[0-9a-f-]{36}\?nuevo=1$/);
+    await expect(page.locator('.msj--bien')).toContainText('Quedó registrado');
+
+    const ficha = await pacienteEnLaBase(CRUD);
+    expect(ficha.nombre).toBe(NOMBRE_CRUD);
+    expect(ficha.correo).toBe('crud.prueba@correo.local');
+
+    /* Y queda sin ninguna atención, que es el punto: se registró sin
+       inventarle una consulta que no tuvo. */
+    await expect(page.locator('.suelto--vacio')).toContainText('todavía no tiene ninguna atención');
+  });
+
+  test('el mismo documento no se registra dos veces', async ({ page }) => {
+    await entrar(page, 'administracion');
+    await page.goto('/sistema/pacientes/nuevo');
+    await page.getByLabel('Nombres y apellidos').fill('Otro Nombre de Prueba');
+    await page.locator('#documento').fill(CRUD);
+    await page.getByRole('button', { name: 'Registrar' }).click();
+
+    await expect(page.locator('.sis-error')).toContainText('Ya hay un paciente con ese documento');
+    await expect(page.locator('.sis-error')).toContainText(NOMBRE_CRUD);
+    // Y lo tecleado no se pierde.
+    await expect(page.getByLabel('Nombres y apellidos')).toHaveValue('Otro Nombre de Prueba');
+  });
+
+  test('se corrige el nombre y el documento, y queda en bitácora', async ({ page }) => {
+    const antes = await pacienteEnLaBase(CRUD);
+    await entrar(page, 'recepcionista');
+    await page.goto(`/sistema/pacientes/${antes.id}`);
+
+    await page.locator('#nombre').fill('Corregida A Mano de Prueba');
+    await page.locator('#documento').fill(CRUD_CORREGIDO);
+    await page.getByRole('button', { name: 'Guardar los datos' }).click();
+
+    await expect(page.locator('.msj--bien')).toContainText('el nombre');
+    await expect(page.locator('.msj--bien')).toContainText('el documento');
+
+    const ahora = await pacienteEnLaBase(CRUD_CORREGIDO);
+    expect(ahora.id).toBe(antes.id);          // es la misma ficha
+    expect(ahora.nombre).toBe('Corregida A Mano de Prueba');
+
+    expect(await bitacoraDePaciente(antes.id)).toContain('cambio_paciente');
+  });
+
+  test('un documento que ya es de otro no se roba', async ({ page }) => {
+    /* Dos fichas de la misma persona son un problema; juntarlas en silencio
+       —mover atenciones, elegir qué nombre gana— es un problema peor. */
+    await entrar(page, 'administracion');
+    await page.goto('/sistema/pacientes/nuevo');
+    await page.getByLabel('Nombres y apellidos').fill('Vecino De Documento de Prueba');
+    await page.locator('#documento').fill(CRUD_OTRO);
+    await page.getByRole('button', { name: 'Registrar' }).click();
+    await expect(page).toHaveURL(/\?nuevo=1$/);
+
+    const vecino = await pacienteEnLaBase(CRUD_OTRO);
+    await page.goto(`/sistema/pacientes/${vecino.id}`);
+    await page.locator('#documento').fill(CRUD_CORREGIDO);
+    await page.getByRole('button', { name: 'Guardar los datos' }).click();
+
+    await expect(page.locator('.sis-error')).toContainText('ya es de');
+    await expect(page.locator('.sis-error')).toContainText('juntar las dos fichas a mano');
+    // Y el vecino se quedó con el suyo.
+    expect((await pacienteEnLaBase(CRUD_OTRO)).id).toBe(vecino.id);
+  });
+
+  test('una ficha sin atenciones se borra, escribiendo el documento', async ({ page }) => {
+    const vecino = await pacienteEnLaBase(CRUD_OTRO);
+    await entrar(page, 'recepcionista');
+    await page.goto(`/sistema/pacientes/${vecino.id}`);
+
+    await expect(page.locator('.borrar')).toContainText('se puede borrar');
+
+    // Con el documento mal escrito no se borra.
+    await page.locator('#confirma').fill('V-00.000.000');
+    await page.getByRole('button', { name: 'Borrar esta ficha' }).click();
+    await expect(page.locator('.sis-error')).toContainText('escribir el documento');
+
+    await page.locator('#confirma').fill(CRUD_OTRO);
+    await page.getByRole('button', { name: 'Borrar esta ficha' }).click();
+    await expect(page).toHaveURL(/\/sistema\/pacientes\?borrado=1$/);
+    await expect(page.locator('.msj--bien')).toContainText('se borró');
+
+    const quedan = await conBase((sql) => sql`
+      SELECT 1 FROM paciente WHERE cedula_busca = ${soloDigitos(CRUD_OTRO)}`);
+    expect(quedan.length).toBe(0);
+  });
+
+  test('un paciente con historia no se borra: se corrige', async ({ page }) => {
+    await entrar(page, 'administracion');
+    await page.goto(`/sistema/pacientes/${paciente}`);
+    await expect(page.locator('.borrar')).toContainText('atenciones registradas');
+    await expect(page.getByRole('button', { name: 'Borrar esta ficha' })).toHaveCount(0);
+  });
+
+  test('el médico ve los datos pero no los edita ni los borra', async ({ page }) => {
+    await entrar(page, 'medico');
+    await page.goto(`/sistema/pacientes/${paciente}`);
+    await expect(page.locator('#nombre')).toHaveCount(0);
+    await expect(page.locator('.contacto')).toBeVisible();
+    await expect(page.locator('.borrar')).toHaveCount(0);
+
+    await page.goto('/sistema/pacientes/nuevo');
+    await expect(page).toHaveURL(/\/sistema\/sin-permiso/);
+  });
 });

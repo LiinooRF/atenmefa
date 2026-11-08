@@ -1,0 +1,371 @@
+---
+/**
+ * El campo del diagnóstico: un buscador de la CIE-10 que deja escribir.
+ *
+ * El cliente lo pidió en una frase: «un seleccionador de diagnóstico, y si
+ * es que se necesita escribir algo». Las dos mitades importan y la segunda
+ * tanto como la primera: un médico frente a un paciente no puede quedarse
+ * trabado porque el catálogo no tiene la palabra que él usa.
+ *
+ * Por eso esto NO es un <select>. Es un campo de texto normal —escribe lo
+ * que quiera y se guarda— con una lista que aparece debajo mientras teclea.
+ * Si elige de la lista, además del nombre viaja el código.
+ *
+ * LA REGLA QUE SOSTIENE TODO
+ *
+ * El código y el texto no se pueden separar nunca. Si el médico elige
+ * «Infección de vías urinarias (N39.0)» y después borra una letra, el
+ * código se va: lo que quedaría es un texto escrito a mano con el código de
+ * otra cosa, y eso termina impreso en la planilla de un seguro.
+ *
+ * Sin JavaScript sigue siendo un campo de texto que se llena a mano, que es
+ * exactamente lo que había antes.
+ */
+import type { Campo } from '../../sistema/historia';
+
+interface Props {
+  campo: Campo;
+  valor?: string;
+  /** El código que ya tenía, si se eligió de la lista. */
+  codigo?: string;
+}
+const { campo: c, valor = '', codigo = '' } = Astro.props;
+const id = `c-${c.clave}`;
+const pistaId = `${id}-pista`;
+---
+
+<div class:list={['campo', `campo--${c.ancho ?? 4}`]} data-dx>
+  <label for={id}>
+    {c.rotulo}
+    {c.exigido && <abbr title="Obligatorio para cerrar la atención">*</abbr>}
+  </label>
+
+  <div class="dx">
+    <input
+      type="text" id={id} name={c.clave} value={valor}
+      required={c.exigido} autocomplete="off" aria-describedby={pistaId}
+      role="combobox" aria-expanded="false" aria-autocomplete="list"
+      aria-controls={`${id}-lista`}
+    />
+    {/* El código viaja aparte y oculto. Se vacía solo en cuanto alguien
+        toca el texto: ver el script. */}
+    <input type="hidden" name={`${c.clave}_codigo`} id={`${id}-codigo`} value={codigo} />
+
+    <p class="dx__elegido" id={`${id}-elegido`} hidden={!codigo}>
+      <span class="dx__chapa cifra">{codigo}</span>
+      <button type="button" class="dx__quitar" id={`${id}-quitar`}>
+        Quitar el código
+      </button>
+    </p>
+
+    <ul class="dx__lista" id={`${id}-lista`} role="listbox" hidden></ul>
+    <p class="dx__nada" id={`${id}-nada`} hidden>
+      Nada en el catálogo con eso. Se guarda lo que escribió, sin código.
+    </p>
+  </div>
+
+  <span class="pista" id={pistaId}>
+    Escriba y elija del catálogo CIE-10 para que lleve su código. También
+    puede escribirlo a mano: se guarda igual.
+  </span>
+</div>
+
+<script>
+  /* Un solo control por pantalla, pero se busca por el atributo y no por un
+     id fijo para no atarse al nombre del campo. */
+  const caja = document.querySelector<HTMLElement>('[data-dx]');
+
+  if (caja) {
+    const texto = caja.querySelector<HTMLInputElement>('input[type="text"]')!;
+    const oculto = caja.querySelector<HTMLInputElement>('input[type="hidden"]')!;
+    const lista = caja.querySelector<HTMLUListElement>('.dx__lista')!;
+    const nada = caja.querySelector<HTMLParagraphElement>('.dx__nada')!;
+    const chapa = caja.querySelector<HTMLElement>('.dx__chapa')!;
+    const quitar = caja.querySelector<HTMLButtonElement>('.dx__quitar')!;
+
+    let reloj: ReturnType<typeof setTimeout> | undefined;
+    let pedido = 0;
+    let marcado = -1;
+    type Dx = { codigo: string; nombre: string; oficial: string; sexo: string | null; frecuente: boolean; usos: number };
+    let encontrados: Dx[] = [];
+
+    /* Lo que está elegido del catálogo, con el texto EXACTO que se puso en
+       el campo. Es lo único que permite saber si el texto se editó después:
+       si ya no coincide, el código dejó de corresponder y se va.
+
+       Arranca con lo que mandó el servidor: una recarga o un guardado que
+       rebota vuelven a pintar el nombre y el código, y el código tiene que
+       sobrevivir a eso. */
+    let elegido: { codigo: string; nombre: string } | null =
+      oculto.value ? { codigo: oculto.value, nombre: texto.value } : null;
+
+    /* Qué sexo tiene cargado el paciente, para avisar si el diagnóstico no
+       le corresponde. Se lee en el momento y no al cargar: el médico puede
+       llenar el sexo después del diagnóstico. */
+    const sexoDelPaciente = () =>
+      (document.getElementById('c-sexo') as HTMLSelectElement | null)?.value ?? '';
+
+    const mostrarCodigo = (codigo: string) => {
+      oculto.value = codigo;
+      chapa.textContent = codigo;
+      caja.querySelector<HTMLElement>('.dx__elegido')!.hidden = !codigo;
+    };
+
+    const cerrar = () => {
+      lista.hidden = true;
+      nada.hidden = true;
+      lista.replaceChildren();
+      texto.setAttribute('aria-expanded', 'false');
+      marcado = -1;
+    };
+
+    const elegir = (d: Dx) => {
+      /* Se guarda el nombre LEGIBLE y no el oficial en mayúsculas: es lo
+         que se imprime en el informe y lo que el médico acaba de leer. El
+         código es el que identifica, y viaja aparte. */
+      texto.value = d.nombre;
+      elegido = { codigo: d.codigo, nombre: d.nombre };
+      mostrarCodigo(d.codigo);
+      cerrar();
+      /* El formulario se guarda solo escuchando 'input', y poner el valor
+         desde el script no lo dispara. */
+      texto.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    const pintar = () => {
+      lista.replaceChildren();
+      const sexo = sexoDelPaciente();
+
+      encontrados.forEach((d, i) => {
+        const li = document.createElement('li');
+        li.setAttribute('role', 'option');
+        li.setAttribute('aria-selected', String(i === marcado));
+        if (i === marcado) li.dataset.marcado = '';
+
+        const nombre = document.createElement('span');
+        nombre.className = 'dx__nombre';
+        nombre.textContent = d.nombre;
+
+        const cod = document.createElement('span');
+        cod.className = 'dx__cod cifra';
+        cod.textContent = d.codigo;
+
+        li.append(cod, nombre);
+
+        if (d.frecuente) {
+          const m = document.createElement('em');
+          m.className = 'dx__marca';
+          m.textContent = 'frecuente';
+          li.append(m);
+        }
+
+        /* El aviso del sexo. No bloquea: el catálogo no trae la restricción
+           en todas las rúbricas, así que bloquear con un dato incompleto
+           dejaría afuera diagnósticos legítimos. */
+        if (d.sexo && sexo && d.sexo !== sexo) {
+          const ojo = document.createElement('em');
+          ojo.className = 'dx__ojo';
+          ojo.textContent = `catálogo: solo ${d.sexo.toLowerCase()}`;
+          li.append(ojo);
+        }
+
+        li.addEventListener('mousedown', (e) => { e.preventDefault(); elegir(d); });
+        lista.append(li);
+      });
+
+      lista.hidden = encontrados.length === 0;
+      texto.setAttribute('aria-expanded', String(encontrados.length > 0));
+    };
+
+    const buscar = async () => {
+      const mio = ++pedido;
+      try {
+        const r = await fetch(`/sistema/api/diagnosticos?q=${encodeURIComponent(texto.value.trim())}`);
+        if (!r.ok || mio !== pedido) return;   // llegó una respuesta vieja
+        const d = await r.json();
+        encontrados = d.diagnosticos ?? [];
+        marcado = -1;
+        pintar();
+        nada.hidden = encontrados.length > 0 || texto.value.trim().length < 3;
+      } catch {
+        /* Sin red no se dice nada: el campo sigue siendo de texto y lo que
+           se escriba se guarda. Un error acá no puede trabar la consulta. */
+        cerrar();
+      }
+    };
+
+    texto.addEventListener('input', () => {
+      /* Lo primero y lo más importante: si el texto ya no es el del
+         diagnóstico elegido, el código dejó de corresponder y se va. Un
+         código que dice una cosa al lado de un nombre que dice otra termina
+         impreso en la planilla de un seguro. */
+      if (elegido && texto.value !== elegido.nombre) {
+        elegido = null;
+        mostrarCodigo('');
+      }
+
+      /* Y se cierra la lista HASTA que lleguen los resultados de lo que
+         ahora dice el campo. Dejarla abierta mientras se teclea parece más
+         vivo y es una trampa: lo que está en pantalla es el resultado de
+         una búsqueda anterior, y quien le dé a un renglón elige algo que no
+         tiene nada que ver con lo que acabó de escribir. Entre tecla y
+         tecla no hay lista; apareciendo al parar de escribir, que es cuando
+         uno la mira.
+
+         Y se descarta lo que esté en vuelo: la búsqueda que disparó el foco
+         —con el campo todavía vacío— llegaba DESPUÉS de este cierre y
+         volvía a abrir la lista con los resultados de otra cosa. Cerrarla
+         sin invalidar la respuesta no alcanza. */
+      pedido++;
+      cerrar();
+      clearTimeout(reloj);
+      reloj = setTimeout(buscar, 250);
+    });
+
+    texto.addEventListener('focus', () => { if (!lista.children.length) buscar(); });
+    texto.addEventListener('blur', () => setTimeout(cerrar, 120));
+
+    texto.addEventListener('keydown', (e) => {
+      if (lista.hidden) return;
+      if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+        e.preventDefault();
+        marcado = e.key === 'ArrowDown'
+          ? Math.min(marcado + 1, encontrados.length - 1)
+          : Math.max(marcado - 1, 0);
+        pintar();
+        lista.children[marcado]?.scrollIntoView({ block: 'nearest' });
+      } else if (e.key === 'Enter' && marcado >= 0) {
+        e.preventDefault();   // no enviar el formulario con Enter acá
+        elegir(encontrados[marcado]);
+      } else if (e.key === 'Escape') {
+        cerrar();
+      }
+    });
+
+    /* Soltar el código y quedarse con el texto: pasa cuando el médico
+       encontró algo parecido pero no es eso, y prefiere escribirlo él. */
+    quitar.addEventListener('click', () => {
+      elegido = null;
+      mostrarCodigo('');
+      texto.focus();
+    });
+  }
+</script>
+
+<style>
+  .campo { display: flex; flex-direction: column; gap: 6px; grid-column: span 4; min-width: 0; }
+  label {
+    display: flex;
+    align-items: baseline;
+    gap: 6px;
+    font-size: var(--u-sm);
+    font-weight: 600;
+    color: var(--tinta-suave);
+  }
+  abbr { color: var(--rojo); text-decoration: none; font-weight: 700; }
+  .pista { font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  .dx { position: relative; }
+  .dx input[type='text'] {
+    width: 100%;
+    min-height: 44px;
+    padding: 9px 12px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background: var(--papel);
+    color: var(--tinta);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-base);
+  }
+  .dx input:hover { border-color: #bcc7dd; }
+  .dx input:focus { outline: 2px solid var(--azul-medio); border-color: var(--azul-medio); }
+
+  .dx__elegido { display: flex; align-items: center; gap: 10px; margin: 7px 0 0; }
+  /* Sin esto el display:flex le gana al [hidden] del navegador y la chapa
+     del código se quedaba en pantalla, vacía, después de soltarlo. */
+  .dx__elegido[hidden] { display: none; }
+  .dx__chapa {
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: var(--azul-tenue);
+    color: var(--azul);
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+  .dx__quitar {
+    min-height: 44px;
+    padding: 0;
+    border: 0;
+    background: none;
+    color: var(--tinta-tenue);
+    font: inherit;
+    font-size: var(--u-xs);
+    text-decoration: underline;
+    cursor: pointer;
+  }
+  .dx__quitar:hover { color: var(--rojo); }
+
+  /* La lista se superpone y no empuja el formulario: si corriera los campos
+     de abajo, el dedo tocaría otra cosa de la que apuntaba. */
+  .dx__lista {
+    position: absolute;
+    z-index: 20;
+    inset: calc(100% + 4px) 0 auto 0;
+    list-style: none;
+    margin: 0;
+    padding: 4px;
+    max-height: 46vh;
+    overflow-y: auto;
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: 10px;
+    box-shadow: 0 10px 30px rgb(11 15 69 / 0.14);
+  }
+  .dx__lista[hidden] { display: none; }
+
+  .dx__lista li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 4px 9px;
+    /* 44 px: se toca con el dedo, de pie y con la tablet en la mano. */
+    min-height: 44px;
+    padding: 8px 10px;
+    border-radius: 7px;
+    cursor: pointer;
+    font-size: var(--u-sm);
+    line-height: 1.35;
+  }
+  .dx__lista li:hover,
+  .dx__lista li[data-marcado] { background: var(--azul-tenue); }
+
+  .dx__cod {
+    flex: none;
+    font-weight: 700;
+    color: var(--azul);
+    font-size: var(--u-xs);
+    min-width: 3.4em;
+  }
+  .dx__nombre { flex: 1 1 14ch; min-width: 0; }
+  .dx__marca {
+    flex: none;
+    font-style: normal;
+    font-size: var(--u-xs);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--tinta-tenue);
+  }
+  .dx__ojo { flex: none; font-style: normal; font-size: var(--u-xs); color: #7a5200; }
+
+  .dx__nada { margin: 7px 0 0; font-size: var(--u-xs); color: var(--tinta-tenue); }
+  .dx__nada[hidden] { display: none; }
+
+  @media (min-width: 720px) {
+    .campo--1 { grid-column: span 1; }
+    .campo--2 { grid-column: span 2; }
+    .campo--3 { grid-column: span 3; }
+    .campo--4 { grid-column: span 4; }
+  }
+</style>

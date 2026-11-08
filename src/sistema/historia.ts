@@ -25,7 +25,10 @@ export type TipoCampo =
   | 'si-no'
   | 'cedula'
   | 'telefono'
-  | 'correo';
+  | 'correo'
+  /* Buscador del catálogo CIE-10 que además deja escribir a mano. Guarda
+     dos valores: el nombre en su clave y el código en `<clave>_codigo`. */
+  | 'diagnostico';
 
 export interface Campo {
   clave: string;
@@ -154,7 +157,11 @@ export const historia: readonly Seccion[] = [
     clave: 'diagnostico',
     titulo: 'Diagnóstico y tratamiento',
     campos: [
-      { clave: 'idx', rotulo: 'Diagnóstico', tipo: 'texto', exigido: true, ancho: 4 },
+      /* Buscador de la CIE-10, no un campo de texto suelto. Sigue
+         aceptando lo que el médico escriba —el cliente lo pidió
+         expresamente— y cuando elige del catálogo, el código viaja con el
+         nombre. Ver components/sistema/Diagnostico.astro. */
+      { clave: 'idx', rotulo: 'Diagnóstico', tipo: 'diagnostico', exigido: true, ancho: 4 },
       { clave: 'via', rotulo: 'Vía del tratamiento aplicado', tipo: 'opcion',
         opciones: ['Parenteral', 'Enteral', 'Sublingual', 'Tópico', 'Nebulización', 'Sutura', 'Sondaje', 'Otro'],
         ancho: 2 },

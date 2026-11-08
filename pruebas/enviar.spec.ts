@@ -140,6 +140,11 @@ test('el WhatsApp abre el chat con el mensaje puesto y sin dato clínico', async
   const texto = url.searchParams.get('text')!;
   expect(texto).toContain('Atenmefa');
   expect(texto).toContain(`N° ${CASO_NUMERO}`);
+  /* Con el nombre del paciente: el cliente lo pidió expresamente, y un
+     mensaje que arranca «Buenas, le escribimos de…» se lee como una cadena.
+     Va el primer nombre, que es lo único que se puede sacar sin adivinar de
+     un campo de texto libre con dos apellidos. */
+  expect(texto).toContain('Buenas, Envío.');
   /* Sin la dirección de verificación: esa página confirma que un papel es
      auténtico, no muestra el informe. Mandársela al paciente sería
      prometerle algo que no va a encontrar ahí. */

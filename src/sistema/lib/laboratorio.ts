@@ -231,6 +231,10 @@ export async function colaDelLaboratorio(opciones: { entregadas?: boolean } = {}
       aseguradora: esquema.atencion.aseguradora,
       paciente: esquema.paciente.nombre,
       cedula: esquema.paciente.cedula,
+      /* Para el botón de WhatsApp de la cola: recepción avisa desde acá, sin
+         tener que entrar a la orden. */
+      telefono: esquema.paciente.telefono,
+      whatsapp: esquema.paciente.whatsapp,
       registro: esquema.atencion.datos,
       examenes: sql<number>`(
         SELECT COUNT(*) FROM renglon r

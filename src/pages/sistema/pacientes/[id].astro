@@ -18,13 +18,17 @@
 import Sistema from '../../../layouts/Sistema.astro';
 import Icono from '../../../components/Icono.astro';
 import { exigir } from '../../../sistema/lib/guardia';
-import { comoSeLee } from '../../../sistema/lib/documento';
+import { comoSeLee, soloDigitos } from '../../../sistema/lib/documento';
 import { puede } from '../../../sistema/lib/permisos';
 import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
 import { dinero } from '../../../sistema/lib/cobro';
+import { saludoSuelto } from '../../../sistema/mensajes';
 import {
-  alergiaQueImporta, enlacesDeTelefono, fichaDePaciente, guardarContacto,
+  alergiaQueImporta, borrarPaciente, enlacesDeTelefono, fichaDePaciente,
+  guardarPaciente, puedeBorrarse,
 } from '../../../sistema/lib/pacientes';
+import { ROTULO, TIPOS, esTipo } from '../../../sistema/lib/documento';
+
 
 export const prerender = false;
 
@@ -43,35 +47,67 @@ let error = '';
 let aviso = '';
 /* Lo tecleado vuelve a la pantalla si rebota: nadie debería tener que
    escribir dos veces el mismo número. */
-let contactoEscrito: { telefono: string; whatsapp: string; correo: string } | null = null;
+type Escrito = {
+  nombre: string; tipoDoc: string; documento: string; sexo: string;
+  telefono: string; whatsapp: string; correo: string;
+};
+let escritoAntes: Escrito | null = null;
+
+/* En palabras y no con el nombre de la columna: el aviso decía "cambió
+   telefono, correo", sin tilde, que es como se llama el campo en la base y
+   no como se dice. */
+const COMO_SE_DICE: Record<string, string> = {
+  nombre: 'el nombre', documento: 'el documento', tipoDoc: 'el tipo de documento',
+  sexo: 'el sexo', telefono: 'el teléfono', whatsapp: 'el WhatsApp', correo: 'el correo',
+};
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
+  const accion = String(form.get('accion') ?? '');
 
-  if (String(form.get('accion') ?? '') === 'contacto') {
-    const escrito = {
+  if (accion === 'datos') {
+    const crudoTipo = String(form.get('tipo_doc') ?? 'cedula');
+    const escrito: Escrito = {
+      nombre: String(form.get('nombre') ?? ''),
+      tipoDoc: esTipo(crudoTipo) ? crudoTipo : 'cedula',
+      documento: String(form.get('documento') ?? ''),
+      sexo: String(form.get('sexo') ?? ''),
       telefono: String(form.get('telefono') ?? ''),
       whatsapp: String(form.get('whatsapp') ?? ''),
       correo: String(form.get('correo') ?? ''),
     };
     try {
-      const { cambios, cuantos } = await guardarContacto(id, escrito);
+      const { cambios, cuantos } = await guardarPaciente(id, escrito);
       if (cuantos > 0) {
-        await anotar(usuario.id, 'cambio_contacto', undefined, { paciente: id, cambios });
-        /* En palabras y no con el nombre de la columna: el aviso decía
-           "cambió telefono, correo", sin tilde, que es como se llama el
-           campo en la base y no como se dice. */
-        const comoSeDice: Record<string, string> = {
-          telefono: 'el teléfono', whatsapp: 'el WhatsApp', correo: 'el correo',
-        };
-        const lista = Object.keys(cambios).map((c) => comoSeDice[c] ?? c);
-        aviso = `Contacto guardado: cambió ${lista.join(', ')}.`;
+        await anotar(usuario.id, 'cambio_paciente', undefined, { paciente: id, cambios });
+        const lista = Object.keys(cambios).map((c) => COMO_SE_DICE[c] ?? c);
+        aviso = `Guardado: cambió ${lista.join(', ')}.`;
       } else {
         aviso = 'No cambió nada: estaba igual.';
       }
     } catch (e) {
-      error = e instanceof Error ? e.message : 'No se pudo guardar el contacto.';
-      contactoEscrito = escrito;
+      error = e instanceof Error ? e.message : 'No se pudieron guardar los datos.';
+      escritoAntes = escrito;
+    }
+  } else if (accion === 'borrar') {
+    /* Se exige escribir el documento, como en la anulación se exige el
+       motivo: es lo único que se borra de verdad en el sistema y un botón
+       suelto se aprieta sin querer. */
+    const confirma = String(form.get('confirma') ?? '').trim();
+    try {
+      const ficha = await fichaDePaciente(id);
+      if (!ficha) throw new Error('Ese paciente ya no está en el registro.');
+      if (soloDigitos(confirma) !== soloDigitos(ficha.paciente.cedula)
+          && confirma.toUpperCase() !== ficha.paciente.cedula.toUpperCase()) {
+        throw new Error('Para borrar hay que escribir el documento del paciente tal como aparece arriba.');
+      }
+      const borrado = await borrarPaciente(id);
+      await anotar(usuario.id, 'borro_paciente', undefined, {
+        paciente: id, nombre: borrado.nombre, documento: borrado.cedula,
+      });
+      return Astro.redirect('/sistema/pacientes?borrado=1');
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'No se pudo borrar la ficha.';
     }
   }
 }
@@ -91,11 +127,27 @@ const { paciente, atenciones, resumen, antecedentes, donde } = ficha;
 const escribe = puede(usuario.rol as string, 'escribir_historia');
 
 /* Lo tecleado vuelve si el guardado rebota; si no, lo que hay en la ficha. */
-const telefono = contactoEscrito?.telefono ?? paciente.telefono ?? '';
-const whatsapp = contactoEscrito?.whatsapp ?? paciente.whatsapp ?? '';
-const correo = contactoEscrito?.correo ?? paciente.correo ?? '';
+const enForma = {
+  nombre: escritoAntes?.nombre ?? paciente.nombre,
+  tipoDoc: escritoAntes?.tipoDoc ?? paciente.tipoDoc,
+  documento: escritoAntes?.documento ?? paciente.cedula,
+  sexo: escritoAntes?.sexo ?? paciente.sexo ?? '',
+  telefono: escritoAntes?.telefono ?? paciente.telefono ?? '',
+  whatsapp: escritoAntes?.whatsapp ?? paciente.whatsapp ?? '',
+  correo: escritoAntes?.correo ?? paciente.correo ?? '',
+};
 const puedeEditar = puede(usuario.rol as string, 'editar_paciente');
-const contacto = enlacesDeTelefono(paciente.telefono);
+/* Si la ficha se puede borrar, y si no, por qué no. Solo se pregunta a
+   quien puede hacerlo. */
+const borrable = puedeEditar ? await puedeBorrarse(id) : null;
+const recienCreado = Astro.url.searchParams.get('nuevo') === '1';
+/* El WhatsApp del paciente si dejó uno distinto, y si no el teléfono. El
+   enlace abre el chat con el saludo puesto y el nombre de la persona: lo
+   que sigue lo escribe quien está atendiendo. */
+const contacto = enlacesDeTelefono(
+  paciente.whatsapp ?? paciente.telefono,
+  saludoSuelto(paciente.nombre),
+);
 
 const alergias = antecedentes?.campos.find((a) => a.clave === 'alergias')?.valor ?? '';
 /* El enlace a la atención de donde salieron los antecedentes se resuelve
@@ -139,6 +191,13 @@ const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(pa
 
 <Sistema titulo={paciente.nombre}>
   <nav class="miga"><a href="/sistema/pacientes">Pacientes</a> <span>/</span> {paciente.nombre}</nav>
+
+  {recienCreado && (
+    <p class="msj msj--bien">
+      <Icono nombre="escudo" tam={18} />
+      Quedó registrado. Cuando venga, su atención se abre con estos datos ya cargados.
+    </p>
+  )}
 
   <header class="cab">
     <div class="cab__quien">
@@ -288,17 +347,58 @@ const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(pa
     </section>
 
     <section class="sis-tarjeta">
-      <h2>Contacto</h2>
+      <h2>{puedeEditar ? 'Datos del paciente' : 'Contacto'}</h2>
 
       {puedeEditar ? (
         <form method="post" class="tel">
-          <input type="hidden" name="accion" value="contacto" />
+          <input type="hidden" name="accion" value="datos" />
+
+          <div class="sis-campo">
+            <label for="nombre">Nombres y apellidos</label>
+            <input id="nombre" name="nombre" required autocomplete="off" value={enForma.nombre} />
+            <span class="pista">
+              Corregirlo cambia el encabezado de los documentos que se vuelvan a
+              imprimir. Lo que ya se imprimió queda como salió.
+            </span>
+          </div>
+
+          <div class="sis-campo sis-campo--par">
+            <span class="par">
+              <span class="par__uno">
+                <label for="tipo_doc">Documento</label>
+                <select id="tipo_doc" name="tipo_doc">
+                  {TIPOS.map((t) => (
+                    <option value={t} selected={enForma.tipoDoc === t}>{ROTULO[t]}</option>
+                  ))}
+                </select>
+              </span>
+              <span class="par__uno">
+                <label for="documento">Número</label>
+                <input id="documento" name="documento" required autocomplete="off"
+                       value={enForma.documento} />
+              </span>
+            </span>
+            <span class="pista">
+              Es con lo que el sistema reconoce a la persona. Si el número nuevo ya
+              es de otro paciente, el guardado se rechaza: juntar dos fichas se
+              hace a mano y con cuidado.
+            </span>
+          </div>
+
+          <div class="sis-campo">
+            <label for="sexo">Sexo</label>
+            <select id="sexo" name="sexo">
+              <option value="">—</option>
+              <option value="Femenino" selected={enForma.sexo === 'Femenino'}>Femenino</option>
+              <option value="Masculino" selected={enForma.sexo === 'Masculino'}>Masculino</option>
+            </select>
+          </div>
+
           <div class="sis-campo">
             <label for="telefono">Teléfono</label>
             <input
-              id="telefono" name="telefono" type="tel" value={telefono}
+              id="telefono" name="telefono" type="tel" value={enForma.telefono}
               inputmode="tel" autocomplete="off" placeholder="0414-8939176"
-              aria-invalid={error ? 'true' : undefined}
             />
             <span class="pista">
               Se puede dejar en blanco: un número equivocado es peor que ninguno.
@@ -307,7 +407,7 @@ const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(pa
           <div class="sis-campo">
             <label for="whatsapp">WhatsApp</label>
             <input
-              id="whatsapp" name="whatsapp" type="tel" value={whatsapp}
+              id="whatsapp" name="whatsapp" type="tel" value={enForma.whatsapp}
               inputmode="tel" autocomplete="off" placeholder="0414-8939176"
             />
             <span class="pista">Solo si es otro número. Vacío significa «use el teléfono».</span>
@@ -315,20 +415,20 @@ const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(pa
           <div class="sis-campo">
             <label for="correo">Correo</label>
             <input
-              id="correo" name="correo" type="email" value={correo}
+              id="correo" name="correo" type="email" value={enForma.correo}
               autocomplete="off" placeholder="nombre@correo.com"
             />
             <span class="pista">A donde se le manda el informe. Confirmarlo con el paciente.</span>
           </div>
           <button type="submit" class="sis-boton sis-boton--azul" name="guardar" value="1">
-            Guardar el contacto
+            Guardar los datos
           </button>
         </form>
       ) : (
         <dl class="contacto">
-          <div><dt>Teléfono</dt><dd>{telefono || '—'}</dd></div>
-          {whatsapp && <div><dt>WhatsApp</dt><dd>{whatsapp}</dd></div>}
-          <div><dt>Correo</dt><dd>{correo || '—'}</dd></div>
+          <div><dt>Teléfono</dt><dd>{enForma.telefono || '—'}</dd></div>
+          {enForma.whatsapp && <div><dt>WhatsApp</dt><dd>{enForma.whatsapp}</dd></div>}
+          <div><dt>Correo</dt><dd>{enForma.correo || '—'}</dd></div>
         </dl>
       )}
 
@@ -349,10 +449,46 @@ const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(pa
       )}
 
       <p class="pie">
-        El nombre y la cédula salen de cada atención firmada y no se editan acá. Si están
-        mal, se corrigen en la atención, que es donde quedó la firma.
+        {puedeEditar
+          ? 'Lo que se corrija acá queda en bitácora, con lo que decía antes. Lo que ya se imprimió o se firmó no cambia.'
+          : 'Los datos del paciente los corrige recepción o administración.'}
       </p>
     </section>
+
+    {/* Borrar una ficha es lo único que se borra de verdad en todo el
+        sistema, y se puede porque una ficha sin atenciones no tiene un solo
+        dato clínico adentro: es un error de tipeo con nombre. Con historia
+        no se borra nunca —se corrige— y la tarjeta lo dice en vez de
+        esconder el botón sin explicación. */}
+    {borrable && (
+      <section class="sis-tarjeta borrar">
+        <h2>Borrar la ficha</h2>
+        {borrable.puede ? (
+          <>
+            <p class="suelto">
+              No tiene ninguna atención, así que no hay nada clínico adentro: se
+              puede borrar. Sirve para la ficha que quedó de un número mal
+              tecleado. No se puede deshacer.
+            </p>
+            <form method="post" class="borrar__forma">
+              <input type="hidden" name="accion" value="borrar" />
+              <div class="sis-campo">
+                <label for="confirma">
+                  Escriba el documento del paciente para confirmar
+                </label>
+                <input id="confirma" name="confirma" required autocomplete="off"
+                       placeholder={paciente.cedula} />
+              </div>
+              <button type="submit" class="sis-boton sis-boton--suave anular">
+                Borrar esta ficha
+              </button>
+            </form>
+          </>
+        ) : (
+          <p class="suelto">{borrable.motivo}</p>
+        )}
+      </section>
+    )}
   </div>
 
   <section class="historial">
@@ -520,6 +656,17 @@ const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(pa
 
   .suelto { font-size: var(--u-sm); color: var(--tinta-tenue); }
   .suelto--nota { margin-top: 12px; }
+
+  /* Los dos campos del documento, uno al lado del otro: se copian del mismo
+     renglón del papel. */
+  .par { display: grid; gap: 10px; }
+  @media (min-width: 440px) { .par { grid-template-columns: 1fr 1.4fr; } }
+  .par__uno { display: flex; flex-direction: column; gap: 6px; min-width: 0; }
+
+  .borrar { margin-top: 16px; border-color: #e7c9cb; }
+  .borrar h2 { color: var(--rojo); }
+  .borrar__forma { display: grid; gap: 12px; margin-top: 14px; justify-items: start; }
+  .borrar__forma .sis-campo { width: 100%; max-width: 32ch; }
   .suelto--vacio { text-align: center; padding-block: 36px; }
   .suelto--vacio .sis-boton { margin-top: 16px; }
 

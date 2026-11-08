@@ -63,6 +63,9 @@ const MENU: Bloque[] = [
   ] },
   { texto: 'Administración', icono: 'escudo', entradas: [
     { href: '/sistema/usuarios', texto: 'Cuentas', permiso: 'administrar_usuarios' },
+    /* Acá y no en Cobros: es mantenimiento de un catálogo clínico, no
+       tiene nada que ver con la plata. */
+    { href: '/sistema/diagnosticos', texto: 'Diagnósticos frecuentes', permiso: 'editar_catalogo' },
     { href: '/sistema/bitacora', texto: 'Bitácora de accesos', permiso: 'ver_bitacora' },
   ] },
 ];

@@ -45,6 +45,50 @@ licenciado va a colocar, de esos exámenes, los resultados».
   médico sí pidió en su consulta queda colgado de esa consulta, y el resultado
   vuelve ahí: es `atencion.origen_id`.
 
+## El diagnóstico
+
+El campo del diagnóstico es un buscador del catálogo **CIE-10 de la OMS**
+—12.551 rúbricas vigentes— que además deja escribir a mano. Las dos mitades
+las pidió el cliente y la segunda importa tanto como la primera: un médico
+frente a un paciente no puede quedarse trabado porque el catálogo no tiene
+la palabra que él usa.
+
+- El catálogo sale del **CEMECE / DGIS de México** (abril 2024), que es el
+  centro colaborador de la OMS para la CIE en español. No es la CIE-10-ES
+  española ni la ICD-10-CM estadounidense: esas tienen códigos que no
+  coinciden con los que pide una aseguradora venezolana. Ningún código está
+  escrito a mano; `base/011-diagnosticos.sql` se generó leyendo ese archivo.
+- Elegir del catálogo guarda el nombre **y** el código. **El código y el
+  texto no se separan nunca**: si el texto se edita a mano, el código se va.
+  Un código que dice una cosa al lado de un nombre que dice otra termina
+  impreso en la planilla de un seguro, y es la única manera en que esta
+  pieza puede hacer daño.
+- El código sale impreso en el informe, que es para lo que sirve codificar.
+- Administración deja arriba los más comunes en `/sistema/diagnosticos`.
+  **No hace falta marcar nada para que sirva**: lo que no esté marcado se
+  ordena por lo que este centro ya usó. Ahí abajo está también lo que se
+  escribió a mano sin código, que es la lista de candidatos a codificar.
+- La restricción de sexo que trae el catálogo se usa para **avisar**, no
+  para bloquear: no viene en todas las rúbricas, y bloquear con un dato
+  incompleto dejaría afuera diagnósticos legítimos.
+
+## El paciente: las cuatro operaciones
+
+Administración y recepción lo crean, lo corrigen y lo borran. Tres límites,
+y los tres para que el registro pueda mirarse a los ojos dentro de cinco
+años:
+
+- **se crea** sin abrirle una atención, en `/sistema/pacientes/nuevo`. Para
+  anotar a quien llamó por teléfono sin inventarle una consulta;
+- **se corrige** nombre, documento, sexo y contacto, y todo queda en
+  bitácora con lo que decía antes. Lo que NO se hace es **fusionar**: si el
+  documento nuevo ya es de otra persona, el guardado se rechaza y se dice de
+  quién es. Juntar dos fichas se hace a mano y con cuidado;
+- **se borra** solo a quien no tiene ni una atención, y escribiendo su
+  documento para confirmar. Es lo único que se borra de verdad en todo el
+  sistema, y se puede porque una ficha sin atenciones no tiene un solo dato
+  clínico adentro: es un error de tipeo con nombre.
+
 ## Decisiones que ya están tomadas
 
 **Los campos clínicos van en `jsonb`, no en columnas.** Son sesenta y pico,
@@ -93,6 +137,10 @@ que se puede corregir ahí mismo.
 4. Las plantillas Excel reales de cada aseguradora.
 5. Lista de servicios con precio, laboratorio incluido.
 6. Cuántos usuarios y quiénes, con su colegiatura.
+7. ¿Recepción ve el cierre del mes? Hoy cobra pero no ve el consolidado.
+8. ¿Los diagnósticos frecuentes los marca solo administración? Hoy sí,
+   porque fue lo que pidió; el médico es quien de verdad sabe cuáles son, y
+   dárselo es una línea en la tabla de permisos.
 
 ## Cómo correr las pruebas
 

@@ -298,7 +298,15 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
             {s.campos.map((c) => (
               <div class="ficha__fila">
                 <dt>{c.rotulo}</dt>
-                <dd>{datos[c.clave]}{c.unidad && <small> {c.unidad}</small>}</dd>
+                <dd>
+                  {datos[c.clave]}
+                  {/* El código CIE-10, cuando el diagnóstico se eligió del
+                      catálogo. Escrito a mano va el texto solo. */}
+                  {c.clave === 'idx' && datos.idx_codigo && (
+                    <span class="codigo cifra">{datos.idx_codigo}</span>
+                  )}
+                  {c.unidad && <small> {c.unidad}</small>}
+                </dd>
               </div>
             ))}
           </dl>
@@ -401,6 +409,16 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
 </Sistema>
 
 <style>
+  .codigo {
+    margin-left: 7px;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--azul-tenue);
+    color: var(--azul);
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+
   .pedidos { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
   .pedidos li {
     padding: 9px 0;

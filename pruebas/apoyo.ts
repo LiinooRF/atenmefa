@@ -70,8 +70,8 @@ export const CORRIDA = String(Date.now()).slice(-4);
    entre tablero/cierre.
    Series en uso: 1 atencion · 2 paciente · 3 cobro · 4 cierre · 5 documento
    · 6 responsivo · 7 atajos · 8 pacientes · 9 permisos · 10 puerta
-   · 11 tablero · 12 verificacion · 13 laboratorio. El siguiente archivo que
-   necesite cédulas toma el 14. */
+   · 11 tablero · 12 verificacion · 13 laboratorio · 14 enviar
+   · 15 diagnosticos. El siguiente archivo que necesite cédulas toma el 16. */
 export function cedulaDePrueba(archivo: number, n = 0) {
   const serie = `99${archivo}${CORRIDA}${n}`;
   return `V-${serie.slice(0, 2)}.${serie.slice(2, 5)}.${serie.slice(5)}`;
@@ -313,7 +313,7 @@ export async function crearBorrador(page: Page, campos: Record<string, string>) 
  * Cerrar una atención solo se ofrece en el último paso: antes confunde.
  * El médico llega ahí avanzando; la prueba, saltando al último.
  */
-async function irAlUltimoPaso(page: Page) {
+export async function irAlUltimoPaso(page: Page) {
   const pasos = await page.locator('[data-ir]').count();
   if (pasos) await page.locator(`[data-ir="${pasos - 1}"]`).click();
 }

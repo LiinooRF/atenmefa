@@ -25,6 +25,8 @@ const corte = exigir(Astro, 'ver_pacientes');
 if (corte) return corte;
 
 const escribe = puede(Astro.locals.usuario?.rol as string, 'escribir_historia');
+const registra = puede(Astro.locals.usuario?.rol as string, 'editar_paciente');
+const borrado = Astro.url.searchParams.get('borrado') === '1';
 
 const p = Astro.url.searchParams;
 const busca = (p.get('q') ?? '').trim();
@@ -77,16 +79,32 @@ const hasta = Math.min(listado.pagina * POR_PAGINA, listado.total);
         {busca
           ? `${numero(listado.total)} ${listado.total === 1 ? 'coincide' : 'coinciden'} con «${busca}».`
           : `${numero(listado.total)} ${listado.total === 1 ? 'persona' : 'personas'} en el registro.`}
-        {' '}El paciente se registra solo, con su primera atención.
+        {' '}Nace con su primera atención, o se registra a mano desde acá.
       </p>
     </div>
-    {escribe && (
-      <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">
-        <Icono nombre="mas" tam={19} />
-        Nueva atención
-      </a>
-    )}
+    <div class="cab__acciones">
+      {registra && (
+        <a class="sis-boton sis-boton--primario" href="/sistema/pacientes/nuevo">
+          <Icono nombre="mas" tam={19} />
+          Nuevo paciente
+        </a>
+      )}
+      {escribe && (
+        <a class:list={['sis-boton', registra ? 'sis-boton--suave' : 'sis-boton--primario']}
+           href="/sistema/atencion/nueva">
+          <Icono nombre="estetoscopio" tam={19} />
+          Nueva atención
+        </a>
+      )}
+    </div>
   </header>
+
+  {borrado && (
+    <p class="msj--bien">
+      <Icono nombre="escudo" tam={18} />
+      La ficha se borró. No tenía ninguna atención cargada.
+    </p>
+  )}
 
   <form class="buscador" method="get">
     <div class="buscador__caja">
@@ -207,6 +225,22 @@ const hasta = Math.min(listado.pagina * POR_PAGINA, listado.total);
 </Sistema>
 
 <style>
+  .cab__acciones { display: flex; flex-wrap: wrap; gap: 9px; }
+
+  .msj--bien {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-top: 16px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+    font-size: var(--u-sm);
+  }
+  .msj--bien :global(svg) { flex: none; margin-top: 1px; }
+
   .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
   .cab h1 { font-size: var(--u-2xl); }
   .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 68ch; }

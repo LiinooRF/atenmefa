@@ -5,12 +5,15 @@
  * sin tocar esta pantalla.
  */
 import type { Campo } from '../../sistema/historia';
+import Diagnostico from './Diagnostico.astro';
 
 interface Props {
   campo: Campo;
   valor?: string;
+  /** Solo para el campo del diagnóstico: su código CIE-10. */
+  codigo?: string;
 }
-const { campo: c, valor = '' } = Astro.props;
+const { campo: c, valor = '', codigo = '' } = Astro.props;
 const id = `c-${c.clave}`;
 const pistaId = c.pista ? `${id}-pista` : undefined;
 const comun = {
@@ -21,6 +24,12 @@ const comun = {
 };
 ---
 
+{/* El diagnóstico no es un campo más: es un buscador del catálogo CIE-10
+    que además deja escribir a mano, y lleva su propio código en un segundo
+    valor. Vive en su componente para no llenar éste de excepciones. */}
+{c.tipo === 'diagnostico' ? (
+  <Diagnostico campo={c} valor={valor} codigo={codigo} />
+) : (
 <div class:list={['campo', `campo--${c.ancho ?? 2}`]}>
   <label for={id}>
     {c.rotulo}
@@ -66,6 +75,7 @@ const comun = {
 
   {c.pista && <span class="pista" id={pistaId}>{c.pista}</span>}
 </div>
+)}
 
 <style>
   .campo { display: flex; flex-direction: column; gap: 6px; grid-column: span 4; min-width: 0; }

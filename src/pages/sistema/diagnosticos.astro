@@ -1,0 +1,306 @@
+---
+/**
+ * Los diagnósticos más comunes del centro.
+ *
+ * Es la otra mitad de lo que el cliente pidió: «que desde el panel se
+ * puedan seleccionar los más comunes y aparezcan de primero». El catálogo
+ * CIE-10 completo son doce mil rúbricas y no se toca; acá se elige el
+ * puñado que el médico escribe todos los días.
+ *
+ * NO HACE FALTA MARCAR NADA PARA QUE SIRVA
+ *
+ * Lo que no esté marcado se ordena por lo que este centro ya usó. El día
+ * que se estrena, con la lista de marcados vacía, el campo del diagnóstico
+ * ya pone arriba lo que de verdad se escribe. Marcar es para adelantarse a
+ * eso, no para que empiece a funcionar.
+ *
+ * Y abajo está lo que se escribió a mano sin elegir del catálogo. Esa lista
+ * no es un reproche —escribir a mano está permitido a propósito— es la
+ * lista de candidatos: si algo se escribió veinte veces, le falta su
+ * código.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { anotar } from '../../sistema/lib/atenciones';
+import {
+  buscar, desmarcar, escritosAMano, marcados, marcar, mover,
+} from '../../sistema/lib/diagnosticos';
+import { comoSeLee, nombreDelCapitulo } from '../../sistema/cie10';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'editar_catalogo');
+if (corte) return corte;
+
+const usuario = Astro.locals.usuario!;
+let error = '';
+let aviso = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const accion = String(form.get('accion') ?? '');
+  const codigo = String(form.get('codigo') ?? '');
+
+  try {
+    if (accion === 'marcar') {
+      const d = await marcar(codigo, usuario.id);
+      await anotar(usuario.id, 'diagnostico', undefined, { accion: 'marco', codigo: d.codigo });
+      aviso = `${comoSeLee(d.nombre)} (${d.codigo}) queda entre los frecuentes.`;
+    } else if (accion === 'desmarcar') {
+      const d = await desmarcar(codigo, usuario.id);
+      await anotar(usuario.id, 'diagnostico', undefined, { accion: 'desmarco', codigo: d.codigo });
+      aviso = `${comoSeLee(d.nombre)} (${d.codigo}) sale de los frecuentes. Sigue en el catálogo.`;
+    } else if (accion === 'arriba' || accion === 'abajo') {
+      await mover(codigo, accion);
+    }
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo cambiar la lista.';
+  }
+}
+
+const busca = (Astro.url.searchParams.get('q') ?? '').trim();
+const frecuentes = await marcados();
+/* El buscador solo se consulta si hay algo escrito: con la búsqueda vacía
+   devolvería la cabeza de la lista, que es justo lo que ya está arriba. */
+const encontrados = busca ? await buscar(busca, 40) : [];
+const aMano = await escritosAMano();
+const yaEsta = new Set(frecuentes.map((d) => d.codigo));
+---
+
+<Sistema titulo="Diagnósticos">
+  <div class="cab">
+    <div>
+      <h1>Diagnósticos frecuentes</h1>
+      <p class="cab__nota">
+        Los que se marcan acá salen primero cuando el médico escribe el
+        diagnóstico. El catálogo CIE-10 completo está detrás del buscador.
+      </p>
+    </div>
+  </div>
+
+  {error && <p class="sis-error msj"><Icono nombre="escudo" tam={18} />{error}</p>}
+  {aviso && <p class="msj msj--bien"><Icono nombre="escudo" tam={18} />{aviso}</p>}
+
+  <section class="sis-tarjeta">
+    <h2>Buscar en el catálogo</h2>
+    <form class="busca" method="get">
+      <div class="busca__campo">
+        <Icono nombre="latido" tam={18} />
+        <input
+          type="search" name="q" value={busca} autofocus
+          placeholder="Nombre o código: infección urinaria, I10, diabetes"
+          aria-label="Buscar un diagnóstico"
+        />
+      </div>
+      <button type="submit" class="sis-boton sis-boton--azul">Buscar</button>
+      {busca && <a class="sis-boton sis-boton--suave" href="/sistema/diagnosticos">Limpiar</a>}
+    </form>
+
+    {busca && (
+      encontrados.length === 0 ? (
+        <p class="vacio">Nada en el catálogo con «{busca}».</p>
+      ) : (
+        <ul class="hallados">
+          {encontrados.map((d) => (
+            <li>
+              <span class="hallados__cod cifra">{d.codigo}</span>
+              <span class="hallados__que">
+                <strong>{comoSeLee(d.nombre)}</strong>
+                <small>
+                  {nombreDelCapitulo(d.capitulo)}
+                  {d.sexo && ` · solo ${d.sexo.toLowerCase()}`}
+                  {d.usos > 0 && ` · usado ${d.usos} ${d.usos === 1 ? 'vez' : 'veces'}`}
+                </small>
+              </span>
+              {yaEsta.has(d.codigo) ? (
+                <span class="hallados__ya">Ya está arriba</span>
+              ) : (
+                <form method="post" class="enlinea">
+                  <input type="hidden" name="accion" value="marcar" />
+                  <input type="hidden" name="codigo" value={d.codigo} />
+                  <button type="submit" class="sis-boton sis-boton--suave">
+                    <Icono nombre="mas" tam={17} />
+                    Dejar arriba
+                  </button>
+                </form>
+              )}
+            </li>
+          ))}
+        </ul>
+      )
+    )}
+  </section>
+
+  <section class="sis-tarjeta">
+    <h2>Los que salen primero <span class="cuantos">{frecuentes.length}</span></h2>
+
+    {frecuentes.length === 0 ? (
+      <p class="vacio">
+        Todavía no hay ninguno marcado, y el campo del diagnóstico funciona
+        igual: mientras esta lista esté vacía se ordena por lo que el centro
+        ya escribió. Marcar es para adelantarse a eso.
+      </p>
+    ) : (
+      <ol class="orden">
+        {frecuentes.map((d, i) => (
+          <li>
+            <span class="orden__n cifra">{i + 1}</span>
+            <span class="orden__que">
+              <strong>{comoSeLee(d.nombre)}</strong>
+              <small>
+                <span class="cifra">{d.codigo}</span>
+                {d.usos > 0 && ` · usado ${d.usos} ${d.usos === 1 ? 'vez' : 'veces'}`}
+              </small>
+            </span>
+            <span class="orden__acciones">
+              <form method="post" class="enlinea">
+                <input type="hidden" name="codigo" value={d.codigo} />
+                <button type="submit" name="accion" value="arriba"
+                        class="mover" disabled={i === 0} aria-label={`Subir ${comoSeLee(d.nombre)}`}>↑</button>
+                <button type="submit" name="accion" value="abajo"
+                        class="mover" disabled={i === frecuentes.length - 1}
+                        aria-label={`Bajar ${comoSeLee(d.nombre)}`}>↓</button>
+              </form>
+              <form method="post" class="enlinea">
+                <input type="hidden" name="accion" value="desmarcar" />
+                <input type="hidden" name="codigo" value={d.codigo} />
+                <button type="submit" class="sis-boton sis-boton--suave quitar">Quitar</button>
+              </form>
+            </span>
+          </li>
+        ))}
+      </ol>
+    )}
+  </section>
+
+  {aMano.length > 0 && (
+    <section class="sis-tarjeta">
+      <h2>Escritos a mano, sin código</h2>
+      <p class="cab__nota">
+        El médico puede escribir el diagnóstico a mano y está bien que pueda.
+        Pero estos son los que más se repiten sin código: búsquelos arriba y
+        déjelos entre los frecuentes, y la próxima vez salen con su CIE-10.
+      </p>
+      <ul class="mano">
+        {aMano.map((m) => (
+          <li>
+            <span>{m.texto}</span>
+            <a href={`/sistema/diagnosticos?q=${encodeURIComponent(m.texto)}`}>
+              Buscarlo
+            </a>
+            <em>{m.veces} {m.veces === 1 ? 'vez' : 'veces'}</em>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+</Sistema>
+
+<style>
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 76ch; line-height: 1.5; }
+
+  .msj { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; font-size: var(--u-sm); }
+  .msj--bien {
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+  }
+
+  .sis-tarjeta { margin-top: 18px; }
+  .sis-tarjeta h2 { display: flex; align-items: center; gap: 10px; font-size: var(--u-lg); }
+  .cuantos {
+    padding: 2px 9px;
+    border-radius: 999px;
+    background: var(--azul-tenue);
+    color: var(--azul);
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+
+  .busca { display: flex; flex-wrap: wrap; gap: 9px; margin: 14px 0; }
+  .busca__campo {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    flex: 1 1 260px;
+    min-width: 0;
+    padding: 0 14px;
+    background: var(--papel);
+    border: 1px solid var(--linea);
+    border-radius: var(--radio-sm);
+  }
+  .busca__campo :global(svg) { color: var(--tinta-tenue); flex: none; }
+  .busca__campo input { flex: 1; min-width: 0; border: 0; background: none; font: inherit; min-height: 46px; outline: none; }
+
+  .vacio { font-size: var(--u-sm); color: var(--tinta-tenue); line-height: 1.55; max-width: 72ch; }
+
+  .hallados, .orden, .mano { list-style: none; margin: 0; padding: 0; }
+  .hallados li, .orden li {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 0;
+    border-top: 1px solid var(--linea-tenue);
+  }
+  .hallados li:first-child, .orden li:first-child { border-top: 0; }
+
+  .hallados__cod, .orden__n {
+    display: grid;
+    place-items: center;
+    min-width: 46px;
+    min-height: 34px;
+    padding: 0 8px;
+    border-radius: 9px;
+    background: var(--azul-tenue);
+    color: var(--azul);
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+
+  .hallados__que, .orden__que { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+  .hallados__que strong, .orden__que strong { font-size: var(--u-sm); font-weight: 600; }
+  .hallados__que small, .orden__que small {
+    font-size: var(--u-xs);
+    color: var(--tinta-tenue);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .hallados__ya { font-size: var(--u-xs); color: var(--tinta-tenue); white-space: nowrap; }
+
+  .enlinea { display: flex; gap: 5px; align-items: center; }
+  .orden__acciones { display: flex; flex-wrap: wrap; gap: 7px; justify-content: flex-end; }
+
+  .mover {
+    width: 44px;
+    height: 44px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background: var(--papel);
+    color: var(--azul);
+    font-size: 1rem;
+    cursor: pointer;
+  }
+  .mover:hover:not(:disabled) { border-color: var(--azul); }
+  .mover:disabled { opacity: 0.35; cursor: default; }
+  .quitar { color: var(--rojo); }
+
+  .mano li {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: baseline;
+    gap: 10px;
+    padding: 9px 0;
+    border-top: 1px solid var(--linea-tenue);
+    font-size: var(--u-sm);
+  }
+  .mano li:first-child { border-top: 0; }
+  .mano li > span { flex: 1 1 16ch; min-width: 0; }
+  .mano li a { font-size: var(--u-xs); }
+  .mano li em { font-style: normal; font-size: var(--u-xs); color: var(--tinta-tenue); }
+</style>

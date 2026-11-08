@@ -9,10 +9,11 @@
  *
  * Dos decisiones mandan sobre este archivo:
  *
- *   1. El paciente no se crea ni se borra acá. Nace con su primera atención
- *      (pacienteDe en atenciones.ts) y lo único editable es el teléfono: el
- *      nombre y la cédula vienen firmados en cada historia y corregirlos
- *      desde el registro sería pisar el historial sin dejar rastro.
+ *   1. El paciente se crea, se corrige y —solo si no tiene ni una atención—
+ *      se borra desde acá. Lo pidió el cliente para administración y
+ *      recepción, que es la mitad de su trabajo. Lo que NO se hace es
+ *      juntar dos fichas en silencio, ni borrar a alguien con historia: ver
+ *      el bloque de "Crear, corregir y borrar" al final del archivo.
  *   2. Las cuentas no mezclan monedas, igual que en el cobro. El total de
  *      lo que se le facturó a una persona en diez años sigue siendo una
  *      cuenta por moneda; sumar dólares con bolívares daría un número que
@@ -24,10 +25,14 @@
  */
 import { eq, sql, type SQL } from 'drizzle-orm';
 import { bd, esquema } from './base';
-import type { TipoDocumento } from './documento';
+import {
+  ROTULO as ROTULO_DOC, alcanza as alcanzaDocumento, esTipo as esTipoDocumento,
+  llaveDe as llaveDeDocumento, type TipoDocumento,
+} from './documento';
 import { esIdentificador, normalizar, soloDigitos } from './atenciones';
 import { resumir, type CuentaPorMoneda } from './cobro';
 import { correoUsable } from './correo';
+import { enlaceDeWhatsApp, esCelular, paraWhatsApp } from './telefono';
 import { historia } from '../historia';
 
 /** Pacientes por página. De a cincuenta se desplaza una vez y se ve todo. */
@@ -441,9 +446,6 @@ export async function fichaDePaciente(id: string): Promise<Ficha | null> {
    Llamar y escribir.
    ------------------------------------------------------------------ */
 
-/** Los cinco prefijos de celular que se usan en Venezuela. */
-const MOVILES = ['412', '414', '416', '424', '426'];
-
 /**
  * Los enlaces de llamada y de WhatsApp de un teléfono tecleado a mano.
  *
@@ -453,23 +455,28 @@ const MOVILES = ['412', '414', '416', '424', '426'];
  * confianza; un botón que lleva a una conversación que no existe es peor
  * que no tener botón.
  */
-export function enlacesDeTelefono(telefono: string | null | undefined) {
+export function enlacesDeTelefono(
+  telefono: string | null | undefined,
+  /* El mensaje predeterminado, si hay algo que decirle. Sin él el enlace
+     abre el chat vacío. */
+  mensaje?: string,
+) {
   const digitos = soloDigitos(telefono ?? '');
   if (digitos.length < 7) return null;
 
-  const nacional =
-    digitos.length === 12 && digitos.startsWith('58') ? digitos.slice(2)
-    : digitos.length === 11 && digitos.startsWith('0') ? digitos.slice(1)
-    : digitos.length === 10 ? digitos
-    : null;
-
-  const esMovil = nacional !== null && MOVILES.includes(nacional.slice(0, 3));
+  /* La normalización vive en lib/telefono.ts y es una sola: acá había una
+     copia, y dos copias de la misma regla se separan el primer día que
+     alguien corrige una. */
+  const internacional = paraWhatsApp(telefono);
+  const esMovil = esCelular(telefono);
 
   return {
     /* Con el 58 adelante hace falta el + para que la operadora lo marque
        como internacional; el número local se marca tal cual se escribió. */
     llamar: digitos.startsWith('58') && digitos.length === 12 ? `tel:+${digitos}` : `tel:${digitos}`,
-    whatsapp: esMovil ? `https://wa.me/58${nacional}` : null,
+    whatsapp: esMovil && internacional
+      ? (mensaje ? enlaceDeWhatsApp(internacional, mensaje) : `https://wa.me/${internacional}`)
+      : null,
     esMovil,
   };
 }
@@ -487,28 +494,7 @@ export async function guardarContacto(
 ) {
   if (!esIdentificador(id)) throw new Error('Ese paciente ya no está en el registro.');
 
-  /* Vacío se acepta a propósito, en los tres: un número equivocado es peor
-     que ninguno, y el que contesta la llamada equivocada también es un
-     paciente. Un correo ajeno, peor todavía: ahí va un informe médico. */
-  const numero = (texto: string, cual: string) => {
-    const digitos = soloDigitos(texto);
-    if (texto && (digitos.length < 7 || digitos.length > 15)) {
-      throw new Error(`El ${cual} tiene que tener entre 7 y 15 dígitos, por ejemplo 0414-8939176.`);
-    }
-    if (texto && !/^[+\d\s().-]+$/.test(texto)) {
-      throw new Error(`El ${cual} lleva solo números, espacios y los signos + ( ) - y punto.`);
-    }
-    return texto || null;
-  };
-
-  const telefono = numero(String(bruto.telefono ?? '').trim(), 'teléfono');
-  const whatsapp = numero(String(bruto.whatsapp ?? '').trim(), 'WhatsApp');
-
-  const correoTexto = String(bruto.correo ?? '').trim().toLowerCase();
-  if (correoTexto && !correoUsable(correoTexto)) {
-    throw new Error('Ese correo no parece válido. Tiene que ser del tipo nombre@correo.com.');
-  }
-  const correo = correoTexto || null;
+  const contacto = revisarContacto(bruto);
 
   const [antes] = await bd
     .select({
@@ -522,17 +508,286 @@ export async function guardarContacto(
 
   if (!antes) throw new Error('Ese paciente ya no está en el registro.');
 
-  await bd
-    .update(esquema.paciente)
-    .set({ telefono, whatsapp, correo })
-    .where(eq(esquema.paciente.id, id));
+  await bd.update(esquema.paciente).set(contacto).where(eq(esquema.paciente.id, id));
 
   /* Se devuelve qué cambió de verdad, no todo: en bitácora, una línea que
      dice "guardó el contacto" sin decir qué movió no sirve para nada. */
   const cambios: Record<string, { antes: string | null; ahora: string | null }> = {};
-  if (antes.telefono !== telefono) cambios.telefono = { antes: antes.telefono, ahora: telefono };
-  if (antes.whatsapp !== whatsapp) cambios.whatsapp = { antes: antes.whatsapp, ahora: whatsapp };
-  if (antes.correo !== correo) cambios.correo = { antes: antes.correo, ahora: correo };
+  for (const clave of ['telefono', 'whatsapp', 'correo'] as const) {
+    if (antes[clave] !== contacto[clave]) {
+      cambios[clave] = { antes: antes[clave], ahora: contacto[clave] };
+    }
+  }
 
   return { cambios, cuantos: Object.keys(cambios).length };
+}
+
+/* ------------------------------------------------------------------
+   Crear, corregir y borrar.
+   ------------------------------------------------------------------
+
+   El cliente lo pidió explícito: administración y recepción tienen las
+   cuatro operaciones sobre el paciente. Hasta acá el paciente solo nacía
+   con su primera atención, y lo único editable era el contacto.
+
+   Tres límites, y los tres por la misma razón —el registro tiene que poder
+   mirarse a los ojos dentro de cinco años—:
+
+     · el DOCUMENTO se corrige, pero no se fusiona. Si el número nuevo ya es
+       de otra persona, la operación se rechaza y se dice de quién es. Mover
+       las atenciones de una ficha a otra y elegir qué nombre gana es otra
+       cosa, y hacerla en silencio es como se corrompe un registro;
+     · lo que se corrige queda en bitácora, con lo que decía antes;
+     · se BORRA solo a quien no tiene ni una atención. Un paciente con
+       historia no se borra nunca: se corrige. Lo que esto resuelve es el
+       error de tipeo que crea una persona que no existe, que en una
+       recepción apurada pasa el primer día.
+   ------------------------------------------------------------------ */
+
+export interface DatosDeIdentidad {
+  nombre: unknown;
+  tipoDoc: unknown;
+  documento: unknown;
+  sexo: unknown;
+}
+
+/** Valida nombre, documento y sexo. Lanza con el motivo. */
+function revisarIdentidad(datos: DatosDeIdentidad) {
+  const nombre = String(datos.nombre ?? '').replace(/\s+/g, ' ').trim();
+  if (nombre.length < 3) {
+    throw new Error('El nombre del paciente hace falta, con al menos tres letras.');
+  }
+
+  const tipo = esTipoDocumento(datos.tipoDoc) ? datos.tipoDoc : 'cedula';
+  const documento = String(datos.documento ?? '').trim();
+  if (!alcanzaDocumento(tipo, documento)) {
+    throw new Error(
+      tipo === 'cedula'
+        ? 'La cédula hace falta, con al menos seis dígitos.'
+        : `El ${ROTULO_DOC[tipo].toLowerCase()} hace falta.`,
+    );
+  }
+
+  const llave = llaveDeDocumento(tipo, documento);
+  if (!llave) throw new Error('Ese documento no se puede leer.');
+
+  const sexo = String(datos.sexo ?? '').trim();
+  if (sexo && !['Femenino', 'Masculino'].includes(sexo)) {
+    throw new Error('El sexo tiene que ser Femenino o Masculino, o quedar en blanco.');
+  }
+
+  return { nombre, tipo, documento, llave, sexo: sexo || null };
+}
+
+/** Quién tiene ya ese documento, si alguien lo tiene. */
+async function quienTiene(llave: string) {
+  const [ya] = await bd
+    .select({ id: esquema.paciente.id, nombre: esquema.paciente.nombre, cedula: esquema.paciente.cedula })
+    .from(esquema.paciente)
+    .where(eq(esquema.paciente.cedulaBusca, llave))
+    .limit(1);
+  return ya ?? null;
+}
+
+/**
+ * Crea un paciente sin abrir una atención.
+ *
+ * Es la mitad del trabajo de recepción que faltaba: alguien llama para
+ * pedir una cita, o llega a preguntar, y se registra ahí mismo sin
+ * inventarle una consulta que no tuvo.
+ */
+export async function crearPaciente(
+  datos: DatosDeIdentidad & { telefono?: unknown; whatsapp?: unknown; correo?: unknown },
+) {
+  const id = revisarIdentidad(datos);
+  const contacto = revisarContacto(datos);
+
+  const ya = await quienTiene(id.llave);
+  if (ya) {
+    throw new Error(
+      `Ya hay un paciente con ese documento: ${ya.nombre} (${ya.cedula}). Búsquelo en el registro en vez de crearlo otra vez.`,
+    );
+  }
+
+  const [creado] = await bd
+    .insert(esquema.paciente)
+    .values({
+      cedula: id.documento,
+      cedulaBusca: id.llave,
+      tipoDoc: id.tipo,
+      nombre: id.nombre,
+      nombreBusca: normalizar(id.nombre),
+      sexo: id.sexo,
+      ...contacto,
+    })
+    .returning({ id: esquema.paciente.id, nombre: esquema.paciente.nombre, cedula: esquema.paciente.cedula });
+
+  return creado;
+}
+
+/** Valida los tres datos de contacto. Vacío se acepta en los tres. */
+function revisarContacto(bruto: { telefono?: unknown; whatsapp?: unknown; correo?: unknown }) {
+  const numero = (texto: string, cual: string) => {
+    const digitos = soloDigitos(texto);
+    if (texto && (digitos.length < 7 || digitos.length > 15)) {
+      throw new Error(`El ${cual} tiene que tener entre 7 y 15 dígitos, por ejemplo 0414-8939176.`);
+    }
+    if (texto && !/^[+\d\s().-]+$/.test(texto)) {
+      throw new Error(`El ${cual} lleva solo números, espacios y los signos + ( ) - y punto.`);
+    }
+    return texto || null;
+  };
+
+  const correoTexto = String(bruto.correo ?? '').trim().toLowerCase();
+  if (correoTexto && !correoUsable(correoTexto)) {
+    throw new Error('Ese correo no parece válido. Tiene que ser del tipo nombre@correo.com.');
+  }
+
+  return {
+    telefono: numero(String(bruto.telefono ?? '').trim(), 'teléfono'),
+    whatsapp: numero(String(bruto.whatsapp ?? '').trim(), 'WhatsApp'),
+    correo: correoTexto || null,
+  };
+}
+
+/**
+ * Corrige al paciente: nombre, documento, sexo y contacto.
+ *
+ * Devuelve qué cambió y qué decía antes, para la bitácora. Un dato de una
+ * persona que cambia sin rastro es un dato en el que no se puede confiar.
+ */
+export async function guardarPaciente(
+  id: string,
+  datos: DatosDeIdentidad & { telefono?: unknown; whatsapp?: unknown; correo?: unknown },
+) {
+  if (!esIdentificador(id)) throw new Error('Ese paciente ya no está en el registro.');
+
+  const nuevo = revisarIdentidad(datos);
+  const contacto = revisarContacto(datos);
+
+  const [antes] = await bd
+    .select({
+      nombre: esquema.paciente.nombre,
+      cedula: esquema.paciente.cedula,
+      tipoDoc: esquema.paciente.tipoDoc,
+      cedulaBusca: esquema.paciente.cedulaBusca,
+      sexo: esquema.paciente.sexo,
+      telefono: esquema.paciente.telefono,
+      whatsapp: esquema.paciente.whatsapp,
+      correo: esquema.paciente.correo,
+    })
+    .from(esquema.paciente)
+    .where(eq(esquema.paciente.id, id))
+    .limit(1);
+
+  if (!antes) throw new Error('Ese paciente ya no está en el registro.');
+
+  /* El documento cambió y el nuevo ya es de otro: no se fusiona nada. Dos
+     fichas de la misma persona son un problema, pero juntarlas en silencio
+     —mover atenciones, elegir qué nombre gana— es un problema peor. */
+  if (nuevo.llave !== antes.cedulaBusca) {
+    const otro = await quienTiene(nuevo.llave);
+    if (otro) {
+      throw new Error(
+        `Ese documento ya es de ${otro.nombre} (${otro.cedula}). Si son la misma persona, hay que juntar las dos fichas a mano: avise para hacerlo con cuidado.`,
+      );
+    }
+  }
+
+  await bd
+    .update(esquema.paciente)
+    .set({
+      nombre: nuevo.nombre,
+      nombreBusca: normalizar(nuevo.nombre),
+      cedula: nuevo.documento,
+      cedulaBusca: nuevo.llave,
+      tipoDoc: nuevo.tipo,
+      sexo: nuevo.sexo,
+      ...contacto,
+    })
+    .where(eq(esquema.paciente.id, id));
+
+  const ahora: Record<string, string | null> = {
+    nombre: nuevo.nombre,
+    documento: nuevo.documento,
+    tipoDoc: nuevo.tipo,
+    sexo: nuevo.sexo,
+    ...contacto,
+  };
+  const antesPlano: Record<string, string | null> = {
+    nombre: antes.nombre,
+    documento: antes.cedula,
+    tipoDoc: antes.tipoDoc,
+    sexo: antes.sexo,
+    telefono: antes.telefono,
+    whatsapp: antes.whatsapp,
+    correo: antes.correo,
+  };
+
+  const cambios: Record<string, { antes: string | null; ahora: string | null }> = {};
+  for (const clave of Object.keys(ahora)) {
+    if (antesPlano[clave] !== ahora[clave]) {
+      cambios[clave] = { antes: antesPlano[clave], ahora: ahora[clave] };
+    }
+  }
+
+  return { cambios, cuantos: Object.keys(cambios).length };
+}
+
+/**
+ * Si se puede borrar, y si no, por qué no.
+ *
+ * Un paciente con una sola atención no se borra ni con la atención anulada:
+ * lo que se le escribió existió y la bitácora lo apunta. Lo que sí se borra
+ * es la ficha vacía que nadie atendió nunca.
+ */
+export async function puedeBorrarse(id: string) {
+  if (!esIdentificador(id)) return { puede: false, atenciones: 0, motivo: 'Ese paciente ya no está en el registro.' };
+
+  const [cuenta] = await bd.execute<{ n: number }>(sql`
+    SELECT COUNT(*)::int AS n FROM atencion WHERE paciente_id = ${id}
+  `);
+  const n = Number(cuenta?.n ?? 0);
+
+  if (n > 0) {
+    return {
+      puede: false,
+      atenciones: n,
+      motivo: `Tiene ${n} ${n === 1 ? 'atención registrada' : 'atenciones registradas'}. Un paciente con historia no se borra: se corrige.`,
+    };
+  }
+  return { puede: true, atenciones: 0, motivo: '' };
+}
+
+/**
+ * Borra una ficha vacía.
+ *
+ * Es lo único que se borra de verdad en todo el sistema, y se puede porque
+ * una ficha sin atenciones no tiene un solo dato clínico adentro: es un
+ * error de tipeo con nombre. La comprobación se repite dentro de la
+ * transacción y el borrado lleva el paciente_id en el WHERE: entre que la
+ * pantalla preguntó y el botón se apretó, alguien pudo haberle abierto una
+ * atención.
+ */
+export async function borrarPaciente(id: string) {
+  if (!esIdentificador(id)) throw new Error('Ese paciente ya no está en el registro.');
+
+  return bd.transaction(async (tx) => {
+    const [fila] = await tx
+      .select({ nombre: esquema.paciente.nombre, cedula: esquema.paciente.cedula })
+      .from(esquema.paciente)
+      .where(eq(esquema.paciente.id, id))
+      .limit(1);
+    if (!fila) throw new Error('Ese paciente ya no está en el registro.');
+
+    const [cuenta] = await tx.execute<{ n: number }>(sql`
+      SELECT COUNT(*)::int AS n FROM atencion WHERE paciente_id = ${id}
+    `);
+    if (Number(cuenta?.n ?? 0) > 0) {
+      throw new Error('Le abrieron una atención mientras miraba esta pantalla, así que ya no se puede borrar.');
+    }
+
+    await tx.delete(esquema.paciente).where(eq(esquema.paciente.id, id));
+    return fila;
+  });
 }

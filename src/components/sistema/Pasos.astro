@@ -331,6 +331,10 @@ const {
       decir('Guardando…', 'guardando');
       try {
         const r = await fetch('/sistema/api/borrador', { method: 'POST', body: datos });
+        if (r.status === 401) {
+          decir('Se venció la sesión. Abra el sistema en otra pestaña y entre de nuevo antes de seguir.', 'falla');
+          return;
+        }
         const d = await r.json();
 
         if (d.guardado) {

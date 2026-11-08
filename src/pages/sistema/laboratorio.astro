@@ -19,6 +19,8 @@ import { exigir } from '../../sistema/lib/guardia';
 import { puede } from '../../sistema/lib/permisos';
 import { colaDelLaboratorio } from '../../sistema/lib/laboratorio';
 import { hoyEnVenezuela } from '../../sistema/lib/atenciones';
+import { enlaceDeWhatsApp, paraWhatsApp } from '../../sistema/lib/telefono';
+import { avisoDeResultados } from '../../sistema/mensajes';
 
 export const prerender = false;
 
@@ -29,8 +31,23 @@ const rol = Astro.locals.usuario?.rol as string;
 const resulta = puede(rol, 'cargar_resultados');
 const registra = puede(rol, 'registrar_laboratorio');
 
+const avisa = puede(rol, 'enviar_documento');
+
 const verEntregadas = Astro.url.searchParams.get('ver') === 'entregadas';
-const cola = await colaDelLaboratorio({ entregadas: verEntregadas });
+const crudas = await colaDelLaboratorio({ entregadas: verEntregadas });
+
+/* El aviso de «ya está listo», listo para mandar desde la fila.
+   Recepción trabaja en esta pantalla: entrar a la orden, abrir la pantalla
+   de enviar y volver eran tres toques para decir una frase. El mensaje sale
+   de sistema/mensajes.ts, el mismo que usa la pantalla de enviar, y lleva
+   el nombre del paciente. */
+const cola = crudas.map((o) => {
+  const numero = avisa ? paraWhatsApp(o.whatsapp ?? o.telefono) : null;
+  return {
+    ...o,
+    wa: numero ? enlaceDeWhatsApp(numero, avisoDeResultados(o.paciente, o.numero)) : null,
+  };
+});
 
 const fechaCorta = (f: string) =>
   new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
@@ -126,6 +143,17 @@ const ROTULO = {
               )}
             </span>
           </a>
+
+          {/* Fuera del enlace de la fila a propósito: un enlace dentro de
+              otro no es HTML válido y el toque se lo come el de afuera.
+              Solo cuando ya está entregada: antes no hay nada que avisar. */}
+          {o.enCola === 'entregada' && o.wa && (
+            <a class="cola__wa" href={o.wa} target="_blank" rel="noopener"
+               aria-label={`Avisarle por WhatsApp a ${o.paciente}`}>
+              <Icono nombre="whatsapp" tam={18} />
+              <span>Avisar</span>
+            </a>
+          )}
         </li>
       ))}
     </ul>
@@ -160,6 +188,26 @@ const ROTULO = {
   .cola { list-style: none; margin: 0; padding: 0; background: var(--papel);
           border: 1px solid var(--linea); border-radius: var(--radio); overflow: hidden; }
   .cola li + li { border-top: 1px solid var(--linea-tenue); }
+  /* La fila es un enlace y el aviso es otro: van uno al lado del otro. */
+  .cola li { display: flex; align-items: stretch; }
+  .cola li > a:first-child { flex: 1; min-width: 0; }
+
+  .cola__wa {
+    display: flex;
+    align-items: center;
+    gap: 7px;
+    flex: none;
+    padding: 0 14px;
+    border-left: 1px solid var(--linea-tenue);
+    color: #1b7f4b;
+    text-decoration: none;
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+  .cola__wa:hover { background: #e9f6ef; }
+  .cola__wa :global(svg) { flex: none; }
+  /* A 390 px queda el icono: el rótulo se come el ancho del nombre. */
+  @media (max-width: 519px) { .cola__wa span { display: none; } .cola__wa { padding: 0 12px; } }
 
   .cola a {
     display: grid;
