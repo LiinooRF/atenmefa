@@ -258,3 +258,43 @@ test('el QR cabe en su recuadro y no tapa el texto', async ({ page }) => {
   const texto = (await page.locator('.sello__texto').first().boundingBox())!;
   expect(texto.x).toBeGreaterThanOrEqual(caja.x + caja.width - 1);
 });
+
+test('el QR lleva a donde el sistema vive de verdad', async ({ page }) => {
+  /* El dominio final todavía sirve la web vieja, así que un código impreso
+     con esa dirección da 404. El QR sale de URL_BASE: funciona hoy, y el día
+     que se mude el dominio cambia solo. */
+  await entrar(page, 'medico');
+  await page.goto(`/sistema/atencion/${caso}/documento`);
+
+  const dondeLleva = await page.locator('.sello__texto').first().innerText();
+  const aqui = new URL(page.url()).host;
+  expect(dondeLleva).toContain(`${aqui}/verificar`);
+});
+
+test('la cédula y el PIN se escriben uno al lado del otro', async ({ page }) => {
+  /* Se copian del mismo renglón del papel. Apilados obligaban a subir y
+     bajar la vista entre el documento y la pantalla. */
+  await page.setViewportSize({ width: 900, height: 800 });
+  await page.goto(`/verificar/${caso}`);
+
+  const cedula = (await page.getByLabel('Cédula del paciente').boundingBox())!;
+  const pin = (await page.getByLabel('PIN').boundingBox())!;
+
+  expect.soft(Math.abs(cedula.y - pin.y), 'quedaron en renglones distintos').toBeLessThan(10);
+  expect(pin.x).toBeGreaterThan(cedula.x);
+});
+
+test('en el teléfono se apilan, que es donde se usa', async ({ page }) => {
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.goto(`/verificar/${caso}`);
+
+  const cedula = (await page.getByLabel('Cédula del paciente').boundingBox())!;
+  const pin = (await page.getByLabel('PIN').boundingBox())!;
+  expect(pin.y).toBeGreaterThan(cedula.y);
+
+  const m = await page.evaluate(() => ({
+    v: document.documentElement.clientWidth,
+    p: document.documentElement.scrollWidth,
+  }));
+  expect(m.p).toBeLessThanOrEqual(m.v + 1);
+});

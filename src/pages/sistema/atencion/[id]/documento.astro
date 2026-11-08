@@ -14,6 +14,7 @@ import { anotar } from '../../../../sistema/lib/atenciones';
 import { clinica } from '../../../../data/clinica';
 import { eq } from 'drizzle-orm';
 import { exigir } from '../../../../sistema/lib/guardia';
+import { entorno } from '../../../../sistema/lib/entorno';
 
 export const prerender = false;
 
@@ -90,8 +91,16 @@ const hayRecipe = Boolean(d.recipe || d.indicaciones);
 
    El QR se dibuja acá como SVG y no se guarda en ninguna parte: ni archivo,
    ni imagen, ni PDF. Se arma cada vez que se abre el documento. */
-const urlVerificacion = new URL(`verificar/${caso.id}`, clinica.dominio).href;
-const dominioCorto = clinica.dominio.replace(/^https?:\/\//, '').replace(/\/$/, '');
+/* La dirección donde el sistema REALMENTE está, no el dominio final.
+   clinica.dominio es atenmefa.site, que sirve para la canónica del sitio
+   público pero hoy todavía apunta a la web vieja: un QR impreso con esa
+   dirección da 404. Un código que funciona hoy vale más que uno que va a
+   funcionar algún día, y el día que se mude el dominio esto cambia solo,
+   porque sale de URL_BASE. Los papeles ya impresos quedan con la de
+   entonces: por eso también va el N° para verificar a mano. */
+const dondeVive = (entorno('URL_BASE') ?? clinica.dominio).replace(/\/$/, '');
+const urlVerificacion = `${dondeVive}/verificar/${caso.id}`;
+const dominioCorto = dondeVive.replace(/^https?:\/\//, '');
 const qr = caso.pin
   ? await QR.toString(urlVerificacion, {
       type: 'svg', margin: 0, errorCorrectionLevel: 'M', width: 132,

@@ -64,22 +64,27 @@ const ok = resultado?.estado === 'ok' ? resultado.documento : null;
             <span class="pista">El número grande, arriba a la derecha del documento.</span>
           </div>
 
-          <div class="sis-campo">
-            <label for="documento">Cédula del paciente</label>
-            <input
-              id="documento" name="documento" required autocomplete="off"
-              placeholder="V-12.345.678" value={documento}
-            />
-            <span class="pista">Como aparece en el documento. Los puntos dan igual.</span>
-          </div>
+          {/* La cédula y el PIN van juntos: se copian del mismo renglón del
+              papel, uno al lado del otro. Separarlos obligaba a subir y
+              bajar la vista entre el documento y la pantalla. */}
+          <div class="ver__par">
+            <div class="sis-campo">
+              <label for="documento">Cédula del paciente</label>
+              <input
+                id="documento" name="documento" required autocomplete="off"
+                placeholder="V-12.345.678" value={documento}
+              />
+              <span class="pista">Como aparece en el documento. Los puntos dan igual.</span>
+            </div>
 
-          <div class="sis-campo">
-            <label for="pin">PIN</label>
-            <input
-              id="pin" name="pin" required autocomplete="off"
-              inputmode="numeric" maxlength="8" placeholder="000000"
-            />
-            <span class="pista">Los seis dígitos impresos junto al código.</span>
+            <div class="sis-campo">
+              <label for="pin">PIN</label>
+              <input
+                id="pin" name="pin" required autocomplete="off"
+                inputmode="numeric" maxlength="8" placeholder="000000"
+              />
+              <span class="pista">Los seis dígitos impresos junto al código.</span>
+            </div>
           </div>
 
           <button type="submit" class="boton boton--rojo">
@@ -103,4 +108,6 @@ const ok = resultado?.estado === 'ok' ? resultado.documento : null;
   }
   .ver__guia { margin: 0 0 22px; color: var(--tinta-suave); line-height: 1.6; }
   .ver__forma { display: grid; gap: 16px; }
+  .ver__par { display: grid; gap: 16px; }
+  @media (min-width: 560px) { .ver__par { grid-template-columns: 1.4fr 1fr; } }
 </style>
