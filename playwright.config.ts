@@ -26,6 +26,9 @@ export default defineConfig({
     env: {
       PORT: '4399',
       URL_BASE: 'http://localhost:4399',
+      /* Un segundo nombre para el mismo sistema, como en producción, que
+         responde por el dominio del centro y por el del servidor. */
+      ORIGENES_EXTRA: 'https://otro-nombre.example, https://mal escrito',
       /* Nada de salir a internet durante las pruebas. Sin esto, con la base
          recién creada cada pantalla que muestra plata le iba a pedir la tasa
          del día al BCV, y la suite quedaba a merced de que ese servicio

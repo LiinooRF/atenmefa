@@ -4,12 +4,36 @@ import { entorno } from './sistema/lib/entorno';
 import { medirPaginaPublica } from './sistema/lib/visitas';
 import { dondeEmpieza } from './sistema/lib/permisos';
 
-/* Los orígenes desde los que se aceptan formularios. URL_BASE es el
-   público; localhost queda para desarrollo y para las pruebas. */
+/* Los orígenes desde los que se aceptan formularios.
+
+   URL_BASE es el público —el que va en los enlaces del informe—, y
+   ORIGENES_EXTRA lleva los demás nombres por los que se puede entrar al
+   mismo sistema, separados por coma. Localhost queda para desarrollo y
+   para las pruebas.
+
+   Hace falta porque el sistema responde por más de un nombre: el dominio
+   del centro y el de respaldo del servidor. El día que se agregó el
+   segundo, entrar por él devolvía «Origen no permitido» y parecía que la
+   clave estaba mal: el formulario llegaba con un Origin que no era el
+   único configurado. */
 const PROPIOS = new Set(
-  [entorno('URL_BASE'), 'http://localhost:4321', 'http://localhost:4399']
+  [
+    entorno('URL_BASE'),
+    ...(entorno('ORIGENES_EXTRA') ?? '').split(',').map((u) => u.trim()),
+    'http://localhost:4321',
+    'http://localhost:4399',
+  ]
     .filter(Boolean)
-    .map((u) => new URL(u!).origin),
+    .map((u) => {
+      try {
+        return new URL(u!).origin;
+      } catch {
+        /* Un nombre mal escrito en la variable no puede tumbar el arranque
+           entero: se ignora ese y los demás siguen valiendo. */
+        return '';
+      }
+    })
+    .filter(Boolean),
 );
 
 /**

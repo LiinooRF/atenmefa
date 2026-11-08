@@ -244,6 +244,19 @@ test('/api/v rechaza un POST con Origin de otro sitio', async ({ page }) => {
   });
   expect(anonimo.status()).toBe(403);
 
+  /* Pero el segundo nombre del propio sistema sí entra: ORIGENES_EXTRA
+     lleva los demás dominios por los que se llega al mismo lugar. El día
+     que se agregó el dominio del centro, entrar por él devolvía «Origen
+     no permitido» y parecía que la clave estaba mal.
+     
+     Esa variable trae a propósito un nombre mal escrito al lado: uno roto
+     no puede dejar afuera a los que sí sirven. */
+  const elOtroNombre = await page.request.post('/api/v', {
+    headers: { origin: 'https://otro-nombre.example', 'user-agent': AGENTE_TELEFONO },
+    data: { tipo: 'vista', ruta: '/por-el-otro-nombre' },
+  });
+  expect(elOtroNombre.status()).toBe(204);
+
   // Uno bueno al final, para poder afirmar que los otros dos no escribieron.
   expect((await avisar(page, { tipo: 'vista', ruta: '/testigo-del-origen' })).status()).toBe(204);
   await esperarVisitas(marca, '/testigo-del-origen', 1);
