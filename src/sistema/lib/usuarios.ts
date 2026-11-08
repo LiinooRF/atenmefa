@@ -12,8 +12,13 @@ import { bd, esquema } from './base';
 import { auth } from './auth';
 import type { Rol } from './permisos';
 
-export const ROLES: { valor: Rol; nombre: string; explica: string }[] = [
-  { valor: 'medico', nombre: 'Médico', explica: 'Atiende, firma historias y anota qué se le hizo al paciente.' },
+/** El orden es el de la pantalla: primero los que más se crean. */
+export const ROLES: { valor: Rol; nombre: string; explica: string; firma?: string }[] = [
+  { valor: 'medico', nombre: 'Médico', explica: 'Atiende, firma historias y anota qué se le hizo al paciente.',
+    firma: 'MPPS y colegio, que van impresos en el récipe.' },
+  { valor: 'bioanalista', nombre: 'Bioanalista', explica: 'Carga y firma los resultados del laboratorio. No escribe historias clínicas.',
+    firma: 'Colegio de Bioanalistas, que va impreso en el informe.' },
+  { valor: 'recepcionista', nombre: 'Recepción', explica: 'Registra al paciente, qué exámenes se le hacen, y cobra.' },
   { valor: 'administracion', nombre: 'Administración', explica: 'Precios, cobro, cierre del mes, anulaciones y cuentas.' },
 ];
 

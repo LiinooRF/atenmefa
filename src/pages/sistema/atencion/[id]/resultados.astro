@@ -1,0 +1,433 @@
+---
+/**
+ * Los resultados del laboratorio: la pantalla del bioanalista.
+ *
+ * Es la otra mitad de la orden. Recepción registró a quién y qué se le
+ * pidió; acá «el propio licenciado va a colocar, de esos exámenes que se
+ * mandó a hacer, los resultados… con los valores de referencia de esos
+ * resultados, y que al cargar todo te genere para poder enviarlo».
+ *
+ * UNA LÍNEA POR VALOR, NO POR EXAMEN
+ *
+ * Una hematología completa no da un número: da hemoglobina, hematocrito,
+ * leucocitos, plaquetas. Las líneas arrancan con lo que se pidió y se
+ * agregan las que hagan falta; el nombre de cada línea se puede escribir,
+ * porque «hematología completa» no es lo que va impreso al lado de un 13,4.
+ *
+ * LOS VALORES DE REFERENCIA SE ESCRIBEN
+ *
+ * No hay lista precargada y no la va a haber inventada: el rango depende
+ * del método y del equipo de cada laboratorio. El cliente tiene su Excel
+ * con todos sus valores y quedó en mandarlo; hasta entonces este campo lo
+ * llena quien mide.
+ *
+ * EL SELLO ES HÚMEDO
+ *
+ * El cliente lo decidió así: «no vamos a manejar [sello digital], se
+ * imprime y se usa un sello húmedo ya elaborado el informe». Por eso el
+ * informe deja el espacio de la firma y no estampa ninguna imagen.
+ */
+import Sistema from '../../../../layouts/Sistema.astro';
+import Icono from '../../../../components/Icono.astro';
+import { exigir } from '../../../../sistema/lib/guardia';
+import { puedeCargarResultados } from '../../../../sistema/lib/permisos';
+import { anotar, atencionPara } from '../../../../sistema/lib/atenciones';
+import {
+  examenesPedidos, guardarResultados, leerResultados, sinNombre,
+} from '../../../../sistema/lib/laboratorio';
+import type { Resultado } from '../../../../sistema/laboratorio';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'cargar_resultados');
+if (corte) return corte;
+
+const { id } = Astro.params;
+const usuario = Astro.locals.usuario!;
+
+const caso = await atencionPara(id!);
+if (!caso) return Astro.redirect('/sistema/laboratorio');
+if (caso.tipo !== 'laboratorio') return Astro.redirect(`/sistema/atencion/${caso.id}`);
+
+const abierta = puedeCargarResultados(usuario, caso);
+
+let error = '';
+let aviso = '';
+/* Lo cargado hasta ahora. Se lee de la columna y no de `datos`: son una
+   lista de mediciones y `datos` es plano. */
+let cargados = (caso.resultados ?? []) as Resultado[];
+
+if (Astro.request.method === 'POST' && abierta) {
+  const form = await Astro.request.formData();
+  const entregar = form.get('accion') === 'entregar';
+  const mandados = leerResultados(form);
+
+  /* Entregar sin un solo valor escrito dejaría un informe en blanco con
+     firma. Guardar a medias sí se puede: una corrida sale hoy y la otra
+     mañana. */
+  if (entregar && !mandados.some((r) => r.valor)) {
+    error = 'Para dar los resultados por listos hace falta al menos un valor cargado.';
+    cargados = mandados;
+  } else if (entregar && sinNombre(mandados) > 0) {
+    /* Un valor sin nombre se imprimiría como un número suelto al lado de
+       una celda vacía. No se descarta: se devuelve y se pide nombrarlo. */
+    error = sinNombre(mandados) === 1
+      ? 'Hay una línea con resultado y sin decir de qué examen es.'
+      : `Hay ${sinNombre(mandados)} líneas con resultado y sin decir de qué examen son.`;
+    cargados = mandados;
+  } else {
+    const guardada = await guardarResultados(caso.id, mandados, usuario.id, entregar);
+    if (!guardada) {
+      error = 'Esta orden cambió de estado mientras la cargaba. Vuelva a abrirla.';
+      cargados = mandados;
+    } else {
+      await anotar(usuario.id, entregar ? 'cerro' : 'edito', caso.id, {
+        numero: guardada.numero,
+        resultados: mandados.filter((r) => r.valor).length,
+      });
+      if (entregar) return Astro.redirect(`/sistema/atencion/${caso.id}`);
+      cargados = mandados;
+      aviso = 'Resultados guardados. La orden sigue abierta.';
+    }
+  }
+} else if (Astro.request.method !== 'POST') {
+  await anotar(usuario.id, 'vio', caso.id);
+}
+
+const registro = (caso.datos ?? {}) as Record<string, string>;
+const pedidos = await examenesPedidos(caso.id);
+
+/**
+ * Las líneas que se dibujan.
+ *
+ * Arrancan de lo que se pidió —el catálogo primero, después lo escrito a
+ * mano en «Otros exámenes»— y se completan con lo que ya estaba cargado.
+ * Un valor ya escrito no se pierde aunque después se le quite el examen a
+ * la orden: borrarle a alguien una medición por destildar una casilla
+ * sería mucho peor que dejar una línea de más.
+ */
+const nombresPedidos = [
+  ...pedidos.map((p) => p.nombre),
+  ...(registro.examenes ?? '').split('\n').map((t) => t.trim()).filter(Boolean),
+];
+
+const porNombre = new Map(cargados.map((r) => [r.examen, r]));
+const lineas: Resultado[] = [
+  ...nombresPedidos.map((nombre) =>
+    porNombre.get(nombre) ?? { examen: nombre, valor: '', unidad: '', referencia: '' },
+  ),
+  // Lo cargado que no calza con ningún examen pedido: líneas agregadas a mano.
+  ...cargados.filter((r) => !nombresPedidos.includes(r.examen)),
+];
+if (lineas.length === 0) lineas.push({ examen: '', valor: '', unidad: '', referencia: '' });
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
+---
+
+<Sistema titulo={`Resultados ${caso.numero}`}>
+  <nav class="miga">
+    <a href="/sistema/laboratorio">Laboratorio</a> <span>/</span>
+    Orden {caso.numero}
+  </nav>
+
+  {!abierta ? (
+    <section class="sis-tarjeta trabada">
+      <h1>Esta orden ya está entregada</h1>
+      <p>
+        Los resultados de la orden N° {caso.numero} de {caso.paciente} se dieron
+        por listos y quedaron firmados: no se modifican. Si hay que corregir un
+        valor, administración la anula y se registra una nueva.
+      </p>
+      <div class="trabada__acciones">
+        <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}`}>Ver la orden</a>
+        <a class="sis-boton sis-boton--suave" href="/sistema/laboratorio">Volver al laboratorio</a>
+      </div>
+    </section>
+  ) : (
+    <form method="post" class="form" id="res-form">
+      <header class="form__cab">
+        <div>
+          <div class="form__linea">
+            <h1>Resultados · orden N° <span class="cifra">{caso.numero}</span></h1>
+            <span class="chapa">Abierta</span>
+          </div>
+          <p class="form__nota">
+            <strong>{caso.paciente}</strong> · {caso.cedula}
+            {registro.edad && <> · {registro.edad} años</>}
+            {registro.sexo && <> · {registro.sexo.toLowerCase()}</>}
+            · muestra del {fechaLarga(caso.fecha)}
+            {registro.hora_muestra && <> a las {registro.hora_muestra}</>}
+            {registro.ayuno === 'si' && <> · <strong>en ayunas</strong></>}
+          </p>
+          {registro.quien_indica && (
+            <p class="form__nota">Indicados por {registro.quien_indica}.</p>
+          )}
+          {registro.observaciones_lab && (
+            <p class="form__nota form__nota--ojo">
+              <Icono nombre="escudo" tam={16} />
+              {registro.observaciones_lab}
+            </p>
+          )}
+        </div>
+        <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}`}>Ver la orden</a>
+      </header>
+
+      {error && <p class="sis-error form__aviso"><Icono nombre="escudo" tam={18} />{error}</p>}
+      {aviso && <p class="form__aviso form__aviso--bien"><Icono nombre="escudo" tam={18} />{aviso}</p>}
+
+      <div class="tablon">
+        <table class="res">
+          <thead>
+            <tr>
+              <th scope="col" class="res__que">Examen</th>
+              <th scope="col">Resultado</th>
+              <th scope="col">Unidad</th>
+              <th scope="col">Valor de referencia</th>
+              <th scope="col"><span class="oculto">Quitar</span></th>
+            </tr>
+          </thead>
+          <tbody id="res-cuerpo">
+            {lineas.map((l, i) => (
+              <tr>
+                <td data-rotulo="Examen">
+                  <input type="text" name="examen" value={l.examen}
+                         aria-label={`Examen de la línea ${i + 1}`} autocomplete="off" />
+                </td>
+                <td data-rotulo="Resultado">
+                  <input type="text" name="valor" value={l.valor} inputmode="decimal"
+                         aria-label={`Resultado de ${l.examen || `la línea ${i + 1}`}`} autocomplete="off" />
+                </td>
+                <td data-rotulo="Unidad">
+                  <input type="text" name="unidad" value={l.unidad}
+                         aria-label={`Unidad de ${l.examen || `la línea ${i + 1}`}`} autocomplete="off" />
+                </td>
+                <td data-rotulo="Valor de referencia">
+                  <input type="text" name="referencia" value={l.referencia}
+                         aria-label={`Valor de referencia de ${l.examen || `la línea ${i + 1}`}`} autocomplete="off" />
+                </td>
+                <td class="res__quitar">
+                  <button type="button" class="quitar" data-quitar aria-label="Quitar esta línea">×</button>
+                </td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+
+      <button type="button" class="sis-boton sis-boton--suave" id="res-mas">
+        <Icono nombre="mas" tam={17} />
+        Agregar línea
+      </button>
+
+      <p class="nota-ref">
+        El valor de referencia se escribe: es el de este laboratorio y su
+        método, y no hay lista cargada todavía.
+      </p>
+
+      <div class="pie">
+        <div class="pie__int">
+          <span class="pie__estado">
+            {cargados.filter((r) => r.valor).length} de {lineas.length}
+            {lineas.length === 1 ? ' línea' : ' líneas'} con resultado
+          </span>
+          <div class="pie__botones">
+            <button type="submit" name="accion" value="guardar" class="sis-boton sis-boton--suave">
+              Guardar y seguir después
+            </button>
+            <button type="submit" name="accion" value="entregar" class="sis-boton sis-boton--primario">
+              <Icono nombre="escudo" tam={17} />
+              Dar por listos
+            </button>
+          </div>
+        </div>
+      </div>
+    </form>
+  )}
+</Sistema>
+
+<script>
+  /* Agregar y quitar líneas. Sin esto, una hematología completa habría que
+     cargarla en una sola celda. */
+  const cuerpo = document.getElementById('res-cuerpo');
+  const mas = document.getElementById('res-mas');
+
+  if (cuerpo && mas) {
+    const nuevaFila = () => {
+      const modelo = cuerpo.querySelector('tr');
+      if (!modelo) return null;
+      const fila = modelo.cloneNode(true) as HTMLTableRowElement;
+      fila.querySelectorAll('input').forEach((i) => {
+        i.value = '';
+        /* El rótulo accesible del modelo nombraba a OTRO examen. Acá no se
+           sabe cuál va a ser, así que se nombra por la columna. */
+        const columna = i.closest('td')?.dataset.rotulo ?? '';
+        i.setAttribute('aria-label', `${columna} de una línea nueva`);
+      });
+      return fila;
+    };
+
+    mas.addEventListener('click', () => {
+      const fila = nuevaFila();
+      if (!fila) return;
+      cuerpo.appendChild(fila);
+      fila.querySelector('input')?.focus();
+    });
+
+    cuerpo.addEventListener('click', (e) => {
+      const boton = (e.target as HTMLElement).closest('[data-quitar]');
+      if (!boton) return;
+      const fila = boton.closest('tr');
+      /* Nunca se queda sin ninguna: si es la última, se vacía en vez de
+         borrarse, para que quede dónde escribir. */
+      if (cuerpo.querySelectorAll('tr').length > 1) fila?.remove();
+      else fila?.querySelectorAll('input').forEach((i) => { i.value = ''; });
+    });
+  }
+</script>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .trabada { max-width: 62ch; }
+  .trabada h1 { font-size: var(--u-xl); }
+  .trabada p { margin-top: 10px; color: var(--tinta-suave); }
+  .trabada__acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+
+  .form { padding-bottom: 96px; }
+  .form__cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+  .form__cab h1 { font-size: var(--u-xl); }
+  .form__linea { display: flex; flex-wrap: wrap; align-items: center; gap: 11px; }
+  .form__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 70ch; }
+  .form__nota strong { color: var(--azul); }
+  .form__nota--ojo {
+    display: flex;
+    align-items: flex-start;
+    gap: 7px;
+    margin-top: 10px;
+    padding: 9px 12px;
+    border-radius: 8px;
+    background: #fdf0d9;
+    color: #7a5200;
+  }
+  .form__nota--ojo :global(svg) { flex: none; margin-top: 2px; }
+
+  .chapa {
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #fdf0d9;
+    color: #7a5200;
+  }
+
+  .form__aviso { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; }
+  .form__aviso--bien {
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+    font-size: var(--u-sm);
+  }
+
+  /* La tabla se desplaza dentro de su caja y no arrastra la página: a 390 px
+     cuatro columnas de texto no caben de ninguna manera. */
+  .tablon { margin-top: 20px; overflow-x: auto; border: 1px solid var(--linea); border-radius: 12px; background: var(--papel); }
+  .res { width: 100%; border-collapse: collapse; min-width: 640px; }
+  .res th {
+    text-align: left;
+    padding: 10px 12px;
+    font-size: var(--u-xs);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--tinta-tenue);
+    border-bottom: 1px solid var(--linea);
+    white-space: nowrap;
+  }
+  .res td { padding: 5px 7px; border-bottom: 1px solid var(--linea-tenue); }
+  .res tr:last-child td { border-bottom: 0; }
+  .res__que { min-width: 220px; }
+  .res input {
+    width: 100%;
+    min-height: 44px;
+    padding: 8px 10px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+    color: var(--tinta);
+  }
+  .res input:hover { border-color: var(--linea); }
+  .res input:focus { outline: 2px solid var(--azul-medio); border-color: var(--azul-medio); background: var(--papel); }
+  .res input[name='valor'] { font-weight: 600; }
+
+  .res__quitar { width: 44px; }
+  .quitar {
+    display: grid;
+    place-items: center;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 8px;
+    background: none;
+    color: var(--tinta-tenue);
+    font-size: 1.3rem;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .quitar:hover { background: #fde8e8; color: var(--rojo); }
+
+  #res-mas { margin-top: 12px; }
+  .nota-ref { margin-top: 14px; font-size: var(--u-xs); color: var(--tinta-tenue); max-width: 64ch; }
+  .oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+
+  /* La barra de guardar queda fija: la tabla puede ser larga y no se debería
+     tener que desplazar hasta el final para guardar. */
+  .pie {
+    position: fixed;
+    inset: auto 0 0 0;
+    background: var(--papel);
+    border-top: 1px solid var(--linea);
+    padding: 10px max(14px, env(safe-area-inset-left)) max(10px, env(safe-area-inset-bottom));
+    z-index: 5;
+  }
+  .pie__int {
+    max-width: 1100px;
+    margin-inline: auto;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+    justify-content: space-between;
+  }
+  .pie__estado { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .pie__botones { display: flex; flex-wrap: wrap; gap: 9px; }
+
+  /* A 390 px la tabla se dibuja como fichas: cada línea con sus rótulos. */
+  @media (max-width: 719px) {
+    .res { min-width: 0; }
+    .res thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
+    .res tr { display: grid; grid-template-columns: 1fr auto; gap: 0 8px; padding: 10px 10px 12px; border-bottom: 1px solid var(--linea); }
+    .res tr:last-child { border-bottom: 0; }
+    .res td { display: block; padding: 4px 0; border: 0; }
+    .res td[data-rotulo]::before {
+      content: attr(data-rotulo);
+      display: block;
+      font-size: var(--u-xs);
+      font-weight: 600;
+      color: var(--tinta-tenue);
+      margin-bottom: 2px;
+    }
+    .res td[data-rotulo='Examen'] { grid-column: 1; }
+    .res__quitar { grid-column: 2; grid-row: 1; align-self: end; }
+    .res input { border-color: var(--linea); background: var(--papel); }
+  }
+</style>

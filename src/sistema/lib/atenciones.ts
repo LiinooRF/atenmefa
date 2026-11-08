@@ -4,8 +4,8 @@
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { bd, esquema } from './base';
-import { historia, exigidos } from '../historia';
-import { laboratorio } from '../laboratorio';
+import { historia, exigidos, type Campo } from '../historia';
+import { laboratorio, exigidosLaboratorio } from '../laboratorio';
 import { ROTULO, esTipo, llaveDe, soloDigitos, type TipoDocumento } from './documento';
 import { asegurarPin } from './verificacion';
 
@@ -40,9 +40,20 @@ export function limpiarDatos(form: FormData) {
   return datos;
 }
 
-/** Campos obligatorios que faltan. Vacío = se puede cerrar. */
-export function faltantes(datos: Record<string, string>) {
-  return exigidos.filter((c) => !datos[c.clave]);
+/**
+ * Campos obligatorios que faltan. Vacío = se puede cerrar.
+ *
+ * El tipo de atención decide cuáles son: a una orden de laboratorio no le
+ * falta el motivo de consulta, le faltan cuatro datos del paciente. Sin
+ * esto, la pantalla de una orden avisaba de veinte campos pendientes que
+ * ese formulario no tiene.
+ */
+export function faltantes(
+  datos: Record<string, string>,
+  tipo: 'general' | 'laboratorio' = 'general',
+): readonly Campo[] {
+  const lista = tipo === 'laboratorio' ? exigidosLaboratorio : exigidos;
+  return lista.filter((c) => !datos[c.clave]);
 }
 
 /**
@@ -73,13 +84,21 @@ export async function pacienteDe(datos: Record<string, string>) {
     .limit(1);
 
   if (ya) {
-    // El nombre y el teléfono pueden corregirse en una atención posterior.
+    /* Los datos de contacto se corrigen desde una atención posterior: el
+       formulario los trae escritos y lo que se cambie ahí queda en la ficha.
+       Lo que NO se puede desde acá es BORRARLOS: limpiarDatos descarta los
+       campos vacíos, así que un campo que se deja en blanco llega ausente y
+       conserva lo que había. Borrar es de la ficha del paciente, que sí
+       acepta el vacío —ver guardarContacto—, y está bien que sea ahí: en
+       medio de una consulta nadie decide vaciar el correo de alguien. */
     await bd
       .update(esquema.paciente)
       .set({
         nombre: datos.nombre ?? ya.nombre,
         nombreBusca: normalizar(datos.nombre ?? ya.nombre),
         telefono: datos.telefono ?? ya.telefono,
+        whatsapp: datos.whatsapp ?? ya.whatsapp,
+        correo: datos.correo ?? ya.correo,
         sexo: datos.sexo ?? ya.sexo,
       })
       .where(eq(esquema.paciente.id, ya.id));
@@ -95,6 +114,8 @@ export async function pacienteDe(datos: Record<string, string>) {
       nombre: datos.nombre ?? 'Sin nombre',
       nombreBusca: normalizar(datos.nombre ?? 'Sin nombre'),
       telefono: datos.telefono ?? null,
+      whatsapp: datos.whatsapp ?? null,
+      correo: datos.correo ?? null,
       sexo: datos.sexo ?? null,
     })
     .returning();
@@ -153,12 +174,18 @@ export async function atencionPara(id: string) {
       id: esquema.atencion.id,
       numero: esquema.atencion.numero,
       estado: esquema.atencion.estado,
+      tipo: esquema.atencion.tipo,
+      origenId: esquema.atencion.origenId,
+      resultados: esquema.atencion.resultados,
       fecha: esquema.atencion.fecha,
       datos: esquema.atencion.datos,
       creada: esquema.atencion.creada,
       anuladaMotivo: esquema.atencion.anuladaMotivo,
+      aseguradora: esquema.atencion.aseguradora,
       paciente: esquema.paciente.nombre,
+      pacienteId: esquema.atencion.pacienteId,
       cedula: esquema.paciente.cedula,
+      tipoDoc: esquema.paciente.tipoDoc,
       /* Hacen falta para saber si quien mira es el dueño del borrador y,
          si no lo es, poder decirle de quién es. */
       medicoId: esquema.atencion.medicoId,
@@ -211,9 +238,12 @@ export async function guardarBorrador(
       // Si corrigieron la cédula, el caso pasa al paciente correcto.
       pacienteId: paciente.id,
       estado: cerrar ? 'cerrada' : 'borrador',
-      // Viaja en el formulario porque quien crea la atención suele ser el
-      // guardado automático, que no sabe de qué pantalla salió.
-      tipo: datos.tipo_atencion === 'laboratorio' ? 'laboratorio' : 'general',
+      /* El TIPO no se toca. Se decide cuando la atención nace y después es
+         lo que es: una consulta no se vuelve una orden de laboratorio ni al
+         revés. Acá se escribía desde el formulario, y como la pantalla de
+         edición no mandaba ese campo, reabrir una orden la convertía en
+         atención general: perdía su cola, su pantalla de resultados y
+         aparecía entre los casos del médico. */
       fecha: datos.fecha,
       aseguradora: datos.aseguradora ?? null,
       poliza: datos.poliza ?? null,
@@ -240,6 +270,12 @@ export async function guardarBorrador(
 /**
  * Los borradores sin terminar, del más reciente al más viejo, con la lista
  * de campos que todavía impiden cerrarlos.
+ *
+ * Solo atenciones generales. Una orden de laboratorio también es un
+ * borrador mientras espera resultados, pero esperar una muestra no es una
+ * historia a medio escribir: tiene su propia cola, en /sistema/laboratorio,
+ * y mezclarlas llenaba los borradores del médico de gente que nunca pasó
+ * por su consulta.
  */
 export async function borradoresAbiertos(limite = 100) {
   const filas = await bd
@@ -255,7 +291,10 @@ export async function borradoresAbiertos(limite = 100) {
     })
     .from(esquema.atencion)
     .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
-    .where(eq(esquema.atencion.estado, 'borrador'))
+    .where(and(
+      eq(esquema.atencion.estado, 'borrador'),
+      eq(esquema.atencion.tipo, 'general'),
+    ))
     .orderBy(desc(esquema.atencion.creada))
     .limit(limite);
 

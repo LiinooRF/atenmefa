@@ -86,12 +86,18 @@ test('el médico no puede abrir el catálogo de servicios', async ({ page }) => 
   await expect(page).toHaveURL(/\/sistema\/sin-permiso/);
 });
 
-test('administración no puede abrir el formulario de atención', async ({ page }) => {
+test('administración no puede escribir una historia clínica', async ({ page }) => {
+  /* Entrar a la puerta sí puede: también registra órdenes de laboratorio,
+     que no son historias clínicas. Lo que no le aparece nunca es el
+     formulario con el diagnóstico. */
   await entrar(page, 'administracion');
-  await page.goto('/sistema/atencion/nueva');
-  await expect(page).toHaveURL(/\/sistema\/sin-permiso/);
-  await expect(page.locator('.corte__motivo')).toContainText('personal médico');
+  await page.goto('/sistema/atencion/nueva?cedula=V-9.999.001&tipo=general');
+
+  await expect(page.locator('input[name="tipo_atencion"]')).toHaveValue('laboratorio');
+  await expect(page.locator('#c-idx')).toHaveCount(0);
+  await expect(page.locator('#c-abdomen')).toHaveCount(0);
 });
+
 
 test('la pantalla de sin permiso dice con qué rol entró', async ({ page }) => {
   await entrar(page, 'medico');
@@ -103,6 +109,61 @@ test('la descarga del cierre rechaza al médico con 403', async ({ page }) => {
   await entrar(page, 'medico');
   const r = await page.request.get('/sistema/cierre/exportar?mes=2026-11');
   expect(r.status()).toBe(403);
+});
+
+/* ---------------------------------------------------------------
+   Los dos roles nuevos.
+   ---------------------------------------------------------------
+
+   El cliente los definió en audio y la línea que los separa es una sola:
+   «el médico va a poder hacer la atención y el bioanalista la del
+   laboratorio». Lo que SÍ comparten los cuatro es leer la historia: lo
+   preguntamos y contestó que sí, «si es que lo necesitan».
+   --------------------------------------------------------------- */
+
+test('el bioanalista no escribe historias clínicas', async ({ page }) => {
+  await entrar(page, 'bioanalista');
+  await page.goto('/sistema/atencion/nueva?cedula=V-9.999.002&tipo=general');
+  await expect(page.locator('input[name="tipo_atencion"]')).toHaveValue('laboratorio');
+  await expect(page.locator('#c-idx')).toHaveCount(0);
+});
+
+test('el bioanalista no toca la plata', async ({ page }) => {
+  await entrar(page, 'bioanalista');
+  for (const donde of ['/sistema/cierre', '/sistema/servicios']) {
+    await page.goto(donde);
+    expect.soft(new URL(page.url()).pathname, `pudo abrir ${donde}`).toContain('sin-permiso');
+  }
+});
+
+test('recepción cobra pero no cierra el mes', async ({ page }) => {
+  /* El cliente fue explícito: «esa persona se encarga de cobrar». El cierre
+     del mes y los precios siguen siendo de administración. */
+  await entrar(page, 'recepcionista');
+  await page.goto('/sistema/cierre');
+  await expect(page).toHaveURL(/\/sistema\/sin-permiso/);
+
+  await page.goto('/sistema/servicios');
+  await expect(page).toHaveURL(/\/sistema\/sin-permiso/);
+});
+
+test('los cuatro roles pueden leer la historia clínica', async ({ page }) => {
+  /* Es lo que el cliente pidió, y no es gratis: cada apertura queda en
+     bitácora. Si algún día se quiere cerrar, es quitar una línea de la
+     tabla de permisos, y esta prueba lo dice. */
+  await entrar(page, 'medico');
+  const atencion = await crearAtencionCerrada(page, {
+    nombre: 'Paciente De Los Cuatro Roles', cedula: CEDULA,
+  });
+  await salir(page);
+
+  for (const quien of ['bioanalista', 'recepcionista', 'administracion'] as const) {
+    await entrar(page, quien);
+    await page.goto(`/sistema/atencion/${atencion}`);
+    await expect.soft(page.locator('main'), `${quien} no pudo leer la historia`)
+      .toContainText(historiaMinima.idx);
+    await salir(page);
+  }
 });
 
 /* ---------------------------------------------------------------

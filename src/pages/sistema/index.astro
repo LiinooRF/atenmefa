@@ -16,7 +16,14 @@ const escribe = puede(Astro.locals.usuario?.rol as string, 'escribir_historia');
 const busca = (Astro.url.searchParams.get('q') ?? '').trim();
 const mes = Astro.url.searchParams.get('mes') ?? '';
 
-const filtros = [eq(esquema.atencion.estado, 'cerrada')];
+/* Solo atenciones generales. Las órdenes de laboratorio tienen su propia
+   pantalla y no entran acá: el cliente lo pidió explícito —«la gente que
+   llega para el laboratorio no es necesario que le salga al médico»—, y lo
+   que el médico sí pidió lo ve colgado de su propia consulta. */
+const filtros = [
+  eq(esquema.atencion.estado, 'cerrada'),
+  eq(esquema.atencion.tipo, 'general'),
+];
 if (busca) {
   const t = `%${busca.toLowerCase()}%`;
   filtros.push(

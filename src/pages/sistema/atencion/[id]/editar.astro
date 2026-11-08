@@ -11,29 +11,44 @@ import Sistema from '../../../../layouts/Sistema.astro';
 import Pasos from '../../../../components/sistema/Pasos.astro';
 import Icono from '../../../../components/Icono.astro';
 import { historia } from '../../../../sistema/historia';
+import { laboratorio } from '../../../../sistema/laboratorio';
+import ExamenesLab from '../../../../components/sistema/ExamenesLab.astro';
 import { exigir } from '../../../../sistema/lib/guardia';
-import { puedeEditarAtencion } from '../../../../sistema/lib/permisos';
+import { puede, puedeEditarAtencion, puedeEditarOrden } from '../../../../sistema/lib/permisos';
+import {
+  catalogoDeExamenes, examenesPedidos, sincronizarExamenes,
+} from '../../../../sistema/lib/laboratorio';
+import { tasaPara } from '../../../../sistema/lib/tasa';
 import {
   limpiarDatos, faltantes, anotar, atencionPara, guardarBorrador,
 } from '../../../../sistema/lib/atenciones';
 
 export const prerender = false;
 
-const corte = exigir(Astro, 'escribir_historia');
-if (corte) return corte;
+const usuario = Astro.locals.usuario;
+if (!usuario) return Astro.redirect('/sistema/entrar');
 
 const { id } = Astro.params;
-const usuario = Astro.locals.usuario!;
 
 const caso = await atencionPara(id!);
 if (!caso) return Astro.redirect('/sistema');
+
+/* El permiso depende de qué se abrió: una orden de laboratorio la corrige
+   recepción, que no escribe historias clínicas. */
+const esLab = caso.tipo === 'laboratorio';
+const corte = exigir(Astro, esLab ? 'registrar_laboratorio' : 'escribir_historia');
+if (corte) return corte;
 
 /* Una atención cerrada está firmada y una anulada quedó fuera de juego:
    ninguna de las dos se toca. No se redirige en silencio, se explica.
    Y un borrador lo termina quien lo abrió: nadie escribe una historia
    clínica en nombre de otro médico. */
-const editable = puedeEditarAtencion(usuario, caso);
-const ajeno = caso.estado === 'borrador' && caso.medicoId !== usuario.id;
+const editable = esLab
+  ? puedeEditarOrden(usuario, caso)
+  : puedeEditarAtencion(usuario, caso);
+/* Una historia la termina quien la abrió; una orden de laboratorio, no. Ver
+   puedeEditarOrden. */
+const ajeno = !esLab && caso.estado === 'borrador' && caso.medicoId !== usuario.id;
 
 /* Abrir el formulario es ver la historia completa, y eso se registra igual
    que verla en la ficha. El POST no pasa por acá: deja su propio 'edito'. */
@@ -44,7 +59,9 @@ let datos = (caso.datos ?? {}) as Record<string, string>;
 
 if (Astro.request.method === 'POST' && editable) {
   const form = await Astro.request.formData();
-  const cerrar = form.get('accion') === 'cerrar';
+  // La orden de laboratorio la cierra el bioanalista, desde sus resultados.
+  const cerrar = form.get('accion') === 'cerrar' && !esLab;
+  const marcados = form.getAll('examen').map((v) => String(v));
 
   /* Lo enviado reemplaza lo guardado en vez de mezclarse con él: si el
      médico borró un campo tiene que quedar borrado. La fecha y el nombre
@@ -52,7 +69,7 @@ if (Astro.request.method === 'POST' && editable) {
      quedaría sin fecha, que es columna obligatoria en la base. */
   datos = { fecha: caso.fecha, medico: usuario.name, ...limpiarDatos(form) };
 
-  const faltan = cerrar ? faltantes(datos) : [];
+  const faltan = cerrar ? faltantes(datos, caso.tipo) : [];
 
   if (cerrar && faltan.length) {
     error = `Falta completar: ${faltan.map((c) => c.rotulo.toLowerCase()).join(', ')}.`;
@@ -60,13 +77,20 @@ if (Astro.request.method === 'POST' && editable) {
     error = 'Para guardar hace falta al menos el nombre y la cédula del paciente.';
   } else {
     try {
-      const guardada = await guardarBorrador(caso.id, datos, cerrar, usuario.id);
+      /* En una orden de laboratorio se pasa el dueño de la fila y no quien
+         está escribiendo: guardarBorrador comprueba que coincidan, y en una
+         orden eso no aplica —la registra un turno y la corrige el otro—.
+         Quién la tocó queda en bitácora unas líneas más abajo. */
+      const guardada = await guardarBorrador(
+        caso.id, datos, cerrar, esLab ? caso.medicoId : usuario.id,
+      );
       if (!guardada) {
         error = 'Esta atención dejó de ser un borrador mientras la editaba: vuelva a abrirla para ver cómo quedó.';
       } else {
+        if (esLab) await sincronizarExamenes(caso.id, marcados, datos.aseguradora);
         await anotar(usuario.id, cerrar ? 'cerro' : 'edito', caso.id, {
           numero: guardada.numero,
-          faltan: faltantes(datos).length,
+          faltan: faltantes(datos, caso.tipo).length,
         });
         return Astro.redirect(`/sistema/atencion/${caso.id}`);
       }
@@ -76,14 +100,22 @@ if (Astro.request.method === 'POST' && editable) {
   }
 }
 
-const faltanAhora = faltantes(datos);
+const faltanAhora = faltantes(datos, caso.tipo);
+
+/* Lo que ya tiene pedido, el catálogo y la tasa. Solo para una orden: una
+   consulta no tiene selector de exámenes. */
+const pedidos = esLab && editable ? await examenesPedidos(caso.id) : [];
+const catalogo = esLab && editable ? await catalogoDeExamenes() : [];
+const tasaHoy = esLab && editable ? await tasaPara(caso.fecha) : null;
 
 /* En un formulario nuevo las secciones largas arrancan plegadas, pero acá ya
    hay historia escrita: una alergia anotada no puede quedar escondida detrás
    de un título cerrado. La que tiene algo se abre. */
-const secciones = historia.map((s) =>
-  s.plegable && s.campos.some((c) => datos[c.clave]) ? { ...s, plegable: false } : s,
-);
+const secciones = esLab
+  ? laboratorio
+  : historia.map((s) =>
+      s.plegable && s.campos.some((c) => datos[c.clave]) ? { ...s, plegable: false } : s,
+    );
 
 const fechaLarga = (f: string) =>
   new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -91,9 +123,13 @@ const fechaLarga = (f: string) =>
 
 <Sistema titulo={`Atención ${caso.numero}`}>
   <nav class="miga">
-    <a href="/sistema">Casos</a> <span>/</span>
-    <a href="/sistema/borradores">Borradores</a> <span>/</span>
-    Atención {caso.numero}
+    {esLab ? (
+      <><a href="/sistema/laboratorio">Laboratorio</a> <span>/</span> Orden {caso.numero}</>
+    ) : (
+      <><a href="/sistema">Casos</a> <span>/</span>
+        <a href="/sistema/borradores">Borradores</a> <span>/</span>
+        Atención {caso.numero}</>
+    )}
   </nav>
 
   {!editable ? (
@@ -114,7 +150,9 @@ const fechaLarga = (f: string) =>
       </p>
       <div class="trabada__acciones">
         <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}`}>Ver la ficha del caso</a>
-        <a class="sis-boton sis-boton--suave" href="/sistema/borradores">Ver los borradores</a>
+        <a class="sis-boton sis-boton--suave" href={esLab ? '/sistema/laboratorio' : '/sistema/borradores'}>
+          {esLab ? 'Ver el laboratorio' : 'Ver los borradores'}
+        </a>
       </div>
     </section>
   ) : (
@@ -122,14 +160,16 @@ const fechaLarga = (f: string) =>
       <header class="form__cab">
         <div>
           <div class="form__linea">
-            <h1>Atención N° <span class="cifra">{caso.numero}</span></h1>
-            <span class="chapa">Borrador</span>
+            <h1>{esLab ? 'Orden' : 'Atención'} N° <span class="cifra">{caso.numero}</span></h1>
+            <span class="chapa">{esLab ? 'Abierta' : 'Borrador'}</span>
           </div>
           <p class="form__nota">
             {caso.paciente} · {caso.cedula} · abierta el {fechaLarga(caso.fecha)}.
-            {faltanAhora.length === 0
-              ? ' Ya se puede cerrar.'
-              : ` Faltan ${faltanAhora.length} ${faltanAhora.length === 1 ? 'campo obligatorio' : 'campos obligatorios'} para poder cerrarla.`}
+            {faltanAhora.length > 0
+              ? ` Faltan ${faltanAhora.length} ${faltanAhora.length === 1 ? 'campo obligatorio' : 'campos obligatorios'}${esLab ? '.' : ' para poder cerrarla.'}`
+              : esLab
+                ? ' Los resultados los carga el bioanalista.'
+                : ' Ya se puede cerrar.'}
           </p>
         </div>
         <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}`}>Dejar como está</a>
@@ -141,7 +181,27 @@ const fechaLarga = (f: string) =>
           {error}
         </p>
       )}
-        <Pasos datos={datos} atencionId={caso.id} numero={caso.numero} />
+        <Pasos
+          datos={datos}
+          atencionId={caso.id}
+          numero={caso.numero}
+          modelo={secciones}
+          tipoAtencion={esLab ? 'laboratorio' : 'general'}
+          tipoDoc={caso.tipoDoc}
+          cierra={!esLab}
+          rotuloSalir={esLab ? 'Guardar la orden' : 'Guardar y salir'}
+          extraEn="examenes"
+        >
+          {esLab && (
+            <ExamenesLab
+              slot="extra"
+              catalogo={catalogo}
+              marcados={pedidos.map((p) => p.servicioId!).filter(Boolean)}
+              tasa={tasaHoy}
+              puedeEditarCatalogo={puede(usuario.rol as string, 'editar_catalogo')}
+            />
+          )}
+        </Pasos>
     </form>
   )}
 </Sistema>

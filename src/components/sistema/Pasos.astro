@@ -30,14 +30,34 @@ interface Props {
      no sabe de cuál se trata y no tiene por qué: arma pasos con lo que le
      den. */
   modelo?: readonly Seccion[];
+  /* Si esta pantalla puede firmar y cerrar. La orden de laboratorio no:
+     cerrarla significa que los resultados están listos, y eso lo dice el
+     bioanalista desde su pantalla, no quien registró la orden. */
+  cierra?: boolean;
+  rotuloSalir?: string;
+  /* En qué paso va el contenido del slot "extra". Astro exige que el nombre
+     del slot sea literal, así que se elige el PASO y no el nombre: la
+     selección de exámenes encabeza su paso y nada más se dibuja dos veces. */
+  extraEn?: string;
+  /* Viajan con CADA guardado, incluido el automático, que es el que de
+     hecho crea la atención. Viven acá y no en una pantalla porque las dos
+     —la nueva y la edición— los necesitan: sin tipo_doc, guardar la
+     atención de alguien con pasaporte lo buscaba por cédula y creaba una
+     persona distinta cada vez. */
+  tipoAtencion?: 'general' | 'laboratorio';
+  tipoDoc?: string;
 }
 const {
   datos = {}, atencionId = '', numero, pasoInicial = 0,
   previos = {}, paciente = '', ultima = null, modelo = historia,
+  cierra = true, rotuloSalir = 'Guardar y salir', extraEn = '',
+  tipoAtencion = 'general', tipoDoc = 'cedula',
 } = Astro.props;
 ---
 
 <div class="pasos" data-atencion={atencionId} data-inicial={pasoInicial}>
+  <input type="hidden" name="tipo_atencion" value={tipoAtencion} />
+  <input type="hidden" name="tipo_doc" value={tipoDoc} />
   <ol class="pasos__guia" id="pasos-guia" hidden>
     {modelo.map((s, i) => (
       <li>
@@ -57,6 +77,9 @@ const {
     <Atajos previos={previos} nombre={paciente} ultima={ultima} />
     {modelo.map((s, i) => (
       <div class="pasos__hoja" data-hoja={i}>
+        {/* Para lo que no es un campo del modelo: la selección de exámenes
+            del catálogo entra acá, encabezando su paso. */}
+        {s.clave === extraEn && <slot name="extra" />}
         <Seccion seccion={s} datos={datos} />
       </div>
     ))}
@@ -79,13 +102,16 @@ const {
           <Icono nombre="flecha" tam={17} />
         </button>
         <button type="submit" name="accion" value="borrador" formnovalidate
-                class="sis-boton sis-boton--suave" id="pasos-salir">
-          Guardar y salir
+                class:list={['sis-boton', cierra ? 'sis-boton--suave' : 'sis-boton--primario']}
+                id="pasos-salir">
+          {rotuloSalir}
         </button>
-        <button type="submit" name="accion" value="cerrar" class="sis-boton sis-boton--primario" id="pasos-cerrar">
-          <Icono nombre="escudo" tam={17} />
-          Cerrar atención
-        </button>
+        {cierra && (
+          <button type="submit" name="accion" value="cerrar" class="sis-boton sis-boton--primario" id="pasos-cerrar">
+            <Icono nombre="escudo" tam={17} />
+            Cerrar atención
+          </button>
+        )}
       </div>
     </div>
   </div>
@@ -111,7 +137,10 @@ const {
     display: flex;
     align-items: center;
     gap: 8px;
-    min-height: 40px;
+    /* 44 px, como todo lo que se toca en el panel. Estaba en 40 y nadie lo
+       había medido: la prueba de los 44 px entra a este formulario con la
+       cuenta de administración, que hasta ahora no podía abrirlo. */
+    min-height: 44px;
     padding: 6px 13px 6px 7px;
     border: 1px solid var(--linea);
     border-radius: 999px;
@@ -196,7 +225,8 @@ const {
     const estado = document.getElementById('pasos-estado')!;
     const atras = document.getElementById('pasos-atras') as HTMLButtonElement;
     const siguiente = document.getElementById('pasos-siguiente') as HTMLButtonElement;
-    const cerrar = document.getElementById('pasos-cerrar') as HTMLButtonElement;
+    /* Puede no estar: la orden de laboratorio se guarda, no se cierra. */
+    const cerrar = document.getElementById('pasos-cerrar') as HTMLButtonElement | null;
     const campoId = document.getElementById('atencion-id') as HTMLInputElement;
     const botones = [...guia.querySelectorAll<HTMLButtonElement>('[data-ir]')];
 
@@ -242,7 +272,7 @@ const {
       atras.hidden = actual === 0;
       siguiente.hidden = actual === hojas.length - 1;
       // Cerrar solo tiene sentido al final; antes confunde.
-      cerrar.hidden = actual !== hojas.length - 1;
+      if (cerrar) cerrar.hidden = actual !== hojas.length - 1;
       botones[actual]?.scrollIntoView({ block: 'nearest', inline: 'center' });
       window.scrollTo({ top: 0, behavior: 'instant' as ScrollBehavior });
       if (moverUrl) {
@@ -314,10 +344,15 @@ const {
             history.replaceState(null, '', u);
           }
           const faltan = (d.faltan ?? []).length;
+          /* Sin botón de cerrar no se habla de cerrar: en la orden de
+             laboratorio "faltan 2 campos para cerrar" mandaba a buscar un
+             botón que esa pantalla no tiene. */
           decir(
             faltan === 0
-              ? 'Guardado. Ya se puede cerrar.'
-              : `Guardado. Faltan ${faltan} ${faltan === 1 ? 'campo' : 'campos'} para cerrar.`,
+              ? cerrar ? 'Guardado. Ya se puede cerrar.' : 'Guardado.'
+              : cerrar
+                ? `Guardado. Faltan ${faltan} ${faltan === 1 ? 'campo' : 'campos'} para cerrar.`
+                : `Guardado. Faltan ${faltan} ${faltan === 1 ? 'campo' : 'campos'}.`,
             'guardado',
           );
         } else if (d.motivo === 'faltan-datos-del-paciente') {

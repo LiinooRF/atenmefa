@@ -61,6 +61,8 @@ export interface Documento {
   tipoDoc: TipoDocumento;
   medico: string | null;
   colegiatura: string | null;
+  /** Para rotular la colegiatura como lo que es. */
+  firmaDe: 'medico' | 'bioanalista';
   anulada: boolean;
   /** Lo que haya: informe siempre, récipe solo si lo lleva. */
   hojas: string[];
@@ -85,7 +87,9 @@ export async function verificar(
       numero: esquema.atencion.numero,
       fecha: esquema.atencion.fecha,
       estado: esquema.atencion.estado,
+      tipo: esquema.atencion.tipo,
       datos: esquema.atencion.datos,
+      resultadosPor: esquema.atencion.resultadosPor,
       pin: esquema.atencion.pin,
       intentos: esquema.atencion.intentosFallidos,
       bloqueadaHasta: esquema.atencion.bloqueadaHasta,
@@ -147,8 +151,22 @@ export async function verificar(
   }
 
   const d = (caso.datos ?? {}) as Record<string, string>;
-  const hojas = ['Informe de atención médica'];
-  if (d.recipe || d.indicaciones) hojas.push('Récipe');
+  const esLab = caso.tipo === 'laboratorio';
+  const hojas = esLab ? ['Informe de laboratorio'] : ['Informe de atención médica'];
+  if (!esLab && (d.recipe || d.indicaciones)) hojas.push('Récipe');
+
+  /* Quien firma un informe de laboratorio es el bioanalista y no quien
+     registró la orden, que casi siempre es recepción. La aseguradora que
+     verifica necesita ver el nombre que está impreso en el papel: si acá
+     apareciera otro, parecería que el documento no es el que tiene en la
+     mano. */
+  const [firmante] = esLab && caso.resultadosPor
+    ? await bd
+        .select({ nombre: esquema.user.name, colegiatura: esquema.user.colegiatura })
+        .from(esquema.user)
+        .where(eq(esquema.user.id, caso.resultadosPor))
+        .limit(1)
+    : [];
 
   return {
     estado: 'ok',
@@ -158,8 +176,10 @@ export async function verificar(
       paciente: caso.paciente,
       documentoPaciente: caso.cedula,
       tipoDoc: caso.tipoDoc,
-      medico: caso.medico,
-      colegiatura: caso.colegiatura,
+      medico: firmante?.nombre ?? (esLab ? null : caso.medico),
+      colegiatura: firmante?.colegiatura ?? (esLab ? null : caso.colegiatura),
+      /* Para no imprimir "C.M." al lado del colegio de un bioanalista. */
+      firmaDe: esLab ? 'bioanalista' : 'medico',
       anulada: caso.estado === 'anulada',
       hojas,
     },

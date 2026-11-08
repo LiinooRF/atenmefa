@@ -1,0 +1,236 @@
+---
+/**
+ * La cola del laboratorio.
+ *
+ * Lo pendiente primero y lo más viejo arriba. Es al revés que en el resto
+ * del sistema, donde lo último está arriba, y es a propósito: una muestra
+ * que lleva dos días sin resultado es más urgente que la de esta mañana, y
+ * ordenada por fecha descendente esa es justo la que se pierde de vista.
+ *
+ * El médico no tiene esta pantalla en su menú. El cliente fue claro: «la
+ * gente que llega para el laboratorio no es necesario que le salga al
+ * médico… no tiene por qué esa persona salir en la sección de las historias
+ * médicas». Lo que el médico pidió en su consulta sí lo ve, pero colgado de
+ * esa consulta.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { puede } from '../../sistema/lib/permisos';
+import { colaDelLaboratorio } from '../../sistema/lib/laboratorio';
+import { hoyEnVenezuela } from '../../sistema/lib/atenciones';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'cola_laboratorio');
+if (corte) return corte;
+
+const rol = Astro.locals.usuario?.rol as string;
+const resulta = puede(rol, 'cargar_resultados');
+const registra = puede(rol, 'registrar_laboratorio');
+
+const verEntregadas = Astro.url.searchParams.get('ver') === 'entregadas';
+const cola = await colaDelLaboratorio({ entregadas: verEntregadas });
+
+const fechaCorta = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
+
+/**
+ * Cuántos días lleva esperando. Es lo que de verdad ordena la cola.
+ *
+ * El "hoy" sale de hoyEnVenezuela y no del reloj del servidor: el
+ * contenedor corre en UTC y después de las 20:00 de Caracas ya está en el
+ * día siguiente. Una muestra de esta tarde habría salido con "1 día".
+ */
+const hoy = new Date(`${hoyEnVenezuela()}T12:00:00`);
+const diasDe = (f: string) =>
+  Math.max(0, Math.round((hoy.getTime() - new Date(`${f}T12:00:00`).getTime()) / 86_400_000));
+
+const ROTULO = {
+  'sin-resultados': 'Esperando resultados',
+  'a-medias': 'A medio cargar',
+  entregada: 'Entregada',
+} as const;
+---
+
+<Sistema titulo="Laboratorio">
+  <div class="cab">
+    <div>
+      <h1>Laboratorio</h1>
+      <p class="cab__nota">
+        {verEntregadas
+          ? `${cola.length} ${cola.length === 1 ? 'orden entregada' : 'órdenes entregadas'}`
+          : cola.length === 0
+            ? 'Nada pendiente'
+            : `${cola.length} ${cola.length === 1 ? 'orden esperando' : 'órdenes esperando'}`}
+      </p>
+    </div>
+    {registra && (
+      <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva?tipo=laboratorio">
+        <Icono nombre="mas" tam={19} />
+        Nueva orden
+      </a>
+    )}
+  </div>
+
+  <nav class="tabs">
+    <a class:list={['tabs__uno', !verEntregadas && 'tabs__uno--actual']}
+       href="/sistema/laboratorio" aria-current={!verEntregadas ? 'page' : undefined}>
+      Pendientes
+    </a>
+    <a class:list={['tabs__uno', verEntregadas && 'tabs__uno--actual']}
+       href="/sistema/laboratorio?ver=entregadas" aria-current={verEntregadas ? 'page' : undefined}>
+      Entregadas
+    </a>
+  </nav>
+
+  {cola.length === 0 ? (
+    <div class="vacio sis-tarjeta">
+      <h2>{verEntregadas ? 'Todavía no hay órdenes entregadas' : 'No hay nada esperando'}</h2>
+      <p>
+        {verEntregadas
+          ? 'Acá aparecen las órdenes una vez que el bioanalista las da por listas.'
+          : 'Las órdenes aparecen acá en cuanto recepción las registra.'}
+      </p>
+    </div>
+  ) : (
+    <ul class="cola">
+      {cola.map((o) => (
+        <li class:list={[`cola--${o.enCola}`]}>
+          <a href={resulta && o.enCola !== 'entregada'
+                   ? `/sistema/atencion/${o.id}/resultados`
+                   : `/sistema/atencion/${o.id}`}>
+            <span class="cola__num cifra">{o.numero}</span>
+
+            <span class="cola__cuerpo">
+              <span class="cola__linea">
+                <strong>{o.paciente}</strong>
+                <em class="cifra">{fechaCorta(o.fecha)}</em>
+              </span>
+              <span class="cola__linea cola__linea--baja">
+                <small>
+                  {o.examenes > 0
+                    ? `${o.examenes} ${o.examenes === 1 ? 'examen' : 'exámenes'}`
+                    : 'Sin exámenes del catálogo'}
+                  {o.resueltos > 0 && ` · ${o.resueltos} con resultado`}
+                  {o.origenId && ' · pedidos en consulta'}
+                </small>
+                <span class="cola__paga">{o.aseguradora ?? 'Paga el paciente'}</span>
+              </span>
+            </span>
+
+            <span class="cola__estado">
+              <span class="cola__chapa">{ROTULO[o.enCola]}</span>
+              {o.enCola !== 'entregada' && diasDe(o.fecha) >= 2 && (
+                <small class="cola__dias">{diasDe(o.fecha)} días</small>
+              )}
+            </span>
+          </a>
+        </li>
+      ))}
+    </ul>
+  )}
+</Sistema>
+
+<style>
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .tabs { display: flex; gap: 6px; margin: 20px 0 16px; }
+  .tabs__uno {
+    display: inline-flex;
+    align-items: center;
+    min-height: 44px;
+    padding: 0 16px;
+    border: 1px solid var(--linea);
+    border-radius: 999px;
+    background: var(--papel);
+    color: var(--tinta-suave);
+    text-decoration: none;
+    font-size: var(--u-sm);
+    font-weight: 600;
+  }
+  .tabs__uno--actual { background: var(--azul); border-color: var(--azul); color: #fff; }
+
+  .vacio { text-align: center; padding-block: 56px; }
+  .vacio h2 { font-size: var(--u-lg); }
+  .vacio p { margin-top: 9px; color: var(--tinta-tenue); }
+
+  .cola { list-style: none; margin: 0; padding: 0; background: var(--papel);
+          border: 1px solid var(--linea); border-radius: var(--radio); overflow: hidden; }
+  .cola li + li { border-top: 1px solid var(--linea-tenue); }
+
+  .cola a {
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    align-items: center;
+    gap: 14px;
+    padding: 13px 16px;
+    text-decoration: none;
+    color: var(--tinta);
+  }
+  .cola a:hover { background: var(--bruma); }
+
+  .cola__num {
+    display: grid;
+    place-items: center;
+    min-width: 46px;
+    height: 46px;
+    padding: 0 8px;
+    border-radius: 12px;
+    background: var(--azul-tenue);
+    color: var(--azul);
+    font-family: var(--titulares);
+    font-weight: 700;
+    font-size: var(--u-sm);
+  }
+
+  .cola__cuerpo { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+  .cola__linea { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; }
+  .cola__linea strong {
+    font-family: var(--titulares);
+    font-size: var(--u-base);
+    font-weight: 600;
+    color: var(--azul);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cola__linea em { font-style: normal; font-size: var(--u-xs); color: var(--tinta-tenue); flex: none; }
+  .cola__linea--baja small {
+    font-size: var(--u-sm);
+    color: var(--tinta-suave);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .cola__paga {
+    flex: none;
+    font-size: var(--u-xs);
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    font-weight: 700;
+    color: var(--tinta-tenue);
+  }
+
+  .cola__estado { display: none; flex-direction: column; align-items: flex-end; gap: 3px; }
+  @media (min-width: 620px) { .cola__estado { display: flex; } }
+
+  .cola__chapa {
+    font-size: var(--u-xs);
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: var(--bruma);
+    color: var(--tinta-suave);
+    white-space: nowrap;
+  }
+  .cola--sin-resultados .cola__chapa { background: #fdf0d9; color: #7a5200; }
+  .cola--a-medias .cola__chapa { background: var(--azul-tenue); color: var(--azul); }
+  .cola--entregada .cola__chapa { background: #e4f2ea; color: #105433; }
+
+  /* Dos días esperando ya es un aviso, no un dato de color. */
+  .cola__dias { font-size: var(--u-xs); font-weight: 700; color: var(--rojo); }
+</style>

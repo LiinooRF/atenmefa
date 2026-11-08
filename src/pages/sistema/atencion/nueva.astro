@@ -32,14 +32,27 @@ import {
   llaveDe, numeroInterno, type TipoDocumento,
 } from '../../../sistema/lib/documento';
 import { asegurarPin } from '../../../sistema/lib/verificacion';
+import { puede } from '../../../sistema/lib/permisos';
+import ExamenesLab from '../../../components/sistema/ExamenesLab.astro';
+import {
+  catalogoDeExamenes, sincronizarExamenes,
+} from '../../../sistema/lib/laboratorio';
+import { tasaPara } from '../../../sistema/lib/tasa';
 import { eq, desc, and, ne, sql } from 'drizzle-orm';
 
 export const prerender = false;
 
-const corte = exigir(Astro, 'escribir_historia');
+/* Dos puertas y no una: recepción no escribe historias clínicas pero sí
+   registra órdenes de laboratorio, que es la mitad de su trabajo. La
+   pantalla decide después qué le deja hacer. */
+const usuario = Astro.locals.usuario;
+if (!usuario) return Astro.redirect('/sistema/entrar');
+
+const puedeConsulta = puede(usuario.rol as string, 'escribir_historia');
+const puedeLab = puede(usuario.rol as string, 'registrar_laboratorio');
+const corte = puedeConsulta || puedeLab ? null : exigir(Astro, 'escribir_historia');
 if (corte) return corte;
 
-const usuario = Astro.locals.usuario!;
 let error = '';
 
 /* Qué se le va a hacer: la historia completa o una toma de laboratorio.
@@ -47,7 +60,15 @@ let error = '';
    quién se atiende: con eso el sistema ya puede rellenar lo que sabe, y la
    pregunta del tipo llega con el paciente en pantalla. */
 const crudoClase = Astro.url.searchParams.get('tipo');
-const clase = crudoClase === 'laboratorio' ? 'laboratorio' : crudoClase === 'general' ? 'general' : null;
+let clase = crudoClase === 'laboratorio' ? 'laboratorio' : crudoClase === 'general' ? 'general' : null;
+
+/* Con un solo camino posible no se pregunta: recepción solo registra
+   laboratorio y el médico que entra por un enlace de laboratorio sin poder
+   hacerlo no se queda mirando dos botones que no le sirven. */
+if (!clase && puedeLab && !puedeConsulta) clase = 'laboratorio';
+if (clase === 'general' && !puedeConsulta) clase = puedeLab ? 'laboratorio' : null;
+if (clase === 'laboratorio' && !puedeLab) clase = puedeConsulta ? 'general' : null;
+
 const esLaboratorio = clase === 'laboratorio';
 const modelo = esLaboratorio ? laboratorio : historia;
 
@@ -147,11 +168,46 @@ if (alcanza(tipoDoc, cedulaPedida)) {
   }
 }
 
+/* De qué consulta salió esta orden. Llega cuando el médico pide exámenes
+   desde la atención que está escribiendo; la orden queda colgada de ahí y
+   el resultado le aparece en su propia consulta. Se comprueba que exista y
+   que sea una consulta —no otra orden de laboratorio— antes de guardarla:
+   un id suelto en la dirección no puede colgar una orden de cualquier
+   cosa. */
+const crudoOrigen = (Astro.url.searchParams.get('origen') ?? '').trim();
+let origen: { id: string; numero: number; pacienteId: string } | null = null;
+if (esLaboratorio && esIdentificador(crudoOrigen)) {
+  const [fila] = await bd
+    .select({
+      id: esquema.atencion.id,
+      numero: esquema.atencion.numero,
+      pacienteId: esquema.atencion.pacienteId,
+    })
+    .from(esquema.atencion)
+    .where(and(
+      eq(esquema.atencion.id, crudoOrigen),
+      eq(esquema.atencion.tipo, 'general'),
+    ))
+    .limit(1);
+  origen = fila ?? null;
+}
+
 const hayPaciente = alcanza(tipoDoc, cedulaPedida);
 /* Con paciente pero sin elegir todavía, la pantalla del medio pregunta qué
    se le va a hacer. */
 const elegirClase = hayPaciente && !clase;
 const abrirFormulario = hayPaciente && Boolean(clase);
+
+/* El catálogo de exámenes y la tasa del día, que la pantalla necesita para
+   decir cuánto es en bolívares. Solo se piden si de verdad se va a dibujar
+   el formulario de laboratorio. */
+const catalogo = esLaboratorio && abrirFormulario ? await catalogoDeExamenes() : [];
+const tasaHoy = esLaboratorio && abrirFormulario ? await tasaPara(hoyEnVenezuela()) : null;
+
+/* Lo que quedó marcado. En una atención nueva empieza vacío; si el guardado
+   rebota con un error, vuelve lo que la persona había tildado y no una
+   lista en blanco. */
+let examenesMarcados: string[] = [];
 
 /* ----------------------------------------------------------------
    Guardar.
@@ -179,13 +235,20 @@ let datos: Record<string, string> = {
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
-  const cerrar = form.get('accion') === 'cerrar';
+  /* Una orden de laboratorio no se cierra desde acá: la cierra el
+     bioanalista cuando los resultados están listos. Si llegara "cerrar" en
+     el formulario de laboratorio, se trata como guardar. */
+  const cerrar = form.get('accion') === 'cerrar' && !esLaboratorio;
+  examenesMarcados = form.getAll('examen').map((v) => String(v));
   datos = { ...datos, ...limpiarDatos(form) };
 
   /* El guardado automático pudo haber creado ya la atención mientras el
      médico escribía. Si llega su id, se termina ESA y no se crea otra. */
   const yaCreada = String(form.get('id') ?? '').trim();
-  const faltan = cerrar ? faltantes(datos) : [];
+  /* `cerrar` ya es falso en laboratorio, así que esto siempre mira la
+     historia completa; se pasa el tipo igual para que siga diciendo la
+     verdad si algún día el laboratorio cierra desde acá. */
+  const faltan = cerrar ? faltantes(datos, esLaboratorio ? 'laboratorio' : 'general') : [];
 
   if (cerrar && faltan.length) {
     error = `Falta completar: ${faltan.map((c) => c.rotulo.toLowerCase()).join(', ')}.`;
@@ -198,6 +261,7 @@ if (Astro.request.method === 'POST') {
         if (!guardada) {
           error = 'La atención cambió de estado mientras escribía. Ábrala desde los borradores.';
         } else {
+          if (esLaboratorio) await sincronizarExamenes(guardada.id, examenesMarcados, datos.aseguradora);
           await anotar(usuario.id, cerrar ? 'cerro' : 'edito', guardada.id, { numero: guardada.numero });
           return Astro.redirect(`/sistema/atencion/${guardada.id}`);
         }
@@ -210,6 +274,10 @@ if (Astro.request.method === 'POST') {
             medicoId: usuario.id,
             estado: cerrar ? 'cerrada' : 'borrador',
             tipo: esLaboratorio ? 'laboratorio' : 'general',
+            /* Solo si el origen es del MISMO paciente: la dirección se
+               puede editar y una orden colgada de la consulta de otro
+               mezclaría dos historias. */
+            origenId: origen && origen.pacienteId === paciente.id ? origen.id : null,
             fecha: datos.fecha,
             aseguradora: datos.aseguradora ?? null,
             poliza: datos.poliza ?? null,
@@ -219,6 +287,7 @@ if (Astro.request.method === 'POST') {
           })
           .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
 
+        if (esLaboratorio) await sincronizarExamenes(creada.id, examenesMarcados, datos.aseguradora);
         // Cerrada de una: el documento nace acá y necesita su PIN.
         if (cerrar) await asegurarPin(creada.id);
         await anotar(usuario.id, cerrar ? 'cerro' : 'creo', creada.id, { numero: creada.numero });
@@ -251,17 +320,21 @@ const fechaLarga = (f: string) =>
       </p>
 
       <div class="clases">
-        <a class="clase" href={`${Astro.url.pathname}${Astro.url.search}&tipo=general`}>
-          <Icono nombre="estetoscopio" tam={22} />
-          <strong>Atención general</strong>
-          <span>Consulta, emergencia o procedimiento. Historia clínica completa.</span>
-        </a>
+        {puedeConsulta && (
+          <a class="clase" href={`${Astro.url.pathname}${Astro.url.search}&tipo=general`}>
+            <Icono nombre="estetoscopio" tam={22} />
+            <strong>Atención general</strong>
+            <span>Consulta, emergencia o procedimiento. Historia clínica completa.</span>
+          </a>
+        )}
 
-        <a class="clase" href={`${Astro.url.pathname}${Astro.url.search}&tipo=laboratorio`}>
-          <Icono nombre="laboratorio" tam={22} />
-          <strong>Laboratorio</strong>
-          <span>Toma de muestra y exámenes. Dos pasos.</span>
-        </a>
+        {puedeLab && (
+          <a class="clase" href={`${Astro.url.pathname}${Astro.url.search}&tipo=laboratorio`}>
+            <Icono nombre="laboratorio" tam={22} />
+            <strong>Laboratorio</strong>
+            <span>Toma de muestra y exámenes. Dos pasos.</span>
+          </a>
+        )}
       </div>
 
       <p class="quien__salida">
@@ -336,12 +409,12 @@ const fechaLarga = (f: string) =>
     </div>
   ) : (
     <form method="post" class="form">
-      {/* Estos dos viajan con CADA guardado, incluido el automático, que es
-          el que de hecho crea la atención. Sin ellos el autoguardado la
-          creaba como atención general y con la llave de cédula aunque fuera
-          un pasaporte: el tipo elegido en la puerta se perdía. */}
-      <input type="hidden" name="tipo_atencion" value={esLaboratorio ? 'laboratorio' : 'general'} />
-      <input type="hidden" name="tipo_doc" value={conocido?.tipoDoc ?? tipoDoc} />
+      {/* El tipo de atención y el de documento los pone Pasos, que es quien
+          dibuja el formulario. Esto es lo que solo existe acá: de qué
+          consulta salió la orden. Quien la crea suele ser el guardado
+          automático, que no sabe de qué pantalla vino; sin este campo la
+          orden pedida desde una consulta nacía suelta. */}
+      {origen && <input type="hidden" name="origen" value={origen.id} />}
       <header class="form__cab">
         <div>
           <h1>Nueva atención</h1>
@@ -377,7 +450,22 @@ const fechaLarga = (f: string) =>
         previos={esLaboratorio ? {} : antecedentesPrevios}
         paciente={conocido?.nombre ?? ''}
         ultima={conocido?.ultima ?? null}
-      />
+        cierra={!esLaboratorio}
+        rotuloSalir={esLaboratorio ? 'Guardar la orden' : 'Guardar y salir'}
+        extraEn="examenes"
+        tipoAtencion={esLaboratorio ? 'laboratorio' : 'general'}
+        tipoDoc={conocido?.tipoDoc ?? tipoDoc}
+      >
+        {esLaboratorio && (
+          <ExamenesLab
+            slot="extra"
+            catalogo={catalogo}
+            marcados={examenesMarcados}
+            tasa={tasaHoy}
+            puedeEditarCatalogo={puede(usuario.rol as string, 'editar_catalogo')}
+          />
+        )}
+      </Pasos>
     </form>
   )}
 </Sistema>

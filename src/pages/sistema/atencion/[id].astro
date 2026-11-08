@@ -2,21 +2,26 @@
 import Sistema from '../../../layouts/Sistema.astro';
 import Icono from '../../../components/Icono.astro';
 import { historia } from '../../../sistema/historia';
+import { laboratorio, type Resultado } from '../../../sistema/laboratorio';
 import { bd, esquema } from '../../../sistema/lib/base';
 import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
 import { dinero, frasePagador, montoRenglon, renglonesDe, resumir } from '../../../sistema/lib/cobro';
 import { eq, desc, and, ne } from 'drizzle-orm';
 import { exigir } from '../../../sistema/lib/guardia';
-import { puede, puedeEditarAtencion } from '../../../sistema/lib/permisos';
+import { puede, puedeCargarResultados, puedeEditarAtencion, puedeEditarOrden } from '../../../sistema/lib/permisos';
+import { examenesPedidos, ordenesDe } from '../../../sistema/lib/laboratorio';
 import { comoSeLee } from '../../../sistema/lib/documento';
 
 export const prerender = false;
 
-const corte = exigir(Astro, 'ver_historia');
-if (corte) return corte;
+/* La puerta se abre con 'ver_historia' o con 'ver_laboratorio', y después
+   se comprueba contra lo que de verdad se abrió: así el bioanalista puede
+   mirar la indicación del médico cuando el resultado le llama la atención,
+   y el que solo tiene laboratorio no entra a una consulta. */
+const usuario = Astro.locals.usuario;
+if (!usuario) return Astro.redirect('/sistema/entrar');
 
 const { id } = Astro.params;
-const usuario = Astro.locals.usuario!;
 
 /* Un id que no tiene forma de uuid hace que Postgres rechace el cast y la
    pantalla termina en error de servidor. Un enlace viejo o mal copiado se
@@ -28,6 +33,10 @@ const [caso] = await bd
     id: esquema.atencion.id,
     numero: esquema.atencion.numero,
     estado: esquema.atencion.estado,
+    tipo: esquema.atencion.tipo,
+    origenId: esquema.atencion.origenId,
+    resultados: esquema.atencion.resultados,
+    resultadosEn: esquema.atencion.resultadosEn,
     fecha: esquema.atencion.fecha,
     aseguradora: esquema.atencion.aseguradora,
     poliza: esquema.atencion.poliza,
@@ -52,15 +61,51 @@ const [caso] = await bd
 
 if (!caso) return Astro.redirect('/sistema');
 
+const esLab = caso.tipo === 'laboratorio';
+const corte = exigir(Astro, esLab ? 'ver_laboratorio' : 'ver_historia');
+if (corte) return corte;
+
 await anotar(usuario.id, 'vio', caso.id);
 
 const renglones = await renglonesDe(caso.id);
+
+/* Los dos lados del hilo con el laboratorio: si esto es una consulta, las
+   órdenes que salieron de ella; si es una orden, de qué consulta salió.
+   Ver 009-roles.sql. */
+const ordenes = esLab ? [] : await ordenesDe(caso.id);
+const pedidos = esLab ? await examenesPedidos(caso.id) : [];
+const resultados = (caso.resultados ?? []) as Resultado[];
+
+const [origenCrudo] = caso.origenId
+  ? await bd
+      .select({
+        id: esquema.atencion.id,
+        numero: esquema.atencion.numero,
+        fecha: esquema.atencion.fecha,
+        datos: esquema.atencion.datos,
+      })
+      .from(esquema.atencion)
+      .where(eq(esquema.atencion.id, caso.origenId))
+      .limit(1)
+  : [];
+
+/* El cast va acá y no en el template, igual que con las previas: un
+   genérico dentro del JSX de Astro se parsea como etiqueta. */
+const consultaOrigen = origenCrudo
+  ? {
+      id: origenCrudo.id,
+      numero: origenCrudo.numero,
+      fecha: origenCrudo.fecha,
+      idx: (origenCrudo.datos as Record<string, string> | null)?.idx ?? 'Sin diagnóstico',
+    }
+  : null;
 
 const previasCrudas = await bd
   .select({
     id: esquema.atencion.id,
     numero: esquema.atencion.numero,
     fecha: esquema.atencion.fecha,
+    tipo: esquema.atencion.tipo,
     datos: esquema.atencion.datos,
   })
   .from(esquema.atencion)
@@ -74,7 +119,11 @@ const anteriores = previasCrudas.map((a) => ({
   id: a.id,
   numero: a.numero,
   fecha: a.fecha,
-  idx: (a.datos as Record<string, string> | null)?.idx ?? 'Sin diagnóstico',
+  /* Una orden de laboratorio no tiene diagnóstico: decir "sin diagnóstico"
+     hacía parecer que al médico se le olvidó escribirlo. */
+  idx: a.tipo === 'laboratorio'
+    ? 'Laboratorio'
+    : (a.datos as Record<string, string> | null)?.idx ?? 'Sin diagnóstico',
 }));
 
 const datos = (caso.datos ?? {}) as Record<string, string>;
@@ -90,19 +139,33 @@ const fechaLarga = (f: string) =>
 
 /* Solo se muestran las secciones que tienen algo escrito: una historia de
    consulta simple no debe verse como un formulario medio vacío. */
-const conContenido = historia
+const conContenido = (esLab ? laboratorio : historia)
   .map((s) => ({ ...s, campos: s.campos.filter((c) => datos[c.clave]) }))
   .filter((s) => s.campos.length > 0);
 
-const etiqueta = {
-  borrador: { texto: 'Borrador', clase: 'borrador' },
-  cerrada: { texto: 'Cerrada', clase: 'cerrada' },
-  anulada: { texto: 'Anulada', clase: 'anulada' },
-}[caso.estado];
+/* Una orden de laboratorio en borrador no es una historia a medio escribir:
+   es una muestra esperando resultados, y así se dice. */
+const etiqueta = esLab
+  ? {
+      borrador: { texto: 'Esperando resultados', clase: 'borrador' },
+      cerrada: { texto: 'Entregada', clase: 'cerrada' },
+      anulada: { texto: 'Anulada', clase: 'anulada' },
+    }[caso.estado]
+  : {
+      borrador: { texto: 'Borrador', clase: 'borrador' },
+      cerrada: { texto: 'Cerrada', clase: 'cerrada' },
+      anulada: { texto: 'Anulada', clase: 'anulada' },
+    }[caso.estado];
+
+const comoSeLlama = esLab ? 'Orden' : 'Atención';
 ---
 
-<Sistema titulo={`Atención ${caso.numero}`}>
-  <nav class="miga"><a href="/sistema">Casos</a> <span>/</span> Atención {caso.numero}</nav>
+<Sistema titulo={`${comoSeLlama} ${caso.numero}`}>
+  <nav class="miga">
+    {esLab
+      ? <><a href="/sistema/laboratorio">Laboratorio</a> <span>/</span> Orden {caso.numero}</>
+      : <><a href="/sistema">Casos</a> <span>/</span> Atención {caso.numero}</>}
+  </nav>
 
   <header class="cab">
     <div>
@@ -122,17 +185,33 @@ const etiqueta = {
         <span class:list={['chapa', `chapa--${etiqueta.clase}`]}>{etiqueta.texto}</span>
       </div>
       <p class="cab__meta">
-        Atención <strong class="cifra">N° {caso.numero}</strong> ·
+        {comoSeLlama} <strong class="cifra">N° {caso.numero}</strong> ·
         {fechaLarga(caso.fecha)} ·
         {comoSeLee(caso.tipoDoc, caso.cedula)} ·
-        atendió {caso.medico}{caso.colegiatura && ` (C.M. ${caso.colegiatura})`}
+        {esLab ? 'registró' : 'atendió'} {caso.medico}{caso.colegiatura && ` (${caso.colegiatura})`}
       </p>
     </div>
     <div class="cab__acciones">
-      {puedeEditarAtencion(usuario, caso) && (
-        <a class="sis-boton sis-boton--primario" href={`/sistema/atencion/${caso.id}/editar`}>
+      {puedeCargarResultados(usuario, caso) && (
+        <a class="sis-boton sis-boton--primario" href={`/sistema/atencion/${caso.id}/resultados`}>
+          <Icono nombre="laboratorio" tam={18} />
+          Cargar resultados
+        </a>
+      )}
+      {(esLab ? puedeEditarOrden(usuario, caso) : puedeEditarAtencion(usuario, caso)) && (
+        <a class:list={['sis-boton', esLab ? 'sis-boton--suave' : 'sis-boton--primario']}
+           href={`/sistema/atencion/${caso.id}/editar`}>
           <Icono nombre="flecha" tam={18} />
-          Continuar la atención
+          {esLab ? 'Corregir la orden' : 'Continuar la atención'}
+        </a>
+      )}
+      {/* Pedir exámenes desde la consulta: la orden queda colgada de acá y
+          el resultado vuelve a esta misma pantalla. */}
+      {!esLab && puede(usuario.rol as string, 'registrar_laboratorio') && (
+        <a class="sis-boton sis-boton--suave"
+           href={`/sistema/atencion/nueva?tipo=laboratorio&cedula=${encodeURIComponent(caso.cedula)}&doc=${caso.tipoDoc}&origen=${caso.id}`}>
+          <Icono nombre="laboratorio" tam={18} />
+          Pedir exámenes
         </a>
       )}
       {puede(usuario.rol as string, 'cargar_cobro') && (
@@ -147,9 +226,15 @@ const etiqueta = {
         </a>
       )}
       <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}/documento`} target="_blank">
-        <Icono nombre="laboratorio" tam={18} />
+        <Icono nombre="recibo" tam={18} />
         Documento
       </a>
+      {puede(usuario.rol as string, 'enviar_documento') && (
+        <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}/enviar`}>
+          <Icono nombre="correo" tam={18} />
+          Enviar al paciente
+        </a>
+      )}
     </div>
   </header>
 
@@ -159,6 +244,53 @@ const etiqueta = {
 
   <div class="col">
     <div class="col__principal">
+      {esLab && pedidos.length > 0 && (
+        <section class="ficha">
+          <h2>Exámenes pedidos</h2>
+          <ul class="pedidos">
+            {pedidos.map((p) => <li>{p.nombre}</li>)}
+          </ul>
+        </section>
+      )}
+
+      {esLab && (
+        <section class="ficha">
+          <h2>Resultados</h2>
+          {resultados.length === 0 ? (
+            <p class="lado__vacio">
+              Todavía no se cargó ningún resultado.
+              {puedeCargarResultados(usuario, caso) && (
+                <> <a href={`/sistema/atencion/${caso.id}/resultados`}>Cargarlos</a>.</>
+              )}
+            </p>
+          ) : (
+            <div class="tablon">
+              <table class="res">
+                <thead>
+                  <tr>
+                    <th scope="col">Examen</th>
+                    <th scope="col">Resultado</th>
+                    <th scope="col">Referencia</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {resultados.map((r) => (
+                    <tr>
+                      <td>{r.examen}</td>
+                      <td class="res__valor">
+                        <strong class="cifra">{r.valor || '—'}</strong>
+                        {r.unidad && <small> {r.unidad}</small>}
+                      </td>
+                      <td class="res__ref">{r.referencia || '—'}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </section>
+      )}
+
       {conContenido.map((s) => (
         <section class="ficha">
           <h2>{s.titulo}</h2>
@@ -211,9 +343,46 @@ const etiqueta = {
         </p>
       </section>
 
+      {/* El hilo con el laboratorio, de los dos lados. */}
+      {!esLab && ordenes.length > 0 && (
+        <section class="ficha">
+          <h2>Laboratorio</h2>
+          <ul class="previas">
+            {ordenes.map((o) => (
+              <li>
+                <a href={`/sistema/atencion/${o.id}`}>
+                  <strong class="cifra">Orden N° {o.numero}</strong>
+                  <span>
+                    {o.estado === 'cerrada'
+                      ? `${(o.resultados ?? []).filter((r) => r.valor).length} resultados`
+                      : o.estado === 'anulada' ? 'Anulada' : 'Esperando resultados'}
+                  </span>
+                  <em>{fechaLarga(o.fecha)}</em>
+                </a>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      {esLab && consultaOrigen && (
+        <section class="ficha">
+          <h2>De qué consulta salió</h2>
+          <ul class="previas">
+            <li>
+              <a href={`/sistema/atencion/${consultaOrigen.id}`}>
+                <strong class="cifra">N° {consultaOrigen.numero}</strong>
+                <span>{consultaOrigen.idx}</span>
+                <em>{fechaLarga(consultaOrigen.fecha)}</em>
+              </a>
+            </li>
+          </ul>
+        </section>
+      )}
+
       {anteriores.length > 0 && (
         <section class="ficha">
-          <h2>Atenciones anteriores</h2>
+          <h2>{esLab ? 'Otras atenciones' : 'Atenciones anteriores'}</h2>
           <ul class="previas">
             {anteriores.map((a) => (
               <li>
@@ -232,6 +401,34 @@ const etiqueta = {
 </Sistema>
 
 <style>
+  .pedidos { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
+  .pedidos li {
+    padding: 9px 0;
+    border-bottom: 1px solid var(--linea-tenue);
+    font-size: var(--u-sm);
+  }
+  .pedidos li:last-child { border-bottom: 0; }
+
+  /* La tabla se desplaza dentro de su caja: a 390 px tres columnas de texto
+     no caben, y arrastrar la página entera era peor. */
+  .tablon { overflow-x: auto; }
+  .res { width: 100%; border-collapse: collapse; min-width: 380px; }
+  .res th {
+    text-align: left;
+    padding: 0 10px 8px 0;
+    font-size: var(--u-xs);
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+    color: var(--tinta-tenue);
+    border-bottom: 1px solid var(--linea);
+    white-space: nowrap;
+  }
+  .res td { padding: 9px 10px 9px 0; border-bottom: 1px solid var(--linea-tenue); font-size: var(--u-sm); }
+  .res tr:last-child td { border-bottom: 0; }
+  .res__valor strong { color: var(--azul); }
+  .res__valor small { color: var(--tinta-tenue); }
+  .res__ref { color: var(--tinta-tenue); }
+
   .cab__persona { color: inherit; text-decoration: none; }
   .cab__persona:hover,
   .cab__persona:focus-visible { color: var(--azul); text-decoration: underline; }

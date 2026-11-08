@@ -24,7 +24,8 @@ export type TipoCampo =
   | 'opcion'
   | 'si-no'
   | 'cedula'
-  | 'telefono';
+  | 'telefono'
+  | 'correo';
 
 export interface Campo {
   clave: string;
@@ -67,6 +68,12 @@ export const historia: readonly Seccion[] = [
       { clave: 'edad', rotulo: 'Edad', tipo: 'numero', exigido: true, unidad: 'años', ancho: 1 },
       { clave: 'sexo', rotulo: 'Sexo', tipo: 'opcion', opciones: ['Femenino', 'Masculino'], exigido: true, ancho: 1 },
       { clave: 'telefono', rotulo: 'Teléfono', tipo: 'telefono', ancho: 2 },
+      /* Los dos son para poder mandarle el documento después. Ninguno es
+         obligatorio: hay pacientes que no tienen correo y hay que poder
+         atenderlos igual. */
+      { clave: 'whatsapp', rotulo: 'WhatsApp', tipo: 'telefono', ancho: 2,
+        pista: 'Solo si es otro número.' },
+      { clave: 'correo', rotulo: 'Correo', tipo: 'correo', ancho: 2 },
       { clave: 'titular', rotulo: 'Titular de la póliza', tipo: 'texto', ancho: 2,
         pista: 'Solo si es distinto del paciente.' },
       { clave: 'lugar', rotulo: 'Lugar de atención', tipo: 'opcion',

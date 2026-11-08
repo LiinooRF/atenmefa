@@ -31,16 +31,18 @@ test('al médico le queda el menú plano, sin desplegables', async ({ page }) =>
   await entrar(page, 'medico');
 
   expect(await deLaBarra(page)).toEqual(['Casos', 'Nueva atención', 'Borradores', 'Pacientes']);
+  /* Sin Laboratorio: el que llega solo a hacerse un examen no es un caso
+     suyo. Lo que él pidió en consulta lo ve colgado de esa consulta. */
   /* Ni uno: al médico no le alcanza para completar ningún grupo, así que
      cada entrada suya es un enlace y no un desplegable de un solo elemento. */
   await expect(page.locator('.sis__grupo')).toHaveCount(0);
 });
 
-test('administración ve cinco entradas en vez de ocho sueltas', async ({ page }) => {
+test('administración ve seis entradas en vez de diez sueltas', async ({ page }) => {
   await entrar(page, 'administracion');
 
   expect(await deLaBarra(page)).toEqual([
-    'Casos', 'Pacientes', 'Cobros', 'Reportes', 'Administración',
+    'Casos', 'Laboratorio', 'Pacientes', 'Cobros', 'Reportes', 'Administración',
   ]);
 
   const dentro = async (grupo: string) =>
@@ -52,15 +54,19 @@ test('administración ve cinco entradas en vez de ocho sueltas', async ({ page }
   expect(await dentro('Administración')).toEqual(['Cuentas', 'Bitácora de accesos']);
 });
 
-/* Una prueba por rol y no un bucle con los dos: entrar con la sesión del
-   anterior todavía abierta rebota a /sistema y no hay formulario que llenar. */
-for (const quien of ['medico', 'administracion'] as const) {
+/* Una prueba por rol y no un bucle con los cuatro dentro de una: entrar con
+   la sesión del anterior todavía abierta rebota a /sistema y no hay
+   formulario que llenar. */
+for (const quien of ['medico', 'administracion', 'bioanalista', 'recepcionista'] as const) {
   test(`ninguna entrada del menú de ${quien} lleva a "no tiene permiso"`, async ({ page }) => {
     await entrar(page, quien);
 
     const destinos = await page.locator('.sis__nav a')
       .evaluateAll((a) => a.map((x) => new URL((x as HTMLAnchorElement).href).pathname));
-    expect(destinos.length, 'el menú vino vacío').toBeGreaterThan(3);
+    /* La red para que esta prueba no pase en vano si el menú vuelve vacío.
+       Dos y no tres: el bioanalista tiene exactamente tres entradas y con
+       un umbral de tres el propio guardia hacía fallar la prueba. */
+    expect(destinos.length, 'el menú vino vacío').toBeGreaterThan(1);
 
     for (const destino of destinos) {
       await page.goto(destino);

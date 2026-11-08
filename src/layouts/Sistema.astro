@@ -32,7 +32,7 @@ const usuario = Astro.locals.usuario;
    suelto, no como desplegable: así el médico, que no ve ninguno de los
    grupos completos, sigue teniendo su menú plano de siempre sin que haya que
    escribir un menú distinto por rol. */
-type Icono = 'latido' | 'mas' | 'reloj' | 'laboratorio' | 'escudo' | 'estetoscopio';
+type Icono = 'latido' | 'mas' | 'reloj' | 'laboratorio' | 'escudo' | 'estetoscopio' | 'recibo';
 
 interface Entrada { href: string; texto: string; permiso: Permiso }
 interface Bloque { texto: string; icono: Icono; entradas: Entrada[] }
@@ -47,10 +47,13 @@ const MENU: Bloque[] = [
   { texto: 'Borradores', icono: 'reloj', entradas: [
     { href: '/sistema/borradores', texto: 'Borradores', permiso: 'escribir_historia' },
   ] },
+  { texto: 'Laboratorio', icono: 'laboratorio', entradas: [
+    { href: '/sistema/laboratorio', texto: 'Laboratorio', permiso: 'cola_laboratorio' },
+  ] },
   { texto: 'Pacientes', icono: 'latido', entradas: [
     { href: '/sistema/pacientes', texto: 'Pacientes', permiso: 'ver_pacientes' },
   ] },
-  { texto: 'Cobros', icono: 'laboratorio', entradas: [
+  { texto: 'Cobros', icono: 'recibo', entradas: [
     { href: '/sistema/cierre', texto: 'Cierre del mes', permiso: 'ver_cierre' },
     { href: '/sistema/servicios', texto: 'Servicios y precios', permiso: 'editar_catalogo' },
   ] },

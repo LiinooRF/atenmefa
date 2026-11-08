@@ -13,7 +13,8 @@
     "captura": "node scripts/captura.mjs",
     "servidor": "node scripts/servidor.mjs",
     "pruebas": "playwright test",
-    "pruebas:ui": "playwright test --ui"
+    "pruebas:ui": "playwright test --ui",
+    "base-de-pruebas": "node scripts/base-de-pruebas.mjs"
   },
   "dependencies": {
     "@astrojs/node": "^10.1.4",

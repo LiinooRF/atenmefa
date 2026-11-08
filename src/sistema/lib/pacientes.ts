@@ -27,6 +27,7 @@ import { bd, esquema } from './base';
 import type { TipoDocumento } from './documento';
 import { esIdentificador, normalizar, soloDigitos } from './atenciones';
 import { resumir, type CuentaPorMoneda } from './cobro';
+import { correoUsable } from './correo';
 import { historia } from '../historia';
 
 /** Pacientes por página. De a cincuenta se desplaza una vez y se ve todo. */
@@ -180,6 +181,8 @@ export interface AtencionDePaciente {
   numero: number;
   fecha: string;
   estado: string;
+  /** 'general' o 'laboratorio'. Ver 008-laboratorio.sql. */
+  tipo: string;
   idx: string | null;
   aseguradora: string | null;
   medico: string | null;
@@ -194,6 +197,9 @@ export interface Ficha {
     tipoDoc: TipoDocumento;
     nombre: string;
     telefono: string | null;
+    /** Solo si es distinto del teléfono. Ver 010-contacto.sql. */
+    whatsapp: string | null;
+    correo: string | null;
     sexo: string | null;
     registrado: Date;
   };
@@ -317,6 +323,8 @@ export async function fichaDePaciente(id: string): Promise<Ficha | null> {
       tipoDoc: esquema.paciente.tipoDoc,
       nombre: esquema.paciente.nombre,
       telefono: esquema.paciente.telefono,
+      whatsapp: esquema.paciente.whatsapp,
+      correo: esquema.paciente.correo,
       sexo: esquema.paciente.sexo,
       registrado: esquema.paciente.creado,
     })
@@ -330,17 +338,22 @@ export async function fichaDePaciente(id: string): Promise<Ficha | null> {
      atención que desaparece de la vista es justo lo que una auditoría va a
      preguntar. */
   const crudas = await bd.execute<{
-    id: string; numero: number; fecha: string; estado: string;
+    id: string; numero: number; fecha: string; estado: string; tipo: string;
     idx: string | null; aseguradora: string | null;
     medico: string | null; anulada_motivo: string | null;
   }>(sql`
     SELECT a.id, a.numero::int AS numero, to_char(a.fecha, 'YYYY-MM-DD') AS fecha,
-           a.estado::text AS estado,
+           a.estado::text AS estado, a.tipo::text AS tipo,
            NULLIF(trim(a.datos ->> 'idx'), '') AS idx,
            a.aseguradora, a.anulada_motivo,
-           u.name AS medico
+           /* Quien lo hizo. En una consulta es el médico; en una orden de
+              laboratorio es el bioanalista que firmó, no quien la registró
+              en el mesón —que casi siempre es recepción—. Sin esto la ficha
+              decía que la hematología la atendió la recepcionista. */
+           COALESCE(f.name, u.name) AS medico
       FROM atencion a
       LEFT JOIN "user" u ON u.id = a.medico_id
+      LEFT JOIN "user" f ON f.id = a.resultados_por
      WHERE a.paciente_id = ${id}
      ORDER BY a.fecha DESC, a.numero DESC
   `);
@@ -365,6 +378,7 @@ export async function fichaDePaciente(id: string): Promise<Ficha | null> {
     numero: a.numero,
     fecha: a.fecha,
     estado: a.estado,
+    tipo: a.tipo,
     idx: a.idx,
     aseguradora: a.aseguradora,
     medico: a.medico,
@@ -467,34 +481,58 @@ export function enlacesDeTelefono(telefono: string | null | undefined) {
  * Devuelve lo que había antes para poder dejarlo en la bitácora. Un dato de
  * contacto que cambia sin rastro es un dato en el que no se puede confiar.
  */
-export async function guardarTelefono(id: string, bruto: unknown) {
+export async function guardarContacto(
+  id: string,
+  bruto: { telefono?: unknown; whatsapp?: unknown; correo?: unknown },
+) {
   if (!esIdentificador(id)) throw new Error('Ese paciente ya no está en el registro.');
 
-  const texto = String(bruto ?? '').trim();
-  const digitos = soloDigitos(texto);
+  /* Vacío se acepta a propósito, en los tres: un número equivocado es peor
+     que ninguno, y el que contesta la llamada equivocada también es un
+     paciente. Un correo ajeno, peor todavía: ahí va un informe médico. */
+  const numero = (texto: string, cual: string) => {
+    const digitos = soloDigitos(texto);
+    if (texto && (digitos.length < 7 || digitos.length > 15)) {
+      throw new Error(`El ${cual} tiene que tener entre 7 y 15 dígitos, por ejemplo 0414-8939176.`);
+    }
+    if (texto && !/^[+\d\s().-]+$/.test(texto)) {
+      throw new Error(`El ${cual} lleva solo números, espacios y los signos + ( ) - y punto.`);
+    }
+    return texto || null;
+  };
 
-  /* Vacío se acepta a propósito: un número equivocado es peor que ninguno,
-     y el que contesta la llamada equivocada también es un paciente. */
-  if (texto && (digitos.length < 7 || digitos.length > 15)) {
-    throw new Error('El teléfono tiene que tener entre 7 y 15 dígitos, por ejemplo 0414-8939176.');
+  const telefono = numero(String(bruto.telefono ?? '').trim(), 'teléfono');
+  const whatsapp = numero(String(bruto.whatsapp ?? '').trim(), 'WhatsApp');
+
+  const correoTexto = String(bruto.correo ?? '').trim().toLowerCase();
+  if (correoTexto && !correoUsable(correoTexto)) {
+    throw new Error('Ese correo no parece válido. Tiene que ser del tipo nombre@correo.com.');
   }
-  if (texto && !/^[+\d\s().-]+$/.test(texto)) {
-    throw new Error('El teléfono lleva solo números, espacios y los signos + ( ) - y punto.');
-  }
+  const correo = correoTexto || null;
 
   const [antes] = await bd
-    .select({ telefono: esquema.paciente.telefono })
+    .select({
+      telefono: esquema.paciente.telefono,
+      whatsapp: esquema.paciente.whatsapp,
+      correo: esquema.paciente.correo,
+    })
     .from(esquema.paciente)
     .where(eq(esquema.paciente.id, id))
     .limit(1);
 
   if (!antes) throw new Error('Ese paciente ya no está en el registro.');
 
-  const ahora = texto || null;
   await bd
     .update(esquema.paciente)
-    .set({ telefono: ahora })
+    .set({ telefono, whatsapp, correo })
     .where(eq(esquema.paciente.id, id));
 
-  return { antes: antes.telefono, ahora };
+  /* Se devuelve qué cambió de verdad, no todo: en bitácora, una línea que
+     dice "guardó el contacto" sin decir qué movió no sirve para nada. */
+  const cambios: Record<string, { antes: string | null; ahora: string | null }> = {};
+  if (antes.telefono !== telefono) cambios.telefono = { antes: antes.telefono, ahora: telefono };
+  if (antes.whatsapp !== whatsapp) cambios.whatsapp = { antes: antes.whatsapp, ahora: whatsapp };
+  if (antes.correo !== correo) cambios.correo = { antes: antes.correo, ahora: correo };
+
+  return { cambios, cuantos: Object.keys(cambios).length };
 }

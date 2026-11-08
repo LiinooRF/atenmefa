@@ -45,7 +45,12 @@ const fechaLarga = (f: string) =>
     {doc.medico && (
       <div>
         <dt>Firmado por</dt>
-        <dd>{doc.medico}{doc.colegiatura && ` · C.M. ${doc.colegiatura}`}</dd>
+        <dd>
+          {doc.medico}
+          {/* "C.M." es el Colegio de Médicos: ponérselo al colegio de un
+              bioanalista sería decir que firmó un médico. */}
+          {doc.colegiatura && ` · ${doc.firmaDe === 'medico' ? `C.M. ${doc.colegiatura}` : doc.colegiatura}`}
+        </dd>
       </div>
     )}
     <div><dt>Contiene</dt><dd>{doc.hojas.join(' y ')}</dd></div>

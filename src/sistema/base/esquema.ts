@@ -6,8 +6,10 @@
 import {
   pgTable, uuid, text, boolean, timestamp, date, numeric, jsonb,
   bigint, bigserial, inet, integer, pgEnum, index, uniqueIndex,
+  type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { user } from './auth-esquema';
+import type { Resultado } from '../laboratorio';
 
 export { user, session, account, verification } from './auth-esquema';
 export const estadoAtencion = pgEnum('estado_atencion', ['borrador', 'cerrada', 'anulada']);
@@ -24,6 +26,9 @@ export const paciente = pgTable('paciente', {
   nombre: text('nombre').notNull(),
   nombreBusca: text('nombre_busca').notNull(),
   telefono: text('telefono'),
+  /** Solo si es distinto del teléfono. Ver 010-contacto.sql. */
+  whatsapp: text('whatsapp'),
+  correo: text('correo'),
   sexo: text('sexo'),
   nacimiento: date('nacimiento'),
   creado: timestamp('creado', { withTimezone: true }).notNull().defaultNow(),
@@ -64,6 +69,13 @@ export const atencion = pgTable('atencion', {
   anuladaMotivo: text('anulada_motivo'),
   creada: timestamp('creada', { withTimezone: true }).notNull().defaultNow(),
   cerrada: timestamp('cerrada', { withTimezone: true }),
+  /** De qué consulta salieron estos exámenes. Ver 009-roles.sql. */
+  origenId: uuid('origen_id').references((): AnyPgColumn => atencion.id),
+  /** Un objeto por examen medido. Ver 009-roles.sql. */
+  resultados: jsonb('resultados').$type<Resultado[]>().notNull().default([]),
+  /** El bioanalista que firma los resultados; no es quien registró la orden. */
+  resultadosPor: text('resultados_por').references(() => user.id),
+  resultadosEn: timestamp('resultados_en', { withTimezone: true }),
   /** Verificación del documento impreso. Ver 007-verificacion.sql. */
   pin: text('pin'),
   intentosFallidos: integer('intentos_fallidos').notNull().default(0),

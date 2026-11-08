@@ -1,0 +1,190 @@
+---
+/**
+ * Qué exámenes se le van a hacer, con lo que cuestan.
+ *
+ * El cliente lo pidió entero en una frase: «colocando ya preseleccionados
+ * los exámenes del laboratorio y poder ir seleccionando todo lo que se va a
+ * hacer, y que les genere el precio en bolívar y en dólares,
+ * automáticamente, y esa persona se encarga de cobrar».
+ *
+ * Marcar un examen acá ES cargarlo a la cuenta: no hay una lista de lo que
+ * se le hace y otra de lo que se le cobra. El total en bolívares se calcula
+ * con la tasa del BCV del día, que es la misma que usa el resto del
+ * sistema, y se dice con su fecha: un monto en bolívares sin fecha no
+ * significa nada a la semana siguiente.
+ */
+import { dinero } from '../../sistema/lib/cobro';
+import type { ExamenDelCatalogo } from '../../sistema/lib/laboratorio';
+import type { Tasa } from '../../sistema/lib/tasa';
+import { EXAMENES } from '../../sistema/laboratorio';
+
+interface Props {
+  catalogo: readonly ExamenDelCatalogo[];
+  /** Los que ya están pedidos en esta orden. */
+  marcados: readonly string[];
+  tasa: Tasa | null;
+  /** Para avisar a quien puede resolverlo que el catálogo está vacío. */
+  puedeEditarCatalogo: boolean;
+}
+const { catalogo, marcados, tasa, puedeEditarCatalogo } = Astro.props;
+const yaEsta = new Set(marcados);
+
+const fechaTasa = tasa
+  ? new Date(`${tasa.fecha}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })
+  : '';
+---
+
+{catalogo.length === 0 ? (
+  /* Catálogo vacío: la orden se registra igual, escribiendo los exámenes
+     abajo. Lo que no se hace es inventarles un precio. */
+  <div class="vacio">
+    <strong>El catálogo de exámenes está vacío.</strong>
+    <p>
+      La orden se puede registrar igual escribiendo los exámenes en
+      «Otros exámenes». Para que se marquen de una lista y generen el precio,
+      hay que cargarlos en el catálogo con la categoría Laboratorio.
+      {puedeEditarCatalogo && <> <a href="/sistema/servicios">Cargarlos ahora</a>.</>}
+    </p>
+    <p class="vacio__folleto">
+      Los del folleto del centro: {EXAMENES.flatMap((g) => g.items).join(', ')}.
+    </p>
+  </div>
+) : (
+  <fieldset class="ex" data-tasa={tasa?.bolivares ?? ''}>
+    <legend>Qué se le va a hacer</legend>
+
+    <ul class="ex__lista">
+      {catalogo.map((e) => (
+        <li>
+          <label>
+            <input
+              type="checkbox" name="examen" value={e.id}
+              checked={yaEsta.has(e.id)}
+              data-precio={e.moneda === 'USD' ? e.precio : ''}
+              data-moneda={e.moneda}
+            />
+            <span class="ex__nombre">{e.nombre}</span>
+            <span class="ex__precio cifra">
+              {e.moneda === 'USD' ? '$' : 'Bs '}{dinero(e.precio)}
+            </span>
+          </label>
+        </li>
+      ))}
+    </ul>
+
+    <p class="ex__cuenta" id="ex-cuenta" aria-live="polite">
+      <span id="ex-nada">Ninguno marcado todavía.</span>
+      <span id="ex-total" hidden>
+        <strong><span id="ex-cuantos"></span> · $<span class="cifra" id="ex-usd"></span></strong>
+        {tasa && <> = Bs <span class="cifra" id="ex-ves"></span>
+          <small> a la tasa del {fechaTasa}</small></>}
+      </span>
+    </p>
+
+    {!tasa && (
+      <p class="ex__sin-tasa">
+        Sin la tasa del BCV de hoy solo se muestra el monto en dólares.
+      </p>
+    )}
+  </fieldset>
+)}
+
+<script>
+  /* La cuenta se hace en el navegador para que responda al tildar, y se
+     vuelve a hacer en el servidor al guardar: lo que se cobra sale de los
+     renglones, no de este número. Acá es para que recepción le pueda decir
+     al paciente cuánto es antes de guardar nada. */
+  const caja = document.querySelector<HTMLElement>('.ex');
+  if (caja) {
+    const tasa = Number(caja.dataset.tasa) || 0;
+    const casillas = [...caja.querySelectorAll<HTMLInputElement>('input[name="examen"]')];
+    const nada = document.getElementById('ex-nada')!;
+    const total = document.getElementById('ex-total')!;
+    const cuantos = document.getElementById('ex-cuantos')!;
+    const usd = document.getElementById('ex-usd')!;
+    const ves = document.getElementById('ex-ves');
+
+    const plata = (n: number) =>
+      new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(n);
+
+    const recontar = () => {
+      const marcados = casillas.filter((c) => c.checked);
+      nada.hidden = marcados.length > 0;
+      total.hidden = marcados.length === 0;
+      if (!marcados.length) return;
+
+      /* Solo se suman los que están en dólares. Un examen cargado en
+         bolívares no se puede sumar al mismo total: serían dos monedas en
+         un número, que es exactamente lo que el resto del sistema evita. */
+      const suma = marcados.reduce((t, c) => t + (Number(c.dataset.precio) || 0), 0);
+      const enBs = marcados.some((c) => c.dataset.moneda !== 'USD');
+
+      cuantos.textContent = `${marcados.length} ${marcados.length === 1 ? 'examen' : 'exámenes'}`;
+      usd.textContent = plata(suma) + (enBs ? ' + los cargados en bolívares' : '');
+      if (ves && tasa) ves.textContent = plata(suma * tasa);
+    };
+
+    casillas.forEach((c) => c.addEventListener('change', recontar));
+    recontar();
+  }
+</script>
+
+<style>
+  .ex {
+    margin: 0 0 20px;
+    padding: 16px;
+    border: 1px solid var(--linea);
+    border-radius: 12px;
+    background: var(--papel);
+  }
+  .ex legend {
+    padding: 0 6px;
+    font-family: var(--titulares);
+    font-size: var(--u-base);
+    font-weight: 600;
+    color: var(--azul);
+  }
+
+  .ex__lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  @media (min-width: 760px) { .ex__lista { grid-template-columns: 1fr 1fr; gap: 2px 18px; } }
+
+  .ex__lista label {
+    display: flex;
+    align-items: center;
+    gap: 11px;
+    /* 44 px de alto: se marca con el dedo, de pie y en el mesón. */
+    min-height: 44px;
+    padding: 0 10px;
+    border-radius: 8px;
+    cursor: pointer;
+    font-size: var(--u-sm);
+  }
+  .ex__lista label:hover { background: var(--bruma); }
+  .ex__lista input { width: 20px; height: 20px; flex: none; accent-color: var(--azul); }
+  .ex__nombre { flex: 1; min-width: 0; }
+  .ex__precio { flex: none; color: var(--tinta-tenue); font-size: var(--u-xs); }
+  .ex__lista input:checked ~ .ex__nombre { font-weight: 600; color: var(--azul); }
+  .ex__lista input:checked ~ .ex__precio { color: var(--tinta); }
+
+  .ex__cuenta {
+    margin: 12px 0 0;
+    padding-top: 12px;
+    border-top: 1px solid var(--linea-tenue);
+    font-size: var(--u-sm);
+    color: var(--tinta-suave);
+  }
+  .ex__cuenta strong { color: var(--azul); font-family: var(--titulares); }
+  .ex__cuenta small { color: var(--tinta-tenue); font-size: var(--u-xs); }
+  .ex__sin-tasa { margin: 8px 0 0; font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  .vacio {
+    margin: 0 0 20px;
+    padding: 16px;
+    border: 1px dashed var(--linea);
+    border-radius: 12px;
+    background: var(--bruma);
+  }
+  .vacio strong { display: block; color: var(--azul); font-size: var(--u-sm); }
+  .vacio p { margin: 7px 0 0; font-size: var(--u-sm); color: var(--tinta-suave); line-height: 1.5; }
+  .vacio__folleto { color: var(--tinta-tenue); }
+</style>

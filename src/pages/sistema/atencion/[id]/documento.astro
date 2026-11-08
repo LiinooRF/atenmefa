@@ -8,6 +8,9 @@
  */
 import QR from 'qrcode';
 import { historia } from '../../../../sistema/historia';
+import { laboratorio, type Resultado } from '../../../../sistema/laboratorio';
+import { examenesPedidos } from '../../../../sistema/lib/laboratorio';
+import { puede } from '../../../../sistema/lib/permisos';
 import { ROTULO } from '../../../../sistema/lib/documento';
 import { bd, esquema } from '../../../../sistema/lib/base';
 import { anotar } from '../../../../sistema/lib/atenciones';
@@ -29,6 +32,9 @@ const [caso] = await bd
     id: esquema.atencion.id,
     numero: esquema.atencion.numero,
     estado: esquema.atencion.estado,
+    tipo: esquema.atencion.tipo,
+    resultados: esquema.atencion.resultados,
+    resultadosPor: esquema.atencion.resultadosPor,
     fecha: esquema.atencion.fecha,
     aseguradora: esquema.atencion.aseguradora,
     poliza: esquema.atencion.poliza,
@@ -55,11 +61,62 @@ await anotar(usuario.id, 'imprimio', caso.id);
 
 const d = (caso.datos ?? {}) as Record<string, string>;
 
+/* ----------------------------------------------------------------
+   Laboratorio.
+   ----------------------------------------------------------------
+
+   Un informe de laboratorio no es un informe de atención recortado: no
+   tiene examen físico, ni diagnóstico, ni récipe, y la firma que vale es
+   la del bioanalista con su colegio. Por eso es su propia hoja y no esta
+   con campos vacíos.
+
+   El sello va húmedo: «no vamos a manejar [sello digital], se imprime y se
+   usa un sello húmedo ya elaborado el informe», dijo el cliente. De ahí
+   que la hoja deje el espacio y no estampe ninguna imagen. */
+const esLab = caso.tipo === 'laboratorio';
+const resultados = (caso.resultados ?? []) as Resultado[];
+const conValor = resultados.filter((r) => r.valor);
+const pedidos = esLab ? await examenesPedidos(caso.id) : [];
+
+const examenesPedidosTexto = esLab
+  ? [
+      ...pedidos.map((p) => p.nombre),
+      ...(d.examenes ?? '').split('\n').map((t) => t.trim()).filter(Boolean),
+    ]
+  : [];
+
+/* Quien firma el informe de laboratorio. Si todavía no hay resultados
+   cargados no hay a quién atribuirlo, y la hoja sale con el renglón en
+   blanco para firmar a mano: es lo honesto. */
+const [firmante] = caso.resultadosPor
+  ? await bd
+      .select({ nombre: esquema.user.name, colegiatura: esquema.user.colegiatura })
+      .from(esquema.user)
+      .where(eq(esquema.user.id, caso.resultadosPor))
+      .limit(1)
+  : [];
+
+const bloquesLab = esLab
+  ? laboratorio
+      .map((s) => ({
+        ...s,
+        campos: s.campos.filter(
+          (c) => d[c.clave] && !['nombre', 'cedula', 'edad', 'sexo', 'telefono',
+            'whatsapp', 'correo', 'fecha', 'aseguradora', 'poliza', 'examenes'].includes(c.clave),
+        ),
+      }))
+      .filter((s) => s.campos.length > 0)
+  : [];
+
 /* Lo que ya sale en la cabecera o en la fila de signos vitales no se
    repite abajo: en papel la repetición hace parecer que falta algo. */
 const yaArriba = new Set([
   'nombre', 'cedula', 'edad', 'sexo', 'telefono', 'titular', 'direccion',
   'ciudad', 'aseguradora', 'poliza', 'fecha', 'caso_numero',
+  /* El WhatsApp y el correo sirven para mandarle el informe, no para que
+     salgan impresos en él: en el papel serían dos renglones de datos de
+     contacto en medio de una historia clínica. El teléfono ya va arriba. */
+  'whatsapp', 'correo',
   'ta', 'fc', 'fr', 'temperatura', 'glicemia', 'glasgow', 'saturacion', 'hora_signos',
 ]);
 
@@ -79,7 +136,7 @@ const bloques = historia
   .map((s) => ({ ...s, campos: s.campos.filter((c) => d[c.clave] && !yaArriba.has(c.clave)) }))
   .filter((s) => s.campos.length > 0);
 
-const hayRecipe = Boolean(d.recipe || d.indicaciones);
+const hayRecipe = !esLab && Boolean(d.recipe || d.indicaciones);
 
 /* ----------------------------------------------------------------
    El sello de verificación.
@@ -128,8 +185,22 @@ const vitales = [
 
   <body>
     <div class="acciones">
-      <a href={`/sistema/atencion/${caso.id}`}>← Volver a la atención</a>
+      <a href={`/sistema/atencion/${caso.id}`}>← Volver a la {esLab ? 'orden' : 'atención'}</a>
       <div class="acciones__grupo">
+        {/* Las tres salidas que pidió el cliente para el laboratorio:
+            «descargar el PDF o el Excel, o para imprimir, o la opción que te
+            envíe por el WhatsApp del usuario». El PDF lo saca el navegador
+            con el botón de imprimir; los otros dos son estos. */}
+        {esLab && conValor.length > 0 && (
+          <a class="acciones__otro" href={`/sistema/atencion/${caso.id}/resultados.xlsx`}>
+            Excel
+          </a>
+        )}
+        {puede(usuario.rol as string, 'enviar_documento') && (
+          <a class="acciones__otro" href={`/sistema/atencion/${caso.id}/enviar`}>
+            Enviar al paciente
+          </a>
+        )}
         <span class="acciones__rotulo" id="papel-rotulo">Papel</span>
         <div class="papel" role="radiogroup" aria-labelledby="papel-rotulo">
           <button type="button" role="radio" data-papel="carta" aria-checked="true">
@@ -169,7 +240,135 @@ const vitales = [
          y se llevaba consigo la barra de arriba. Se desplaza dentro de esta
          caja, que es la regla de la casa para cualquier cosa ancha. -->
     <div class="lienzo">
+    <!-- ===== Informe de laboratorio ===== -->
+    {esLab && (
+      <article class="hoja">
+       <table class="corrida">
+        <tfoot>
+          <tr>
+            <td>
+              <div class="pie">
+                <span><strong>Atenmefa</strong> · Informe de laboratorio N.° {caso.numero}</span>
+                <span>{caso.paciente} · {caso.cedula} · {fechaLarga(caso.fecha)}</span>
+              </div>
+              {qr && (
+                <div class="sello">
+                  <div class="sello__qr" set:html={qr} />
+                  <div class="sello__texto">
+                    <strong>Verifique que este documento es auténtico</strong>
+                    <span>Escanee el código o entre a {dominioCorto}/verificar</span>
+                    <span>Hacen falta la cédula del paciente y el PIN <b class="cifra">{caso.pin}</b></span>
+                  </div>
+                </div>
+              )}
+            </td>
+          </tr>
+        </tfoot>
+        <tbody>
+         <tr>
+          <td>
+            <header class="enc">
+              <img src="/logo.png" width="62" height="62" alt="" />
+              <div class="enc__marca">
+                <strong>Atenmefa</strong>
+                <span>Laboratorio clínico</span>
+                <small>{clinica.direccion.calle} · {clinica.direccion.ciudad}, estado {clinica.direccion.estado}</small>
+                <small>{clinica.contacto.whatsapp.visible}{clinica.contacto.segundo && ` · ${clinica.contacto.segundo.visible}`}</small>
+              </div>
+              <div class="enc__titulo">
+                <span>Informe de laboratorio</span>
+                <strong class="cifra">N° {caso.numero}</strong>
+                <small>{fechaLarga(caso.fecha)}</small>
+              </div>
+            </header>
+
+            <table class="cabecera">
+              <tbody>
+                <tr><th>Paciente</th><td colspan="3">{caso.paciente}</td></tr>
+                <tr>
+                  <th>{ROTULO[caso.tipoDoc]}</th><td>{caso.cedula}</td>
+                  <th>Edad</th><td>{d.edad ? `${d.edad} años` : '—'}{d.sexo && ` · ${d.sexo}`}</td>
+                </tr>
+                <tr>
+                  <th>Muestra</th>
+                  <td>{fechaLarga(caso.fecha)}{d.hora_muestra && ` · ${d.hora_muestra}`}{d.ayuno === 'si' && ' · en ayunas'}</td>
+                  <th>Seguro</th><td>{caso.aseguradora ?? 'Paga el paciente'}</td>
+                </tr>
+                {d.quien_indica && (
+                  <tr><th>Indicado por</th><td colspan="3">{d.quien_indica}</td></tr>
+                )}
+              </tbody>
+            </table>
+
+            {conValor.length > 0 ? (
+              <section class="bloque">
+                <h2>Resultados</h2>
+                <table class="valores">
+                  <thead>
+                    <tr>
+                      <th>Examen</th>
+                      <th>Resultado</th>
+                      <th>Unidad</th>
+                      <th>Valor de referencia</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {conValor.map((r) => (
+                      <tr>
+                        <td>{r.examen}</td>
+                        <td class="valores__dato cifra">{r.valor}</td>
+                        <td>{r.unidad}</td>
+                        <td>{r.referencia}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </section>
+            ) : (
+              <section class="bloque">
+                <h2>Exámenes solicitados</h2>
+                <p class="suelto">
+                  {examenesPedidosTexto.length > 0
+                    ? examenesPedidosTexto.join(' · ')
+                    : 'Sin exámenes registrados.'}
+                </p>
+                <p class="suelto suelto--ojo">
+                  Los resultados todavía no están cargados. Este papel sirve como
+                  constancia de la toma de muestra, no como informe de resultados.
+                </p>
+              </section>
+            )}
+
+            {bloquesLab.map((s) => (
+              <section class="bloque">
+                <h2>{s.titulo}</h2>
+                <dl>
+                  {s.campos.map((c) => (
+                    <div>
+                      <dt>{c.rotulo}</dt>
+                      <dd>{d[c.clave]}{c.unidad && ` ${c.unidad}`}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </section>
+            ))}
+
+            <footer class="firma firma--una">
+              <div class="firma__linea">
+                <span>{firmante?.nombre ?? '\u00a0'}</span>
+                <small>{firmante?.colegiatura ?? '\u00a0'}</small>
+                <em>Bioanalista · sello y firma</em>
+              </div>
+            </footer>
+          </td>
+         </tr>
+        </tbody>
+       </table>
+      </article>
+    )}
+
     <!-- ===== Página 1: informe de atención ===== -->
+    {!esLab && (
     <article class="hoja">
      <table class="corrida">
       <!-- Se repite al pie de CADA hoja impresa. Un <tfoot> es la única
@@ -295,6 +494,7 @@ const vitales = [
       </tbody>
      </table>
     </article>
+    )}
 
     <!-- ===== Página 2: récipe ===== -->
     {hayRecipe && (
@@ -415,6 +615,43 @@ const vitales = [
         justify-content: space-between;
       }
       /* 44 px de alto en todo lo que se toca con el dedo, igual que el panel. */
+      /* La tabla de resultados del laboratorio. Las cuatro columnas tienen
+         ancho fijo para que el valor y su referencia queden alineados hoja
+         tras hoja: un informe donde la columna del medio se mueve según el
+         largo del nombre se lee mal. */
+      .valores { width: 100%; border-collapse: collapse; margin-top: 4px; }
+      .valores th {
+        text-align: left;
+        padding: 4px 6px;
+        border-bottom: 1px solid var(--tinta);
+        font-size: 8.5pt;
+        letter-spacing: 0.02em;
+        text-transform: uppercase;
+        color: var(--gris);
+      }
+      .valores td { padding: 4.5px 6px; border-bottom: 1px solid var(--linea); font-size: 10pt; }
+      .valores tr:last-child td { border-bottom: 0; }
+      /* Ninguna fila se corta entre dos hojas: un resultado partido a la
+         mitad es ilegible. */
+      .valores tr { break-inside: avoid; }
+      .valores th:nth-child(2), .valores td:nth-child(2) { width: 22mm; }
+      .valores th:nth-child(3), .valores td:nth-child(3) { width: 20mm; }
+      .valores th:nth-child(4), .valores td:nth-child(4) { width: 46mm; }
+      .valores__dato { font-weight: 700; color: var(--azul); }
+
+      .suelto { margin: 4px 0 0; font-size: 10pt; line-height: 1.5; }
+      .suelto--ojo { margin-top: 8px; color: var(--gris); font-size: 9pt; }
+
+      .acciones__otro {
+        padding: 0 14px;
+        border: 1px solid var(--linea);
+        border-radius: 7px;
+        background: #fff;
+        color: var(--azul) !important;
+        font-weight: 600;
+      }
+      .acciones__otro:hover { border-color: var(--azul); }
+
       .acciones a {
         display: inline-flex;
         align-items: center;

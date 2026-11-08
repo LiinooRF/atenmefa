@@ -124,6 +124,22 @@ export const CUENTAS = {
     nombre: 'Administración',
     rol: 'Administración',
   },
+  /* El bioanalista carga resultados y no escribe historias; recepción
+     registra órdenes y cobra. Sin las dos cuentas no se puede probar lo que
+     de verdad importa del laboratorio: que la orden la abre uno y la cierra
+     otro. */
+  bioanalista: {
+    correo: 'laboratorio@atenmefa.local',
+    clave: 'clave-de-prueba-4',
+    nombre: 'Bioanalista de Prueba',
+    rol: 'Bioanalista',
+  },
+  recepcionista: {
+    correo: 'recepcion@atenmefa.local',
+    clave: 'clave-de-prueba-5',
+    nombre: 'Recepción de Prueba',
+    rol: 'Recepción',
+  },
 } as const;
 
 export type Quien = keyof typeof CUENTAS;
@@ -137,6 +153,39 @@ export async function entrar(page: Page, quien: Quien = 'medico') {
   await expect(page).toHaveURL(/\/sistema$/);
   return cuenta;
 }
+
+/**
+ * Un examen en el catálogo de precios, con su categoría de laboratorio.
+ *
+ * Se crea por la base y no por pantalla a propósito: lo que la prueba
+ * quiere ejercitar es el selector de exámenes, no el formulario del
+ * catálogo, que tiene su propio archivo.
+ */
+export async function sembrarExamen(nombre: string, precio = '12.00') {
+  return conBase(async (sql) => {
+    const [ya] = await sql`
+      SELECT id FROM servicio WHERE nombre = ${nombre} LIMIT 1`;
+    if (ya) {
+      await sql`UPDATE servicio
+                   SET categoria = 'laboratorio', activo = true,
+                       precio = ${precio}, moneda = 'USD'
+                 WHERE id = ${ya.id}`;
+      return String(ya.id);
+    }
+    const [creado] = await sql`
+      INSERT INTO servicio (nombre, categoria, precio, moneda, activo)
+      VALUES (${nombre}, 'laboratorio', ${precio}, 'USD', true)
+      RETURNING id`;
+    return String(creado.id);
+  });
+}
+
+export const borrarExamen = (...nombres: string[]) =>
+  conBase(async (sql) => {
+    await sql`DELETE FROM renglon WHERE servicio_id IN (
+                SELECT id FROM servicio WHERE nombre IN ${sql(nombres)})`;
+    await sql`DELETE FROM servicio WHERE nombre IN ${sql(nombres)}`;
+  });
 
 export async function salir(page: Page) {
   await page.getByRole('button', { name: 'Salir' }).click();
@@ -523,15 +572,18 @@ export async function anchos(page: Page) {
 export async function pacienteEnLaBase(cedula: string) {
   return conBase(async (sql) => {
     const [fila] = await sql`
-      SELECT id, cedula, nombre, telefono
+      SELECT id, cedula, nombre, telefono, whatsapp, correo
         FROM paciente
        WHERE cedula_busca = ${soloDigitos(cedula)}`;
     expect(fila, `no hay ningún paciente con la cédula ${cedula}`).toBeTruthy();
+    const texto = (v: unknown) => (v === null || v === undefined ? null : String(v));
     return {
       id: String(fila.id),
       cedula: String(fila.cedula),
       nombre: String(fila.nombre),
-      telefono: fila.telefono === null ? null : String(fila.telefono),
+      telefono: texto(fila.telefono),
+      whatsapp: texto(fila.whatsapp),
+      correo: texto(fila.correo),
     };
   });
 }

@@ -49,10 +49,16 @@ const comun = {
         : c.tipo === 'hora' ? 'time'
         : c.tipo === 'numero' ? 'number'
         : c.tipo === 'telefono' ? 'tel'
+        : c.tipo === 'correo' ? 'email'
         : 'text'
       }
       value={valor}
-      inputmode={c.tipo === 'numero' ? 'decimal' : c.tipo === 'telefono' ? 'tel' : undefined}
+      inputmode={
+        c.tipo === 'numero' ? 'decimal'
+        : c.tipo === 'telefono' ? 'tel'
+        : c.tipo === 'correo' ? 'email'
+        : undefined
+      }
       step={c.tipo === 'numero' ? 'any' : undefined}
       autocomplete="off"
     />

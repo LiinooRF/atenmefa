@@ -15,17 +15,28 @@ import {
   limpiarDatos, faltantes, pacienteDe, anotar, hoyEnVenezuela, esIdentificador,
 } from '../../../sistema/lib/atenciones';
 import { exigirEnApi } from '../../../sistema/lib/guardia';
+import { puede } from '../../../sistema/lib/permisos';
+import { sincronizarExamenes } from '../../../sistema/lib/laboratorio';
 
 export const prerender = false;
 
 export const POST: APIRoute = async (ctx) => {
-  const corte = exigirEnApi(ctx, 'escribir_historia');
+  const usuario = ctx.locals.usuario;
+  if (!usuario) return new Response('Sin sesión', { status: 401 });
+
+  const form = await ctx.request.formData();
+  const esLab = String(form.get('tipo_atencion') ?? '') === 'laboratorio';
+
+  /* El permiso depende de lo que se esté guardando. Recepción no escribe
+     historias clínicas, pero el formulario de laboratorio también se guarda
+     solo mientras escribe, y sin esto esa pantalla devolvía 403 en cada
+     latido: parecía que no guardaba nada. */
+  const corte = exigirEnApi(ctx, esLab ? 'registrar_laboratorio' : 'escribir_historia');
   if (corte) return corte;
 
-  const usuario = ctx.locals.usuario!;
-  const form = await ctx.request.formData();
   const id = String(form.get('id') ?? '').trim();
   const datos = { fecha: hoyEnVenezuela(), medico: usuario.name, ...limpiarDatos(form) };
+  const marcados = form.getAll('examen').map((v) => String(v));
 
   /* Sin cédula y nombre no hay dónde colgar la atención. No es un error:
      el médico todavía no llegó a escribirlos. */
@@ -34,7 +45,29 @@ export const POST: APIRoute = async (ctx) => {
   }
 
   const paciente = await pacienteDe(datos);
-  const faltan = faltantes(datos).map((c) => c.rotulo);
+  /* Con el tipo: a una orden de laboratorio no le faltan el motivo de
+     consulta ni el diagnóstico, y sin esto la barra de estado del
+     formulario de laboratorio avisaba de veinte campos que esa pantalla no
+     tiene. */
+  const faltan = faltantes(datos, esLab ? 'laboratorio' : 'general').map((c) => c.rotulo);
+
+  /* De qué consulta salió la orden, si salió de una. Se comprueba contra la
+     base y contra el paciente: un id puesto a mano en el formulario no
+     puede colgarle una orden a la historia de otra persona. */
+  const crudoOrigen = String(form.get('origen') ?? '').trim();
+  let origenId: string | null = null;
+  if (esLab && esIdentificador(crudoOrigen)) {
+    const [consulta] = await bd
+      .select({ id: esquema.atencion.id })
+      .from(esquema.atencion)
+      .where(and(
+        eq(esquema.atencion.id, crudoOrigen),
+        eq(esquema.atencion.tipo, 'general'),
+        eq(esquema.atencion.pacienteId, paciente.id),
+      ))
+      .limit(1);
+    origenId = consulta?.id ?? null;
+  }
 
   if (id && esIdentificador(id)) {
     const [antes] = await bd
@@ -65,6 +98,12 @@ export const POST: APIRoute = async (ctx) => {
         eq(esquema.atencion.medicoId, usuario.id),
       ));
 
+    /* Sincronizar y no insertar: cada latido manda la lista completa de
+       casillas marcadas, así que esto corre muchas veces por orden. Es
+       idempotente a propósito —ver sincronizarExamenes—; si insertara sin
+       comparar, una orden de tres exámenes terminaría cobrada cinco veces. */
+    if (esLab) await sincronizarExamenes(id, marcados, datos.aseguradora);
+
     return Response.json({ guardado: true, id, faltan });
   }
 
@@ -77,7 +116,8 @@ export const POST: APIRoute = async (ctx) => {
       /* Acá se CREA la atención, así que acá se decide de qué tipo es. El
          formulario lo manda en un campo oculto: esta ruta no sabe de qué
          pantalla vino. */
-      tipo: datos.tipo_atencion === 'laboratorio' ? 'laboratorio' : 'general',
+      tipo: esLab ? 'laboratorio' : 'general',
+      origenId,
       fecha: datos.fecha,
       aseguradora: datos.aseguradora ?? null,
       poliza: datos.poliza ?? null,
@@ -86,6 +126,7 @@ export const POST: APIRoute = async (ctx) => {
     })
     .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
 
+  if (esLab) await sincronizarExamenes(creada.id, marcados, datos.aseguradora);
   await anotar(usuario.id, 'creo', creada.id, { numero: creada.numero, automatico: true });
 
   return Response.json({ guardado: true, id: creada.id, numero: creada.numero, faltan, nueva: true });

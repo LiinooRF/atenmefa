@@ -7,9 +7,13 @@
  * recién después la plata. Las alergias van arriba y con color propio
  * porque es el único dato de acá que, si no se ve, hace daño.
  *
- * Lo único editable es el teléfono. El nombre y la cédula vienen de cada
- * atención firmada: corregirlos desde el registro cambiaría el encabezado de
- * historias que ya tienen firma, y eso no es corregir, es reescribir.
+ * Lo editable son los datos de contacto: teléfono, WhatsApp y correo. Es la
+ * mitad del trabajo de recepción —«crear el paciente, actualizarlo, datos de
+ * contacto»— y es a donde se le manda el informe.
+ *
+ * El nombre y la cédula NO. Vienen de cada atención firmada: corregirlos
+ * desde el registro cambiaría el encabezado de historias que ya tienen
+ * firma, y eso no es corregir, es reescribir.
  */
 import Sistema from '../../../layouts/Sistema.astro';
 import Icono from '../../../components/Icono.astro';
@@ -19,7 +23,7 @@ import { puede } from '../../../sistema/lib/permisos';
 import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
 import { dinero } from '../../../sistema/lib/cobro';
 import {
-  alergiaQueImporta, enlacesDeTelefono, fichaDePaciente, guardarTelefono,
+  alergiaQueImporta, enlacesDeTelefono, fichaDePaciente, guardarContacto,
 } from '../../../sistema/lib/pacientes';
 
 export const prerender = false;
@@ -39,22 +43,35 @@ let error = '';
 let aviso = '';
 /* Lo tecleado vuelve a la pantalla si rebota: nadie debería tener que
    escribir dos veces el mismo número. */
-let telefonoEscrito: string | null = null;
+let contactoEscrito: { telefono: string; whatsapp: string; correo: string } | null = null;
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
 
-  if (String(form.get('accion') ?? '') === 'telefono') {
-    const escrito = String(form.get('telefono') ?? '');
+  if (String(form.get('accion') ?? '') === 'contacto') {
+    const escrito = {
+      telefono: String(form.get('telefono') ?? ''),
+      whatsapp: String(form.get('whatsapp') ?? ''),
+      correo: String(form.get('correo') ?? ''),
+    };
     try {
-      const { antes, ahora } = await guardarTelefono(id, escrito);
-      await anotar(usuario.id, 'cambio_telefono', undefined, { paciente: id, antes, ahora });
-      aviso = ahora
-        ? `Teléfono guardado. Antes decía ${antes ?? 'nada'}.`
-        : 'El teléfono quedó en blanco.';
+      const { cambios, cuantos } = await guardarContacto(id, escrito);
+      if (cuantos > 0) {
+        await anotar(usuario.id, 'cambio_contacto', undefined, { paciente: id, cambios });
+        /* En palabras y no con el nombre de la columna: el aviso decía
+           "cambió telefono, correo", sin tilde, que es como se llama el
+           campo en la base y no como se dice. */
+        const comoSeDice: Record<string, string> = {
+          telefono: 'el teléfono', whatsapp: 'el WhatsApp', correo: 'el correo',
+        };
+        const lista = Object.keys(cambios).map((c) => comoSeDice[c] ?? c);
+        aviso = `Contacto guardado: cambió ${lista.join(', ')}.`;
+      } else {
+        aviso = 'No cambió nada: estaba igual.';
+      }
     } catch (e) {
-      error = e instanceof Error ? e.message : 'No se pudo guardar el teléfono.';
-      telefonoEscrito = escrito;
+      error = e instanceof Error ? e.message : 'No se pudo guardar el contacto.';
+      contactoEscrito = escrito;
     }
   }
 }
@@ -73,7 +90,11 @@ if (Astro.request.method !== 'POST') {
 const { paciente, atenciones, resumen, antecedentes, donde } = ficha;
 const escribe = puede(usuario.rol as string, 'escribir_historia');
 
-const telefono = telefonoEscrito ?? paciente.telefono ?? '';
+/* Lo tecleado vuelve si el guardado rebota; si no, lo que hay en la ficha. */
+const telefono = contactoEscrito?.telefono ?? paciente.telefono ?? '';
+const whatsapp = contactoEscrito?.whatsapp ?? paciente.whatsapp ?? '';
+const correo = contactoEscrito?.correo ?? paciente.correo ?? '';
+const puedeEditar = puede(usuario.rol as string, 'editar_paciente');
 const contacto = enlacesDeTelefono(paciente.telefono);
 
 const alergias = antecedentes?.campos.find((a) => a.clave === 'alergias')?.valor ?? '';
@@ -269,24 +290,47 @@ const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(pa
     <section class="sis-tarjeta">
       <h2>Contacto</h2>
 
-      <form method="post" class="tel">
-        <input type="hidden" name="accion" value="telefono" />
-        <div class="sis-campo">
-          <label for="telefono">Teléfono</label>
-          <input
-            id="telefono" name="telefono" type="tel" value={telefono}
-            inputmode="tel" autocomplete="off" placeholder="0414-8939176"
-            aria-invalid={error ? 'true' : undefined}
-          />
-          <span class="pista">
-            Lo único que se corrige desde acá. Se puede dejar en blanco: un número
-            equivocado es peor que ninguno.
-          </span>
-        </div>
-        <button type="submit" class="sis-boton sis-boton--azul" name="guardar" value="1">
-          Guardar el teléfono
-        </button>
-      </form>
+      {puedeEditar ? (
+        <form method="post" class="tel">
+          <input type="hidden" name="accion" value="contacto" />
+          <div class="sis-campo">
+            <label for="telefono">Teléfono</label>
+            <input
+              id="telefono" name="telefono" type="tel" value={telefono}
+              inputmode="tel" autocomplete="off" placeholder="0414-8939176"
+              aria-invalid={error ? 'true' : undefined}
+            />
+            <span class="pista">
+              Se puede dejar en blanco: un número equivocado es peor que ninguno.
+            </span>
+          </div>
+          <div class="sis-campo">
+            <label for="whatsapp">WhatsApp</label>
+            <input
+              id="whatsapp" name="whatsapp" type="tel" value={whatsapp}
+              inputmode="tel" autocomplete="off" placeholder="0414-8939176"
+            />
+            <span class="pista">Solo si es otro número. Vacío significa «use el teléfono».</span>
+          </div>
+          <div class="sis-campo">
+            <label for="correo">Correo</label>
+            <input
+              id="correo" name="correo" type="email" value={correo}
+              autocomplete="off" placeholder="nombre@correo.com"
+            />
+            <span class="pista">A donde se le manda el informe. Confirmarlo con el paciente.</span>
+          </div>
+          <button type="submit" class="sis-boton sis-boton--azul" name="guardar" value="1">
+            Guardar el contacto
+          </button>
+        </form>
+      ) : (
+        <dl class="contacto">
+          <div><dt>Teléfono</dt><dd>{telefono || '—'}</dd></div>
+          {whatsapp && <div><dt>WhatsApp</dt><dd>{whatsapp}</dd></div>}
+          <div><dt>Correo</dt><dd>{correo || '—'}</dd></div>
+        </dl>
+      )}
 
       {contacto && !contacto.esMovil && (
         <p class="suelto suelto--nota">
@@ -341,7 +385,14 @@ const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(pa
                 </td>
                 <td class="cifra">{fechaCorta(a.fecha)}</td>
                 <td>
-                  <span class="dx">{a.idx ?? 'Sin diagnóstico escrito'}</span>
+                  {/* Una orden de laboratorio no tiene diagnóstico y decir
+                      «sin diagnóstico escrito» hacía parecer que al médico
+                      se le había olvidado algo. */}
+                  <span class="dx">
+                    {a.tipo === 'laboratorio'
+                      ? 'Laboratorio'
+                      : a.idx ?? 'Sin diagnóstico escrito'}
+                  </span>
                   {a.aseguradora && <small>{a.aseguradora}</small>}
                   {a.anuladaMotivo && <small class="motivo">Anulada: {a.anuladaMotivo}</small>}
                 </td>
@@ -480,6 +531,11 @@ const nuevaConSuCedula = `/sistema/atencion/nueva?cedula=${encodeURIComponent(pa
   .pie--suelto { border-top: 0; padding-top: 0; max-width: 78ch; }
 
   /* ---------- teléfono ---------- */
+  .contacto { display: grid; gap: 10px; margin: 0; }
+  .contacto div { display: flex; justify-content: space-between; gap: 14px; font-size: var(--u-sm); }
+  .contacto dt { color: var(--tinta-tenue); }
+  .contacto dd { margin: 0; font-weight: 600; word-break: break-word; }
+
   .tel { display: grid; gap: 12px; justify-items: start; }
   .tel .sis-campo { width: 100%; }
 

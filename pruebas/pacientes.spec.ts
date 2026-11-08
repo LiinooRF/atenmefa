@@ -232,18 +232,42 @@ test('el enlace de atención nueva de la ficha lleva la cédula ya puesta', asyn
   await expect(page.locator('.form__nota')).toContainText(NOMBRE);
 });
 
-test('corregir el teléfono dice qué decía antes y queda en bitácora', async ({ page }) => {
+test('corregir el contacto dice qué cambió y queda en bitácora', async ({ page }) => {
   await entrar(page, 'administracion');
   await page.goto(`/sistema/pacientes/${paciente}`);
 
   await page.locator('#telefono').fill('0426-1112233');
-  await page.getByRole('button', { name: 'Guardar el teléfono' }).click();
+  await page.locator('#correo').fill('corregido.prueba@correo.local');
+  await page.getByRole('button', { name: 'Guardar el contacto' }).click();
 
-  await expect(page.locator('.msj--bien')).toContainText('Teléfono guardado');
-  await expect(page.locator('.msj--bien')).toContainText('0414-8930000');
+  await expect(page.locator('.msj--bien')).toContainText('Contacto guardado');
+  /* Con tilde: el aviso dice los campos en palabras y no con el nombre de
+     la columna de la base. */
+  await expect(page.locator('.msj--bien')).toContainText('el teléfono');
+  await expect(page.locator('.msj--bien')).toContainText('el correo');
   await expect(page.locator('#telefono')).toHaveValue('0426-1112233');
+  await expect(page.locator('#correo')).toHaveValue('corregido.prueba@correo.local');
 
-  expect(await bitacoraDePaciente(paciente)).toContain('cambio_telefono');
+  /* Lo que había antes queda en bitácora, no en pantalla: el detalle de la
+     anotación lleva el valor viejo y el nuevo de cada campo que se movió. */
+  expect(await bitacoraDePaciente(paciente)).toContain('cambio_contacto');
+});
+
+test('un correo imposible rebota y no se guarda', async ({ page }) => {
+  await entrar(page, 'administracion');
+  await page.goto(`/sistema/pacientes/${paciente}`);
+
+  const antes = (await pacienteEnLaBase(CEDULA)).correo;
+  const campo = page.locator('#correo');
+  /* Se le saca el type=email para saltear la validación del navegador: lo
+     que se prueba es la del servidor, que es la que de verdad protege. */
+  await campo.evaluate((e: HTMLInputElement) => { e.type = 'text'; });
+  await campo.fill('arroba-no-tiene');
+  await page.getByRole('button', { name: 'Guardar el contacto' }).click();
+
+  await expect(page.locator('.sis-error')).toContainText('no parece válido');
+  await expect(page.locator('#correo')).toHaveValue('arroba-no-tiene');
+  expect((await pacienteEnLaBase(CEDULA)).correo).toBe(antes);
 });
 
 test('un teléfono imposible rebota y no se guarda', async ({ page }) => {
@@ -252,7 +276,7 @@ test('un teléfono imposible rebota y no se guarda', async ({ page }) => {
 
   const antes = (await pacienteEnLaBase(CEDULA)).telefono;
   await page.locator('#telefono').fill('123');
-  await page.getByRole('button', { name: 'Guardar el teléfono' }).click();
+  await page.getByRole('button', { name: 'Guardar el contacto' }).click();
 
   await expect(page.locator('.sis-error')).toContainText('entre 7 y 15 dígitos');
   // Lo tecleado vuelve a la pantalla: nadie escribe dos veces el mismo número.

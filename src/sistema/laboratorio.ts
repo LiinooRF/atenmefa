@@ -4,24 +4,48 @@
  * Dos pasos y no nueve: no hay examen físico ni diagnóstico que escribir.
  * Se registra a quién se le toma la muestra y qué exámenes se le piden.
  *
- * ESTO ESTÁ A MEDIO HACER, A PROPÓSITO
+ * QUIÉN LLENA QUÉ
  *
- * El cliente quedó en mandar un video con cómo trabaja su laboratorio. Lo
- * que hay acá es el armazón: los dos pasos, el registro y la lista de
- * exámenes, para que al llegar el video sea cambiar esta lista y no volver a
- * construir la pantalla.
+ * El cliente lo dictó así: «va a estar el recepcionista, que es el que va a
+ * colocar el nombre del paciente, los exámenes que se va a hacer, si es
+ * particular o un asegurador… y el propio licenciado va a colocar, de esos
+ * exámenes que se mandó a hacer, los resultados».
  *
- * La lista de exámenes sale de lo que el propio cliente ya tiene publicado
- * en su folleto, no de un catálogo inventado: hematología completa, química
- * sanguínea, orina y heces. Lo que falte lo dirá el video.
+ * De ahí la forma de esta pieza: los dos pasos de acá son de recepción y
+ * terminan en una orden abierta. Los resultados son otra pantalla, la del
+ * bioanalista, y viven en su propia columna —no en `datos`— porque son una
+ * lista de mediciones y `datos` es plano.
  *
- * TODAVÍA NO CIERRA. Se guarda como borrador. Cerrar una atención de
- * laboratorio significa que los resultados están listos, y eso depende de
- * cómo los entreguen, que es justo lo que falta saber.
+ * LOS VALORES DE REFERENCIA NO ESTÁN INVENTADOS NI LO VAN A ESTAR
+ *
+ * El cliente tiene un Excel con todos sus exámenes, sus valores de
+ * referencia y sus fórmulas, y quedó en mandarlo. Un rango de referencia
+ * depende del método y del equipo de CADA laboratorio: poner acá los de un
+ * libro y que salgan impresos al lado de un resultado sería firmar en su
+ * nombre algo que no medimos. Hasta que llegue el Excel, el campo de
+ * referencia se escribe a mano y nace vacío.
  */
 import type { Seccion } from './historia';
 
-/** Los exámenes que el centro ya dice que hace. */
+/** Una medición cargada por el bioanalista. */
+export interface Resultado {
+  /** Lo que se midió, tal como va impreso. */
+  examen: string;
+  valor: string;
+  unidad: string;
+  /** El rango del propio laboratorio. Lo escribe el bioanalista. */
+  referencia: string;
+}
+
+/**
+ * Los exámenes que el centro ya dice que hace, para cuando el catálogo de
+ * precios todavía está vacío.
+ *
+ * Sale del folleto del propio cliente, no de un catálogo inventado. En
+ * cuanto administración cargue los exámenes en Servicios y precios, la
+ * pantalla usa esos —que además traen el precio— y esta lista deja de
+ * mostrarse.
+ */
 export const EXAMENES = [
   {
     grupo: 'Hematología',
@@ -41,8 +65,10 @@ export const EXAMENES = [
  * Los dos pasos.
  *
  * El primero es el mismo "quién es" de la atención general, recortado: para
- * una muestra no hace falta el domicilio ni la referencia del lugar. El
- * segundo es lo que se le pide.
+ * una muestra no hace falta el domicilio ni la referencia del lugar. Lo que
+ * sí hace falta, y en la historia clínica era opcional, es cómo
+ * encontrarlo: el informe se le manda por WhatsApp o por correo, y sin uno
+ * de los dos no hay a dónde mandarlo.
  */
 export const laboratorio: readonly Seccion[] = [
   {
@@ -56,6 +82,10 @@ export const laboratorio: readonly Seccion[] = [
       { clave: 'edad', rotulo: 'Edad', tipo: 'numero', exigido: true, unidad: 'años', ancho: 1 },
       { clave: 'sexo', rotulo: 'Sexo', tipo: 'opcion', opciones: ['Femenino', 'Masculino'], exigido: true, ancho: 1 },
       { clave: 'telefono', rotulo: 'Teléfono', tipo: 'telefono', ancho: 2 },
+      { clave: 'whatsapp', rotulo: 'WhatsApp', tipo: 'telefono', ancho: 2,
+        pista: 'Solo si es otro número. Es a donde se le avisa que está listo.' },
+      { clave: 'correo', rotulo: 'Correo', tipo: 'correo', ancho: 4,
+        pista: 'A donde se le manda el informe.' },
       { clave: 'fecha', rotulo: 'Fecha', tipo: 'fecha', exigido: true, ancho: 1 },
       { clave: 'hora_muestra', rotulo: 'Hora de la muestra', tipo: 'hora', ancho: 1 },
       { clave: 'aseguradora', rotulo: 'Seguro', tipo: 'texto', ancho: 2,
@@ -69,8 +99,12 @@ export const laboratorio: readonly Seccion[] = [
     clave: 'examenes',
     titulo: 'Exámenes',
     campos: [
-      { clave: 'examenes', rotulo: 'Qué se le pidió', tipo: 'parrafo', exigido: true, ancho: 4,
-        pista: 'Uno por línea. Los botones de arriba los agregan.' },
+      /* La lista de arriba es el catálogo, que trae precio. Esto es para lo
+         que no está en el catálogo, y para que una orden se pueda registrar
+         hoy aunque administración todavía no haya cargado los precios. Las
+         órdenes viejas, de antes del catálogo, tienen todo acá. */
+      { clave: 'examenes', rotulo: 'Otros exámenes', tipo: 'parrafo', ancho: 4,
+        pista: 'Uno por línea. Lo que no esté en la lista de arriba.' },
       { clave: 'ayuno', rotulo: '¿Vino en ayunas?', tipo: 'si-no', ancho: 2 },
       { clave: 'observaciones_lab', rotulo: 'Observaciones', tipo: 'parrafo', ancho: 4,
         pista: 'Muestra hemolizada, paciente con tratamiento, lo que haya que anotar.' },
@@ -78,7 +112,13 @@ export const laboratorio: readonly Seccion[] = [
   },
 ];
 
-/** Lo que hace falta para poder guardar algo útil. */
+/**
+ * Lo que hace falta para poder guardar algo útil.
+ *
+ * Los exámenes no están en esta lista aunque sean obligatorios de verdad:
+ * no son un campo del formulario sino la selección del catálogo, y quien
+ * los comprueba es la pantalla. Ver `sinExamenes`.
+ */
 export const exigidosLaboratorio = laboratorio
   .flatMap((s) => s.campos)
   .filter((c) => c.exigido);

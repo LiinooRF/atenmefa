@@ -1,0 +1,421 @@
+---
+/**
+ * Mandarle el documento al paciente.
+ *
+ * MANUAL, SIEMPRE
+ *
+ * No hay ningún camino que envíe solo. El cliente lo pidió así —«el botón
+ * de Mailgun debe ser manual, y confirmando el correo del paciente
+ * registrado»— y es lo correcto: nada sale de acá sin que alguien lea a
+ * dónde va y apriete.
+ *
+ * LA DIRECCIÓN SE CONFIRMA Y SE PUEDE CORREGIR ACÁ
+ *
+ * Llega escrita la que tenga el paciente en su ficha. Si recepción no
+ * cargó ninguna, el campo viene vacío; si la que hay está mal, se cambia
+ * en esta misma pantalla y queda guardada en la ficha para la próxima.
+ * Eso lo puede hacer cualquiera de los cuatro roles.
+ *
+ * NADA QUEDA GUARDADO
+ *
+ * El informe va en el cuerpo del correo, no como PDF adjunto: no se genera
+ * ningún archivo en el disco de la VPS. Por WhatsApp va un mensaje con la
+ * dirección de verificación —wa.me no puede adjuntar nada, y el cliente
+ * llegó a la misma conclusión solo: «ese botón es para abrir el chat y ya,
+ * y algún mensajito predefinido».
+ */
+import Sistema from '../../../../layouts/Sistema.astro';
+import Icono from '../../../../components/Icono.astro';
+import { bd, esquema } from '../../../../sistema/lib/base';
+import { eq } from 'drizzle-orm';
+import { exigir } from '../../../../sistema/lib/guardia';
+import { anotar, esIdentificador } from '../../../../sistema/lib/atenciones';
+import { examenesPedidos } from '../../../../sistema/lib/laboratorio';
+import {
+  configDelCorreo, correoUsable, enviarCorreo,
+} from '../../../../sistema/lib/correo';
+import {
+  asuntoDe, htmlDelInforme, textoDelInforme, type DatosDelInforme,
+} from '../../../../sistema/correo/informe';
+import { comoSeLee as documentoComoSeLee } from '../../../../sistema/lib/documento';
+import {
+  comoSeLee as telefonoComoSeLee, enlaceDeWhatsApp, esCelular, paraWhatsApp,
+} from '../../../../sistema/lib/telefono';
+import { entorno } from '../../../../sistema/lib/entorno';
+import { clinica } from '../../../../data/clinica';
+import type { Resultado } from '../../../../sistema/laboratorio';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'enviar_documento');
+if (corte) return corte;
+
+const { id } = Astro.params;
+const usuario = Astro.locals.usuario!;
+if (!id || !esIdentificador(id)) return Astro.redirect('/sistema');
+
+const [caso] = await bd
+  .select({
+    id: esquema.atencion.id,
+    numero: esquema.atencion.numero,
+    estado: esquema.atencion.estado,
+    tipo: esquema.atencion.tipo,
+    fecha: esquema.atencion.fecha,
+    aseguradora: esquema.atencion.aseguradora,
+    datos: esquema.atencion.datos,
+    resultados: esquema.atencion.resultados,
+    resultadosPor: esquema.atencion.resultadosPor,
+    pin: esquema.atencion.pin,
+    pacienteId: esquema.paciente.id,
+    paciente: esquema.paciente.nombre,
+    cedula: esquema.paciente.cedula,
+    tipoDoc: esquema.paciente.tipoDoc,
+    telefono: esquema.paciente.telefono,
+    whatsapp: esquema.paciente.whatsapp,
+    correo: esquema.paciente.correo,
+    medicoId: esquema.atencion.medicoId,
+    medico: esquema.user.name,
+    colegiatura: esquema.user.colegiatura,
+  })
+  .from(esquema.atencion)
+  .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+  .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
+  .where(eq(esquema.atencion.id, id))
+  .limit(1);
+
+if (!caso) return Astro.redirect('/sistema');
+
+const esLab = caso.tipo === 'laboratorio';
+const d = (caso.datos ?? {}) as Record<string, string>;
+const resultados = (caso.resultados ?? []) as Resultado[];
+
+/* Quien firma: en un informe de laboratorio es el bioanalista que cargó los
+   resultados, con su colegio. Es la firma que vale en ese papel, y no la de
+   quien registró la orden en el mesón. */
+const [firmante] = caso.resultadosPor
+  ? await bd
+      .select({ nombre: esquema.user.name, colegiatura: esquema.user.colegiatura, rol: esquema.user.rol })
+      .from(esquema.user)
+      .where(eq(esquema.user.id, caso.resultadosPor))
+      .limit(1)
+  : [];
+
+const pedidos = esLab ? await examenesPedidos(caso.id) : [];
+const cfg = configDelCorreo();
+
+/* La dirección donde el sistema REALMENTE vive, igual que en el documento
+   impreso: el dominio final todavía sirve la web vieja. */
+const dondeVive = (entorno('URL_BASE') ?? clinica.dominio).replace(/\/$/, '');
+const urlVerificacion = `${dondeVive}/verificar/${caso.id}`;
+const dominioCorto = dondeVive.replace(/^https?:\/\//, '');
+
+/* El número y el correo salen de la FICHA del paciente y no de `datos` de
+   la atención. Parece lo mismo y no lo es: si recepción borró un número
+   porque estaba equivocado, caer de vuelta en el que quedó escrito en una
+   visita vieja vuelve a ofrecer justo el número equivocado. La ficha es el
+   único lugar donde vive el contacto, y pacienteDe la mantiene al día con
+   cada guardado. */
+const numeroWa = paraWhatsApp(caso.whatsapp ?? caso.telefono);
+
+/* El mensaje de WhatsApp. Corto y sin un dato clínico: un chat lo lee quien
+   tenga el teléfono en la mano, que no siempre es el paciente.
+   
+   No lleva la dirección de verificación. Esa página confirma que un papel es
+   auténtico y no muestra el contenido: le sirve a la aseguradora que recibió
+   el informe, no al paciente que quiere ver su resultado. Mandársela sería
+   prometerle algo que no va a encontrar. */
+const mensajeWa = [
+  `Buenas, le escribimos de ${clinica.nombre}.`,
+  esLab
+    ? `Los resultados de sus exámenes (orden N° ${caso.numero}) ya están listos.`
+    : `Su informe de atención N° ${caso.numero} ya está listo.`,
+  `Puede retirarlo en ${clinica.direccion.calle}, o decirnos por acá si prefiere`,
+  'que se lo enviemos a su correo.',
+].join(' ');
+
+let aviso = '';
+let error = '';
+let simulado = '';
+let correoEscrito = caso.correo ?? '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  correoEscrito = String(form.get('correo') ?? '').trim();
+  const guardarEnFicha = form.get('guardar') === 'si';
+
+  const destino = correoUsable(correoEscrito);
+  if (!destino) {
+    error = 'Esa dirección de correo no parece válida. Revísela antes de enviar.';
+  } else {
+    /* Se guarda ANTES de enviar y no después: si el envío falla por algo del
+       otro lado, la corrección del dato no se pierde y no hay que volver a
+       escribirla. */
+    if (guardarEnFicha && destino !== caso.correo) {
+      await bd
+        .update(esquema.paciente)
+        .set({ correo: destino })
+        .where(eq(esquema.paciente.id, caso.pacienteId));
+    }
+
+    const paraElInforme: DatosDelInforme = {
+      tipo: esLab ? 'laboratorio' : 'general',
+      numero: caso.numero,
+      fecha: caso.fecha,
+      paciente: caso.paciente,
+      cedula: documentoComoSeLee(caso.tipoDoc, caso.cedula),
+      edad: d.edad,
+      sexo: d.sexo,
+      aseguradora: caso.aseguradora,
+      examenes: [
+        ...pedidos.map((p) => p.nombre),
+        ...(esLab ? (d.examenes ?? '').split('\n').map((t) => t.trim()).filter(Boolean) : []),
+      ],
+      resultados,
+      observaciones: esLab ? d.observaciones_lab : undefined,
+      recipe: d.recipe,
+      indicaciones: d.indicaciones,
+      idx: d.idx,
+      firma: {
+        nombre: firmante?.nombre ?? caso.medico,
+        colegiatura: firmante?.colegiatura ?? caso.colegiatura,
+        rol: esLab ? 'Bioanalista' : 'Médico que atiende',
+      },
+      verificacion: { url: urlVerificacion, pin: caso.pin, dominioCorto },
+      centro: {
+        nombre: clinica.nombre,
+        direccion: `${clinica.direccion.calle} · ${clinica.direccion.ciudad}`,
+        telefono: clinica.contacto.whatsapp.visible,
+      },
+    };
+
+    const salida = await enviarCorreo({
+      a: destino,
+      asunto: asuntoDe(paraElInforme),
+      html: htmlDelInforme(paraElInforme),
+      texto: textoDelInforme(paraElInforme),
+    });
+
+    if (salida.estado === 'enviado') {
+      /* En bitácora queda a dónde se mandó. Es un dato de salud saliendo del
+         centro: tiene que poder reconstruirse quién lo mandó y adónde. */
+      await anotar(usuario.id, 'envio', caso.id, { medio: 'correo', a: destino });
+      aviso = `Enviado a ${destino}.`;
+    } else if (salida.estado === 'simulado') {
+      simulado = salida.motivo;
+    } else {
+      error = salida.motivo;
+    }
+  }
+}
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
+---
+
+<Sistema titulo={`Enviar ${caso.numero}`}>
+  <nav class="miga">
+    {esLab
+      ? <><a href="/sistema/laboratorio">Laboratorio</a> <span>/</span></>
+      : <><a href="/sistema">Casos</a> <span>/</span></>}
+    <a href={`/sistema/atencion/${caso.id}`}>{esLab ? 'Orden' : 'Atención'} {caso.numero}</a>
+    <span>/</span> Enviar
+  </nav>
+
+  <header class="cab">
+    <div>
+      <h1>Enviarle el {esLab ? 'informe' : 'documento'} al paciente</h1>
+      <p class="cab__nota">
+        <strong>{caso.paciente}</strong> · {documentoComoSeLee(caso.tipoDoc, caso.cedula)} ·
+        {esLab ? ' orden' : ' atención'} N° {caso.numero} del {fechaLarga(caso.fecha)}
+      </p>
+    </div>
+    <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}`}>Volver</a>
+  </header>
+
+  {caso.estado !== 'cerrada' && (
+    <p class="cuidado">
+      <Icono nombre="escudo" tam={18} />
+      <span>
+        {esLab
+          ? 'Esta orden todavía no está entregada: si manda el informe ahora, va con los resultados que haya cargados hasta este momento.'
+          : 'Esta atención todavía no está cerrada: lo que se mande ahora puede cambiar después.'}
+      </span>
+    </p>
+  )}
+
+  <div class="col">
+    <section class="sis-tarjeta">
+      <h2><Icono nombre="correo" tam={19} /> Por correo</h2>
+
+      {aviso && <p class="msj msj--bien"><Icono nombre="escudo" tam={18} />{aviso}</p>}
+      {error && <p class="sis-error msj"><Icono nombre="escudo" tam={18} />{error}</p>}
+      {simulado && (
+        <p class="msj msj--simulado">
+          <Icono nombre="escudo" tam={18} />
+          <span>
+            <strong>No se envió nada.</strong> {simulado}
+            {' '}El mensaje se armó completo: lo único que falta es prenderlo.
+          </span>
+        </p>
+      )}
+
+      <form method="post" class="forma">
+        <div class="sis-campo">
+          <label for="correo">Correo del paciente</label>
+          <input
+            id="correo" name="correo" type="email" value={correoEscrito}
+            required autocomplete="off" placeholder="nombre@correo.com"
+          />
+          <span class="pista">
+            {caso.correo
+              ? 'Es el que tiene registrado. Si está mal, corríjalo acá.'
+              : 'No tiene ninguno registrado. Escriba a dónde mandarlo.'}
+          </span>
+        </div>
+
+        <label class="marca">
+          <input type="checkbox" name="guardar" value="si" checked />
+          <span>Guardarlo en la ficha del paciente para la próxima vez</span>
+        </label>
+
+        <button type="submit" class="sis-boton sis-boton--primario">
+          <Icono nombre="correo" tam={18} />
+          Enviar ahora
+        </button>
+      </form>
+
+      <p class="nota">
+        El informe va en el cuerpo del correo, no como archivo adjunto: así no
+        queda ningún PDF guardado en el servidor. Abajo lleva la dirección de
+        verificación y el PIN, para que quien lo reciba pueda comprobar que lo
+        emitió el centro.
+      </p>
+
+      {cfg?.esSandbox && (
+        <p class="nota nota--ojo">
+          El dominio configurado es el de pruebas de Mailgun, que solo entrega a
+          las direcciones autorizadas en su panel. Para escribirle a cualquier
+          paciente hace falta el dominio propio del centro.
+        </p>
+      )}
+    </section>
+
+    <section class="sis-tarjeta">
+      <h2><Icono nombre="whatsapp" tam={19} /> Por WhatsApp</h2>
+
+      {numeroWa ? (
+        <>
+          <p class="nota">
+            Abre el chat con <strong>{telefonoComoSeLee(caso.whatsapp ?? caso.telefono)}</strong> y
+            deja el mensaje escrito. El envío lo hace usted desde WhatsApp.
+          </p>
+          <pre class="previo">{mensajeWa}</pre>
+          <a class="sis-boton sis-boton--primario"
+             href={enlaceDeWhatsApp(numeroWa, mensajeWa)}
+             target="_blank" rel="noopener">
+            <Icono nombre="whatsapp" tam={18} />
+            Abrir el chat
+          </a>
+          {!esCelular(caso.whatsapp ?? caso.telefono) && (
+            <p class="nota nota--ojo">
+              Ese número no parece un celular, así que el chat puede no existir.
+              Conviene confirmarlo antes de dar el aviso por hecho.
+            </p>
+          )}
+
+          <p class="nota">
+            El documento no viaja por acá: WhatsApp no deja adjuntar un archivo
+            desde un enlace. El mensaje dice dónde retirarlo.
+          </p>
+        </>
+      ) : (
+        <p class="nota">
+          Este paciente no tiene un número con el que se pueda abrir WhatsApp.
+          Cárguelo en su ficha y vuelva.
+        </p>
+      )}
+    </section>
+  </div>
+</Sistema>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
+  .cab h1 { font-size: var(--u-xl); }
+  .cab__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .cab__nota strong { color: var(--azul); }
+
+  .cuidado {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-top: 18px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #fdf0d9;
+    color: #7a5200;
+    font-size: var(--u-sm);
+    line-height: 1.5;
+  }
+  .cuidado :global(svg) { flex: none; margin-top: 2px; }
+
+  .col { display: grid; gap: 16px; margin-top: 20px; align-items: start; }
+  @media (min-width: 880px) { .col { grid-template-columns: 1.15fr 1fr; } }
+
+  .col h2 {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    font-size: var(--u-lg);
+    margin-bottom: 14px;
+  }
+  .col h2 :global(svg) { color: var(--azul); }
+
+  .forma { display: grid; gap: 14px; justify-items: start; }
+  .forma .sis-campo { width: 100%; }
+
+  .marca { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: var(--u-sm); cursor: pointer; }
+  .marca input { width: 20px; height: 20px; accent-color: var(--azul); }
+
+  .msj { display: flex; align-items: flex-start; gap: 9px; margin-bottom: 14px; font-size: var(--u-sm); line-height: 1.5; }
+  .msj :global(svg) { flex: none; margin-top: 2px; }
+  .msj--bien {
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+  }
+  .msj--simulado {
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: var(--bruma);
+    border: 1px solid var(--linea);
+    color: var(--tinta-suave);
+  }
+  .msj--simulado strong { color: var(--tinta); }
+
+  .nota { margin-top: 14px; font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.6; max-width: 62ch; }
+  .nota strong { color: var(--tinta-suave); }
+  .nota--ojo { color: #7a5200; }
+
+  /* El mensaje tal como va a salir. Se ve antes de abrir el chat: así nadie
+     manda algo que no leyó. */
+  .previo {
+    margin: 12px 0 16px;
+    padding: 12px 14px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background: var(--bruma);
+    font: inherit;
+    font-size: var(--u-sm);
+    line-height: 1.55;
+    color: var(--tinta-suave);
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+</style>

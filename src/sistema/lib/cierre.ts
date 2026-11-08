@@ -13,8 +13,14 @@
  * y sumar las dos daría una cifra que no se le puede pasar a nadie.
  */
 import { and, asc, eq, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { bd, esquema } from './base';
 import { hoyEnVenezuela, normalizar } from './atenciones';
+
+/* La tabla de usuarios entra dos veces en la misma consulta: una por quien
+   registró la atención y otra por quien firmó los resultados. Sin alias,
+   Postgres no sabe de cuál de las dos se habla. */
+const firma = alias(esquema.user, 'firma');
 
 /** Un mes tal como lo manda el <input type="month">. */
 const FORMA_MES = /^\d{4}-(0[1-9]|1[0-2])$/;
@@ -165,7 +171,12 @@ export async function consolidadoDelMes(mes: string): Promise<Consolidado> {
       casoNumero: esquema.atencion.casoNumero,
       paciente: esquema.paciente.nombre,
       cedula: esquema.paciente.cedula,
-      medico: esquema.user.name,
+      /* Quién lo hizo. En una consulta es el médico; en una orden de
+         laboratorio es el bioanalista que firmó los resultados, no quien
+         registró la orden en el mesón —que casi siempre es recepción—. Sin
+         este COALESCE, la planilla de la aseguradora decía que el médico de
+         una hematología fue la recepcionista. */
+      medico: sql<string>`COALESCE(firma.name, ${esquema.user.name})`,
       descripcion: esquema.renglon.descripcion,
       cantidad: esquema.renglon.cantidad,
       precio: esquema.renglon.precio,
@@ -178,6 +189,7 @@ export async function consolidadoDelMes(mes: string): Promise<Consolidado> {
     .innerJoin(esquema.atencion, eq(esquema.atencion.id, esquema.renglon.atencionId))
     .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
     .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
+    .leftJoin(firma, eq(firma.id, esquema.atencion.resultadosPor))
     .where(delMes)
     .orderBy(asc(esquema.atencion.numero), asc(esquema.renglon.creado));
 

@@ -13,7 +13,7 @@ import {
   cambiarClave, claveFloja, ROLES, usuarioPorId,
 } from '../../sistema/lib/usuarios';
 import { anotar } from '../../sistema/lib/atenciones';
-import type { Rol } from '../../sistema/lib/permisos';
+import { nombreDelRol, type Rol } from '../../sistema/lib/permisos';
 
 export const prerender = false;
 
@@ -110,7 +110,7 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
             <div class="gente__quien">
               <strong>{u.nombre}{u.id === yo.id ? ' · usted' : ''}</strong>
               <small>{u.correo}</small>
-              {u.colegiatura && <small>C.M. {u.colegiatura}</small>}
+              <small>{nombreDelRol(u.rol)}{u.colegiatura ? ` · ${u.colegiatura}` : ''}</small>
             </div>
 
             <div class="gente__acciones">
@@ -168,12 +168,17 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
           <select id="rol" name="rol">
             {ROLES.map((r) => <option value={r.valor}>{r.nombre}</option>)}
           </select>
-          <span class="pista">{ROLES.map((r) => `${r.nombre}: ${r.explica}`).join(' ')}</span>
+          <ul class="roles">
+            {ROLES.map((r) => <li><strong>{r.nombre}.</strong> {r.explica}</li>)}
+          </ul>
         </div>
         <div class="sis-campo">
           <label for="colegiatura">Colegiatura</label>
           <input id="colegiatura" name="colegiatura" autocomplete="off" />
-          <span class="pista">Solo para médicos. Sale en el documento que firman.</span>
+          <span class="pista">
+            Del médico o del bioanalista. Va impresa en el documento que firma;
+            recepción y administración no la llevan.
+          </span>
         </div>
         <div class="sis-campo">
           <label for="clave">Clave provisional</label>
@@ -188,6 +193,12 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
 
 <style>
   .cab h1 { font-size: var(--u-2xl); }
+
+  /* Con cuatro roles, las explicaciones seguidas en una sola línea de pista
+     eran un párrafo que nadie leía. Una por renglón se mira de reojo. */
+  .roles { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 5px; }
+  .roles li { font-size: var(--u-sm); line-height: 1.45; color: var(--tinta-tenue); }
+  .roles strong { color: var(--tinta); font-weight: 600; }
   .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
 
   .msj { display: flex; align-items: flex-start; gap: 9px; margin-top: 16px; }

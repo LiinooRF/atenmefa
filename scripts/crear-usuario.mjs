@@ -3,14 +3,18 @@
  *
  *   node scripts/crear-usuario.mjs "Nombre" correo@dominio clave rol [colegiatura]
  *
- * rol: medico | administracion
+ * rol: medico | administracion | bioanalista | recepcionista
  *
- * Las pruebas de extremo a extremo esperan tres cuentas:
- *   medico@atenmefa.local   clave-de-prueba-1   medico
- *   medico2@atenmefa.local  clave-de-prueba-3   medico
- *   admin@atenmefa.local    clave-de-prueba-2   administracion
+ * Las pruebas de extremo a extremo esperan cinco cuentas:
+ *   medico@atenmefa.local       clave-de-prueba-1   medico
+ *   medico2@atenmefa.local      clave-de-prueba-3   medico
+ *   admin@atenmefa.local        clave-de-prueba-2   administracion
+ *   laboratorio@atenmefa.local  clave-de-prueba-4   bioanalista
+ *   recepcion@atenmefa.local    clave-de-prueba-5   recepcionista
  * La segunda cuenta médica no es un capricho: sin ella no se puede probar
- * que un borrador lo termina quien lo abrió.
+ * que un borrador lo termina quien lo abrió. Las dos últimas tampoco: la
+ * separación entre quien registra la orden y quien carga los resultados es
+ * justo lo que hay que vigilar.
  *
  * El registro público está cerrado a propósito (`disableSignUp`), así que
  * esto escribe las filas directo usando el hasher de Better Auth: la clave
@@ -27,8 +31,8 @@ if (!nombre || !correo || !clave) {
   console.error('Uso: node scripts/crear-usuario.mjs "Nombre" correo clave [rol] [colegiatura]');
   process.exit(1);
 }
-if (!['medico', 'administracion'].includes(rol)) {
-  console.error(`Rol inválido: ${rol}. Debe ser medico o administracion.`);
+if (!['medico', 'administracion', 'bioanalista', 'recepcionista'].includes(rol)) {
+  console.error(`Rol inválido: ${rol}. Debe ser medico, administracion, bioanalista o recepcionista.`);
   process.exit(1);
 }
 if (clave.length < 10) {
