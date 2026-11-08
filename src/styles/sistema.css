@@ -105,8 +105,12 @@
   border-radius: 7px;
   transition: background-color 160ms ease, color 160ms ease;
 }
-.sis__nav > a :global(svg),
-.sis__nav summary :global(svg) { opacity: 0.75; }
+/* Sin :global(): esto es un .css suelto, no el <style> de un componente, y
+   ahí :global() no es un selector válido. Con él, la regla se descartaba y
+   los iconos del menú se veían a opacidad plena en vez de acompañar al
+   texto. No rompía nada, simplemente no se aplicaba. */
+.sis__nav > a svg,
+.sis__nav summary svg { opacity: 0.75; }
 .sis__nav > a:hover,
 .sis__nav summary:hover { background: rgba(255, 255, 255, 0.08); color: #fff; }
 .sis__nav > a:active,
@@ -114,8 +118,8 @@
 
 .sis__nav > a[aria-current='page'],
 .sis__nav summary[aria-current='true'] { color: #fff; background: rgba(255, 255, 255, 0.1); }
-.sis__nav > a[aria-current='page'] :global(svg),
-.sis__nav summary[aria-current='true'] :global(svg) { opacity: 1; }
+.sis__nav > a[aria-current='page'] svg,
+.sis__nav summary[aria-current='true'] svg { opacity: 1; }
 .sis__nav > a[aria-current='page']::after,
 .sis__nav summary[aria-current='true']::after {
   content: '';

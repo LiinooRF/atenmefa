@@ -237,3 +237,24 @@ test('la página de verificación no se indexa', async ({ page }) => {
   await page.goto('/verificar');
   await expect(page.locator('meta[name="robots"]')).toHaveAttribute('content', /noindex/);
 });
+
+test('el QR cabe en su recuadro y no tapa el texto', async ({ page }) => {
+  /* El SVG del código trae su tamaño natural —unos 35 mm— y la regla que lo
+     encogía a 17 estaba escrita con :global(), que dentro de una hoja
+     is:global no es un selector válido: se descartaba entera. El código se
+     dibujaba encima de "Verifique que este documento es auténtico" y solo
+     se veía al imprimir. */
+  await entrar(page, 'medico');
+  await page.goto(`/sistema/atencion/${caso}/documento`);
+  await page.emulateMedia({ media: 'print' });
+
+  const caja = (await page.locator('.sello__qr').first().boundingBox())!;
+  const dibujo = (await page.locator('.sello__qr svg').first().boundingBox())!;
+
+  expect.soft(dibujo.width, 'el QR se sale de su recuadro').toBeLessThanOrEqual(caja.width + 1);
+  expect.soft(dibujo.height).toBeLessThanOrEqual(caja.height + 1);
+
+  // Y el texto empieza DESPUÉS del código, no debajo.
+  const texto = (await page.locator('.sello__texto').first().boundingBox())!;
+  expect(texto.x).toBeGreaterThanOrEqual(caja.x + caja.width - 1);
+});
