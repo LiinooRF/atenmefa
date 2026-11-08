@@ -278,7 +278,10 @@ test('un teléfono imposible rebota y no se guarda', async ({ page }) => {
   await page.locator('#telefono').fill('123');
   await page.getByRole('button', { name: 'Guardar los datos' }).click();
 
-  await expect(page.locator('.sis-error')).toContainText('entre 7 y 15 dígitos');
+  /* El mensaje dice cuántos dígitos contó: «123» son tres. Mostrar solo un
+     ejemplo correcto al lado de lo tecleado no explicaba qué estaba mal. */
+  await expect(page.locator('.sis-error')).toContainText('tiene 3 dígitos');
+  await expect(page.locator('.sis-error')).toContainText('entre 7 y 15');
   // Lo tecleado vuelve a la pantalla: nadie escribe dos veces el mismo número.
   await expect(page.locator('#telefono')).toHaveValue('123');
   expect((await pacienteEnLaBase(CEDULA)).telefono).toBe(antes);

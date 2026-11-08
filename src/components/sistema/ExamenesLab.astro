@@ -86,53 +86,80 @@ const fechaTasa = tasa
         No tienen precio propio a propósito: lo que se cobra es la suma de
         los que queden marcados, porque si el combo tuviera precio fijo,
         quitarle uno lo cobraría igual. */}
-    {perfiles.length > 0 && (
-      <ul class="ex__perfiles" data-perfiles={JSON.stringify(perfiles)}>
-        {perfiles.map((p) => (
-          <li>
-            <button type="button" class="ex__perfil" data-perfil={p.id}>
-              {p.nombre}
-              <em>{p.examenes.length}</em>
-            </button>
-          </li>
-        ))}
-      </ul>
-    )}
+    {/* Dos columnas: a la izquierda los perfiles ya armados y a la derecha
+        la lista completa para marcar a mano. Antes los perfiles eran una
+        fila de pastillas encima de la lista y con nueve o diez se iban a
+        tres renglones, empujando los exámenes fuera de la pantalla. */}
+    <div class="ex__dos">
+      <div class="ex__col ex__col--perfiles">
+        <h3 class="ex__rotulo">Perfiles</h3>
 
-    {/* Con ciento cuarenta exámenes la lista no se recorre con el dedo: se
-        filtra. Lo marcado NO se esconde al filtrar —ver el script—, porque
-        perder de vista lo que uno ya eligió es como se cobra de menos. */}
-    {catalogo.length > 12 && (
-      <div class="ex__filtro">
-        <input type="search" id="ex-filtro" placeholder="Filtrar: glicemia, orina, hemo…"
-               aria-label="Filtrar exámenes" autocomplete="off" />
-        <span class="ex__cuantos" id="ex-filtrados"></span>
+        {perfiles.length > 0 ? (
+          <ul class="ex__perfiles" data-perfiles={JSON.stringify(perfiles)}>
+            {perfiles.map((p) => (
+              <li>
+                <button type="button" class="ex__perfil" data-perfil={p.id}>
+                  <span>{p.nombre}</span>
+                  <em>{p.examenes.length}</em>
+                </button>
+              </li>
+            ))}
+          </ul>
+        ) : (
+          <p class="ex__sin-perfiles">
+            Todavía no hay perfiles armados.
+            {puedeEditarCatalogo
+              ? <> Se arman en <a href="/sistema/perfiles">Perfiles</a>.</>
+              : ' Los arma administración.'}
+          </p>
+        )}
+
+        <p class="ex__pista">
+          Un toque marca todos los del perfil. Después se destilda a la
+          derecha lo que no haga falta: se cobra lo que quede marcado.
+        </p>
       </div>
-    )}
 
-    <ul class="ex__lista">
-      {catalogo.map((e) => (
-        <li data-busca={e.nombre.toLocaleLowerCase('es')}>
-          <label>
-            <input
-              type="checkbox" name="examen" value={e.id}
-              checked={yaEsta.has(e.id)}
-              data-precio={e.moneda === 'USD' && !sinPrecio(e) ? e.precio : ''}
-              data-moneda={e.moneda}
-              data-sin-precio={sinPrecio(e) ? '' : undefined}
-            />
-            <span class="ex__nombre">{e.nombre}</span>
-            {sinPrecio(e) ? (
-              <span class="ex__precio ex__precio--falta">sin precio</span>
-            ) : (
-              <span class="ex__precio cifra">
-                {e.moneda === 'USD' ? '$' : 'Bs '}{dinero(e.precio)}
-              </span>
-            )}
-          </label>
-        </li>
-      ))}
-    </ul>
+      <div class="ex__col ex__col--lista">
+        <h3 class="ex__rotulo">Todos los exámenes</h3>
+
+        {/* Con ciento cuarenta exámenes la lista no se recorre con el dedo:
+            se filtra. Lo marcado NO se esconde al filtrar —ver el script—,
+            porque perder de vista lo que uno ya eligió es como se cobra de
+            menos. */}
+        {catalogo.length > 12 && (
+          <div class="ex__filtro">
+            <input type="search" id="ex-filtro" placeholder="Filtrar: glicemia, orina, hemo…"
+                   aria-label="Filtrar exámenes" autocomplete="off" />
+            <span class="ex__cuantos" id="ex-filtrados"></span>
+          </div>
+        )}
+
+        <ul class="ex__lista">
+          {catalogo.map((e) => (
+            <li data-busca={e.nombre.toLocaleLowerCase('es')}>
+              <label>
+                <input
+                  type="checkbox" name="examen" value={e.id}
+                  checked={yaEsta.has(e.id)}
+                  data-precio={e.moneda === 'USD' && !sinPrecio(e) ? e.precio : ''}
+                  data-moneda={e.moneda}
+                  data-sin-precio={sinPrecio(e) ? '' : undefined}
+                />
+                <span class="ex__nombre">{e.nombre}</span>
+                {sinPrecio(e) ? (
+                  <span class="ex__precio ex__precio--falta">sin precio</span>
+                ) : (
+                  <span class="ex__precio cifra">
+                    {e.moneda === 'USD' ? '$' : 'Bs '}{dinero(e.precio)}
+                  </span>
+                )}
+              </label>
+            </li>
+          ))}
+        </ul>
+      </div>
+    </div>
 
     <p class="ex__cuenta" id="ex-cuenta" aria-live="polite">
       <span id="ex-nada">Ninguno marcado todavía.</span>
@@ -243,6 +270,13 @@ const fechaTasa = tasa
         for (const c of suyos) c.checked = !quitar;
         recontar();
         pintarPerfiles();
+
+        /* La lista de la derecha se corre hasta el primero del perfil.
+           Marcar nueve exámenes que están a seiscientos píxeles de scroll
+           no se ve: parecía que el botón no había hecho nada. */
+        if (!quitar) {
+          suyos[0].closest('li')?.scrollIntoView({ block: 'nearest' });
+        }
       });
     }
 
@@ -296,24 +330,51 @@ const fechaTasa = tasa
     color: var(--azul);
   }
 
-  /* Los perfiles, arriba y a la vista: son el atajo de todos los días. */
+  /* Dos columnas en pantalla ancha; una encima de otra en el teléfono, con
+     los perfiles primero porque son el atajo de todos los días. */
+  .ex__dos { display: grid; gap: 18px; }
+  @media (min-width: 900px) {
+    .ex__dos { grid-template-columns: minmax(200px, 270px) 1fr; gap: 22px; }
+    .ex__col--perfiles {
+      padding-right: 22px;
+      border-right: 1px solid var(--linea-tenue);
+    }
+  }
+
+  .ex__rotulo {
+    margin: 0 0 9px;
+    font-family: var(--ui);
+    font-size: var(--u-xs);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--tinta-tenue);
+  }
+
   .ex__perfiles {
     list-style: none;
-    margin: 0 0 12px;
-    padding: 0 0 12px;
-    border-bottom: 1px solid var(--linea-tenue);
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    gap: 5px;
+    /* Se desplaza dentro de su caja, igual que la lista de al lado: con
+       treinta y un perfiles la columna izquierda medía metro y medio y
+       empujaba el resto del formulario fuera de la pantalla. */
+    max-height: 46vh;
+    overflow-y: auto;
+    /* Sitio para que el borde del botón no quede pegado a la barra. */
+    padding-right: 2px;
   }
   .ex__perfil {
-    display: inline-flex;
+    display: flex;
     align-items: center;
+    justify-content: space-between;
     gap: 8px;
+    width: 100%;
     min-height: 44px;
     padding: 0 13px;
     border: 1px solid var(--linea);
-    border-radius: 999px;
+    border-radius: 9px;
     background: var(--papel);
     color: var(--tinta);
     font: inherit;
@@ -335,6 +396,15 @@ const fechaTasa = tasa
   .ex__perfil[data-estado='parte'] { border-color: var(--azul); background: var(--azul-tenue); color: var(--azul); }
   .ex__perfil[data-estado='parte'] em { color: var(--azul); }
 
+  .ex__pista {
+    margin: 11px 0 0;
+    font-size: var(--u-xs);
+    line-height: 1.5;
+    color: var(--tinta-tenue);
+  }
+  .ex__sin-perfiles { margin: 0; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .ex__sin-perfiles a { color: var(--azul); }
+
   .ex__filtro { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
   .ex__filtro input {
     flex: 1 1 220px;
@@ -354,8 +424,11 @@ const fechaTasa = tasa
   .ex__lista li[hidden] { display: none; }
   /* Con muchos exámenes la lista se desplaza dentro de su caja en vez de
      estirar la página hasta lo imposible. */
-  .ex__lista { max-height: 44vh; overflow-y: auto; }
-  @media (min-width: 760px) { .ex__lista { grid-template-columns: 1fr 1fr; gap: 2px 18px; } }
+  .ex__lista { max-height: 46vh; overflow-y: auto; }
+  /* Dos columnas de casillas solo cuando hay sitio de verdad: con la
+     columna de perfiles al lado, partirla antes dejaba los nombres largos
+     cortados a la mitad. */
+  @media (min-width: 1180px) { .ex__lista { grid-template-columns: 1fr 1fr; gap: 2px 18px; } }
 
   .ex__lista label {
     display: flex;

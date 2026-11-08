@@ -556,17 +556,34 @@ const fechaLarga = (f: string) =>
             .filter(Boolean),
         );
 
-        let primera: HTMLInputElement | null = null;
-        for (const a of p.analitos) {
-          if (yaEstan.has(a.analito.toUpperCase())) continue;
+        const faltan = p.analitos.filter((a) => !yaEstan.has(a.analito.toUpperCase()));
+        if (!faltan.length) { elige.value = ''; return; }
+
+        const poneFila = (examen: string, unidad = '', referencia = '') => {
           const fila = nuevaFila();
-          if (!fila) break;
+          if (!fila) return null;
           const dame = (n: string) => fila.querySelector<HTMLInputElement>(`input[name="${n}"]`);
-          dame('examen')!.value = a.analito;
-          dame('unidad')!.value = a.unidad;
-          dame('referencia')!.value = a.referencia;
+          dame('examen')!.value = examen;
+          dame('unidad')!.value = unidad;
+          dame('referencia')!.value = referencia;
           cuerpo.appendChild(fila);
-          primera ??= dame('valor');
+          return dame('valor');
+        };
+
+        /* El nombre del examen encabeza sus renglones. Una orden con tres
+           exámenes salía impresa como una lista corrida de treinta filas
+           sin decir dónde terminaba uno y empezaba el otro; en las hojas
+           del laboratorio cada examen es su propia hoja con su título.
+           
+           Va como renglón sin valor, sin unidad y sin rango, que es la
+           forma en que el informe reconoce un subtítulo. */
+        poneFila(p.examen);
+
+        let primera: HTMLInputElement | null = null;
+        for (const a of faltan) {
+          const campo = poneFila(a.analito, a.unidad, a.referencia);
+          if (!campo) break;
+          primera ??= campo;
         }
         elige.value = '';
         primera?.focus();

@@ -13,7 +13,7 @@
  * iguales —la de lo que se le hace y la de lo que se le cobra— porque dos
  * listas se separan el primer día que alguien corrige una sola.
  */
-import { and, asc, desc, eq, inArray, ne, sql } from 'drizzle-orm';
+import { and, asc, count, desc, eq, inArray, ne, sql } from 'drizzle-orm';
 import { bd, esquema } from './base';
 import { pagadorSugerido } from './cobro';
 import { esIdentificador, normalizar } from './atenciones';
@@ -230,7 +230,29 @@ export async function faltanEnElCatalogo(): Promise<number> {
     .select({ nombre: esquema.servicio.nombre })
     .from(esquema.servicio);
   const conocidos = new Set(enCatalogo.map((s) => normalizar(s.nombre)));
-  return delArchivo.filter((d) => !conocidos.has(normalizar(d))).length;
+  const examenes = delArchivo.filter((d) => !conocidos.has(normalizar(d))).length;
+
+  /* También cuentan los perfiles que falten.
+     
+     Antes esto solo miraba los exámenes, y con el catálogo lleno y la tabla
+     de perfiles vacía la tarjeta de «cargar» no aparecía nunca: la pantalla
+     de la orden quedaba con la columna de perfiles vacía y sin forma de
+     llenarla desde adentro. Pasa de verdad cada vez que alguien borra los
+     perfiles sin borrar los exámenes. */
+  const hojas = await bd
+    .select({ examen: esquema.plantillaExamen.examen, cuantos: count() })
+    .from(esquema.plantillaExamen)
+    .groupBy(esquema.plantillaExamen.examen);
+  const yaPerfiles = await bd
+    .select({ nombreBusca: esquema.perfil.nombreBusca })
+    .from(esquema.perfil);
+  const perfilesConocidos = new Set(yaPerfiles.map((p) => p.nombreBusca));
+  // Una hoja con un solo analito es un examen, no un perfil.
+  const perfiles = hojas.filter(
+    (h) => Number(h.cuantos) > 1 && !perfilesConocidos.has(normalizar(h.examen)),
+  ).length;
+
+  return examenes + perfiles;
 }
 
 /**

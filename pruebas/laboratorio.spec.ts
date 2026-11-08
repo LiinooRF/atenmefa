@@ -571,8 +571,8 @@ test('poner una plantilla llena los renglones, y ponerla dos veces no los duplic
   await page.locator('#res-plantilla').selectOption('PERFIL LIPIDICO');
   await page.getByRole('button', { name: 'Poner' }).click();
 
-  // Cinco analitos, con su unidad y su rango ya escritos.
-  await expect(page.locator('#res-cuerpo tr')).toHaveCount(5);
+  // Cinco analitos con su unidad y su rango, más el renglón del título.
+  await expect(page.locator('#res-cuerpo tr')).toHaveCount(6);
 
   /* Se leen los tres campos de cada fila de una vez. Localizar por el texto
      no sirve —lo que dice «HDL-COLESTEROL» es el value de un input, no
@@ -588,10 +588,10 @@ test('poner una plantilla llena los renglones, y ponerla dos veces no los duplic
 
   expect(await renglones()).toContain('HDL-COLESTEROL · mg/dl · > 40');
 
-  // Otra vez la misma: no se duplica nada.
+  // Otra vez la misma: no se duplica nada, ni el título.
   await page.locator('#res-plantilla').selectOption('PERFIL LIPIDICO');
   await page.getByRole('button', { name: 'Poner' }).click();
-  await expect(page.locator('#res-cuerpo tr')).toHaveCount(5);
+  await expect(page.locator('#res-cuerpo tr')).toHaveCount(6);
 
   /* Y una que comparte analitos con la anterior solo agrega los que
      faltan: química rutina trae colesterol y triglicéridos, que ya están. */
@@ -602,6 +602,9 @@ test('poner una plantilla llena los renglones, y ponerla dos veces no los duplic
   );
   expect(new Set(nombres).size).toBe(nombres.length);
   expect(nombres).toContain('GLICEMIA');
+  // Y cada examen encabeza los suyos.
+  expect(nombres).toContain('PERFIL LIPIDICO');
+  expect(nombres).toContain('QUIMICA RUTINA');
 
   // Lo cargado se guarda con su referencia.
   const filaHdl = page.locator('#res-cuerpo tr').nth(
@@ -647,27 +650,25 @@ test('el perfil lipídico se calcula solo, en cadena', async ({ page }) => {
   await page.locator('#res-plantilla').selectOption('PERFIL LIPIDICO');
   await page.getByRole('button', { name: 'Poner' }).click();
 
-  const campo = (analito: string) =>
-    page.locator('#res-cuerpo tr')
-      .filter({ has: page.locator(`input[name="examen"]`) })
-      .nth(['COLESTEROL TOTAL', 'HDL-COLESTEROL', 'LDL-COLESTEROL', 'VLDL-COLESTEROL', 'TRIGLICERIDOS']
-        .indexOf(analito))
-      .locator('input[name="valor"]');
+  /* Por el nombre escrito en el renglón y no por la posición: la plantilla
+     pone primero una fila con el nombre del examen, que es el subtítulo
+     del informe, y eso corre todo un lugar. */
+  const campo = (analito: string) => campoDe(page, analito);
 
   /* Triglicéridos 150 → VLDL = 150/5 = 30. Y con colesterol 200 y HDL 50,
      el LDL = 200 − 50 − 30 = 120. El LDL depende del VLDL, que también se
      calcula: esa es la cadena. */
-  await campo('TRIGLICERIDOS').fill('150');
-  await expect(campo('VLDL-COLESTEROL')).toHaveValue('30,0');
+  await (await campo('TRIGLICERIDOS')).fill('150');
+  await expect(await campo('VLDL-COLESTEROL')).toHaveValue('30,0');
 
-  await campo('COLESTEROL TOTAL').fill('200');
-  await campo('HDL-COLESTEROL').fill('50');
-  await expect(campo('LDL-COLESTEROL')).toHaveValue('120,0');
+  await (await campo('COLESTEROL TOTAL')).fill('200');
+  await (await campo('HDL-COLESTEROL')).fill('50');
+  await expect(await campo('LDL-COLESTEROL')).toHaveValue('120,0');
 
   // Con coma decimal, como se escribe acá.
-  await campo('TRIGLICERIDOS').fill('155,5');
-  await expect(campo('VLDL-COLESTEROL')).toHaveValue('31,1');
-  await expect(campo('LDL-COLESTEROL')).toHaveValue('118,9');
+  await (await campo('TRIGLICERIDOS')).fill('155,5');
+  await expect(await campo('VLDL-COLESTEROL')).toHaveValue('31,1');
+  await expect(await campo('LDL-COLESTEROL')).toHaveValue('118,9');
 
   // Y lo calculado se guarda como cualquier otro resultado.
   await page.getByRole('button', { name: 'Guardar y seguir después' }).click();
