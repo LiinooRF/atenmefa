@@ -42,6 +42,12 @@ test('una cédula conocida no vuelve a pedir los datos', async ({ page }) => {
   await page.locator('#cedula').fill(CONOCIDO);
   await page.getByRole('button', { name: 'Continuar' }).click();
 
+  /* Entre la cédula y el formulario está la pregunta de qué se le va a
+     hacer. Que el paciente ya se reconozca ACÁ es parte de lo que se cuida:
+     la elección se hace con la persona en pantalla. */
+  await expect(page.locator('.quien__nota')).toContainText(NOMBRE);
+  await page.locator('.clase', { hasText: 'Atención general' }).click();
+
   await expect(page.locator('.form__nota')).toContainText(NOMBRE);
   await expect(page.locator('.form__nota')).toContainText('última atención');
   await expect(page.locator('#c-nombre')).toHaveValue(NOMBRE);
@@ -50,7 +56,7 @@ test('una cédula conocida no vuelve a pedir los datos', async ({ page }) => {
 
 test('con el paciente conocido se arranca en el paso siguiente', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CONOCIDO)}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CONOCIDO)}&tipo=general`);
   await expect(page.locator('[aria-current=step] .pasos__nombre')).toHaveText('El caso');
 });
 
@@ -59,6 +65,7 @@ test('una cédula nueva abre el formulario desde el paciente', async ({ page }) 
   await page.goto('/sistema/atencion/nueva');
   await page.locator('#cedula').fill(NUEVO);
   await page.getByRole('button', { name: 'Continuar' }).click();
+  await page.locator('.clase', { hasText: 'Atención general' }).click();
 
   await expect(page.locator('.form__nota')).toContainText('Paciente nuevo');
   await expect(page.locator('[aria-current=step] .pasos__nombre')).toHaveText('Paciente');
@@ -68,13 +75,13 @@ test('una cédula nueva abre el formulario desde el paciente', async ({ page }) 
 
 test('la cédula se reconoce sin importar cómo se escriba', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?cedula=${CONOCIDO.replace(/\D/g, '')}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${CONOCIDO.replace(/\D/g, '')}&tipo=general`);
   await expect(page.locator('#c-nombre')).toHaveValue(NOMBRE);
 });
 
 test('se puede volver atrás si no era ese paciente', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CONOCIDO)}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CONOCIDO)}&tipo=general`);
   await page.getByRole('link', { name: 'No es este paciente' }).click();
   await expect(page.locator('h1')).toContainText('¿A quién va a atender?');
 });

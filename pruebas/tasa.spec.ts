@@ -22,6 +22,15 @@
 import { test, expect } from '@playwright/test';
 import { conBase, entrar, montoDeTexto } from './apoyo';
 
+/* El día según Caracas, que es el que usa el sistema. NO current_date de
+   Postgres: el servidor corre en UTC y desde las 20:00 de Caracas ya es el
+   día siguiente, así que una tasa insertada con current_date quedaba
+   fechada mañana y la pantalla no la encontraba. */
+const hoyEnCaracas = () =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());
+
 test.describe.configure({ mode: 'serial' });
 
 /* Un mes viejo y tranquilo: ninguna otra prueba carga atenciones ahí, así
@@ -60,7 +69,7 @@ test.beforeAll(async () => {
               ON CONFLICT DO NOTHING`;
     /* La de hoy, para que las pantallas no salgan a buscarla a la API. */
     await sql`INSERT INTO tasa (fecha, bolivares)
-              VALUES (current_date, 100) ON CONFLICT DO NOTHING`;
+              VALUES (${hoyEnCaracas()}, 100) ON CONFLICT DO NOTHING`;
 
     const [medico] = await sql`SELECT id FROM "user" WHERE email = 'medico@atenmefa.local'`;
     const [p] = await sql`
@@ -227,7 +236,7 @@ test('el catálogo muestra cada precio también en bolívares, a la tasa de hoy'
               VALUES (${SERVICIO}, 'consulta', 40, 'USD')`;
     /* Hoy, no el día de la atención: un precio de catálogo no pasó, es lo
        que se cobra hoy. Esa es la diferencia con el cierre y el cobro. */
-    await sql`INSERT INTO tasa (fecha, bolivares) VALUES (current_date, 100)
+    await sql`INSERT INTO tasa (fecha, bolivares) VALUES (${hoyEnCaracas()}, 100)
               ON CONFLICT (fecha) DO UPDATE SET bolivares = 100`;
   });
 
@@ -249,7 +258,7 @@ test('un precio que ya está en bolívares no se convierte dos veces', async ({ 
   await conBase(async (sql) => {
     await sql`INSERT INTO servicio (nombre, categoria, precio, moneda)
               VALUES (${SERVICIO}, 'consulta', 5000, 'VES')`;
-    await sql`INSERT INTO tasa (fecha, bolivares) VALUES (current_date, 100)
+    await sql`INSERT INTO tasa (fecha, bolivares) VALUES (${hoyEnCaracas()}, 100)
               ON CONFLICT (fecha) DO UPDATE SET bolivares = 100`;
   });
 

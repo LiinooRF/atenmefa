@@ -18,6 +18,8 @@
  */
 import Sistema from '../../../layouts/Sistema.astro';
 import Pasos from '../../../components/sistema/Pasos.astro';
+import { historia } from '../../../sistema/historia';
+import { laboratorio } from '../../../sistema/laboratorio';
 import Icono from '../../../components/Icono.astro';
 import { exigir } from '../../../sistema/lib/guardia';
 import { bd, esquema } from '../../../sistema/lib/base';
@@ -29,6 +31,7 @@ import {
   ROTULO, PISTA, TIPOS, alcanza, comoSeLee, esTipo, formatearInterno,
   llaveDe, numeroInterno, type TipoDocumento,
 } from '../../../sistema/lib/documento';
+import { asegurarPin } from '../../../sistema/lib/verificacion';
 import { eq, desc, and, ne, sql } from 'drizzle-orm';
 
 export const prerender = false;
@@ -38,6 +41,15 @@ if (corte) return corte;
 
 const usuario = Astro.locals.usuario!;
 let error = '';
+
+/* Qué se le va a hacer: la historia completa o una toma de laboratorio.
+   Se pregunta DESPUÉS de la cédula y no antes, porque lo primero es saber a
+   quién se atiende: con eso el sistema ya puede rellenar lo que sabe, y la
+   pregunta del tipo llega con el paciente en pantalla. */
+const crudoClase = Astro.url.searchParams.get('tipo');
+const clase = crudoClase === 'laboratorio' ? 'laboratorio' : crudoClase === 'general' ? 'general' : null;
+const esLaboratorio = clase === 'laboratorio';
+const modelo = esLaboratorio ? laboratorio : historia;
 
 const crudoTipo = Astro.url.searchParams.get('doc');
 const tipoDoc: TipoDocumento = esTipo(crudoTipo) ? crudoTipo : 'cedula';
@@ -56,7 +68,12 @@ if (tipoDoc === 'interno' && !numeroInterno(cedulaPedida)) {
     sql`SELECT nextval('paciente_interno_seq') AS n`,
   );
   const asignado = formatearInterno(Number(fila.n));
-  return Astro.redirect(`/sistema/atencion/nueva?doc=interno&cedula=${asignado}`);
+  /* Se conserva lo que ya venía en la dirección. Antes se armaba una nueva
+     con doc y cedula nada más, y si ya se había elegido el tipo de atención
+     se perdía en el camino: volvía a preguntar algo ya contestado. */
+  const destino = new URL(Astro.url);
+  destino.searchParams.set('cedula', asignado);
+  return Astro.redirect(destino.pathname + destino.search);
 }
 
 const llave = llaveDe(tipoDoc, cedulaPedida);
@@ -130,7 +147,11 @@ if (alcanza(tipoDoc, cedulaPedida)) {
   }
 }
 
-const abrirFormulario = alcanza(tipoDoc, cedulaPedida);
+const hayPaciente = alcanza(tipoDoc, cedulaPedida);
+/* Con paciente pero sin elegir todavía, la pantalla del medio pregunta qué
+   se le va a hacer. */
+const elegirClase = hayPaciente && !clase;
+const abrirFormulario = hayPaciente && Boolean(clase);
 
 /* ----------------------------------------------------------------
    Guardar.
@@ -188,6 +209,7 @@ if (Astro.request.method === 'POST') {
             pacienteId: paciente.id,
             medicoId: usuario.id,
             estado: cerrar ? 'cerrada' : 'borrador',
+            tipo: esLaboratorio ? 'laboratorio' : 'general',
             fecha: datos.fecha,
             aseguradora: datos.aseguradora ?? null,
             poliza: datos.poliza ?? null,
@@ -197,6 +219,8 @@ if (Astro.request.method === 'POST') {
           })
           .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
 
+        // Cerrada de una: el documento nace acá y necesita su PIN.
+        if (cerrar) await asegurarPin(creada.id);
         await anotar(usuario.id, cerrar ? 'cerro' : 'creo', creada.id, { numero: creada.numero });
         return Astro.redirect(`/sistema/atencion/${creada.id}`);
       }
@@ -211,7 +235,40 @@ const fechaLarga = (f: string) =>
 ---
 
 <Sistema titulo="Nueva atención">
-  {!abrirFormulario ? (
+  {elegirClase ? (
+    /* La pantalla del medio: ya se sabe a quién, falta qué. Dos botones
+       grandes y nada más; cualquier cosa que se le agregue acá es un paso
+       entre el paciente y el formulario, y esto se hace con el paciente
+       enfrente. */
+    <div class="quien">
+      <h1>¿Qué se le va a hacer?</h1>
+      <p class="quien__nota">
+        {conocido ? (
+          <><strong>{conocido.nombre}</strong> · {comoSeLee(conocido.tipoDoc, conocido.cedula)}</>
+        ) : (
+          <>Paciente nuevo, {comoSeLee(tipoDoc, cedulaPedida)}.</>
+        )}
+      </p>
+
+      <div class="clases">
+        <a class="clase" href={`${Astro.url.pathname}${Astro.url.search}&tipo=general`}>
+          <Icono nombre="estetoscopio" tam={22} />
+          <strong>Atención general</strong>
+          <span>Consulta, emergencia o procedimiento. Historia clínica completa.</span>
+        </a>
+
+        <a class="clase" href={`${Astro.url.pathname}${Astro.url.search}&tipo=laboratorio`}>
+          <Icono nombre="laboratorio" tam={22} />
+          <strong>Laboratorio</strong>
+          <span>Toma de muestra y exámenes. Dos pasos.</span>
+        </a>
+      </div>
+
+      <p class="quien__salida">
+        <a href="/sistema/atencion/nueva">No es este paciente</a>
+      </p>
+    </div>
+  ) : !abrirFormulario ? (
     <div class="quien">
       <h1>¿A quién va a atender?</h1>
       <p class="quien__nota">
@@ -279,6 +336,12 @@ const fechaLarga = (f: string) =>
     </div>
   ) : (
     <form method="post" class="form">
+      {/* Estos dos viajan con CADA guardado, incluido el automático, que es
+          el que de hecho crea la atención. Sin ellos el autoguardado la
+          creaba como atención general y con la llave de cédula aunque fuera
+          un pasaporte: el tipo elegido en la puerta se perdía. */}
+      <input type="hidden" name="tipo_atencion" value={esLaboratorio ? 'laboratorio' : 'general'} />
+      <input type="hidden" name="tipo_doc" value={conocido?.tipoDoc ?? tipoDoc} />
       <header class="form__cab">
         <div>
           <h1>Nueva atención</h1>
@@ -309,8 +372,9 @@ const fechaLarga = (f: string) =>
 
       <Pasos
         datos={datos}
-        pasoInicial={conocido ? 1 : 0}
-        previos={antecedentesPrevios}
+        modelo={modelo}
+        pasoInicial={conocido && !esLaboratorio ? 1 : 0}
+        previos={esLaboratorio ? {} : antecedentesPrevios}
         paciente={conocido?.nombre ?? ''}
         ultima={conocido?.ultima ?? null}
       />
@@ -327,6 +391,25 @@ const fechaLarga = (f: string) =>
   .quien__form input { font-size: var(--u-lg); min-height: 54px; letter-spacing: 0.01em; }
   .quien__form .sis-boton { min-height: 48px; justify-self: start; }
   .quien__salida { margin-top: 18px; font-size: var(--u-sm); }
+
+  .clases { display: grid; gap: 12px; }
+  @media (min-width: 620px) { .clases { grid-template-columns: 1fr 1fr; } }
+
+  .clase {
+    display: grid;
+    gap: 5px;
+    padding: 20px;
+    min-height: 44px;
+    border: 1px solid var(--linea);
+    border-radius: 12px;
+    background: var(--papel);
+    text-decoration: none;
+    color: var(--tinta);
+  }
+  .clase:hover { border-color: var(--azul); background: var(--azul-suave, rgba(17, 22, 99, 0.05)); }
+  .clase :global(svg) { color: var(--azul); }
+  .clase strong { font-size: var(--u-lg); color: var(--azul); }
+  .clase span { font-size: var(--u-sm); color: var(--tinta-suave); line-height: 1.45; }
 
   /* La salida para quien no trae cédula. Discreta y cerrada: está, pero no
      compite con el camino normal. */

@@ -5,7 +5,9 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { bd, esquema } from './base';
 import { historia, exigidos } from '../historia';
+import { laboratorio } from '../laboratorio';
 import { ROTULO, esTipo, llaveDe, soloDigitos, type TipoDocumento } from './documento';
+import { asegurarPin } from './verificacion';
 
 /* Los campos del modelo, más el tipo de documento. Ese no es un campo del
    formulario —no se escribe, se elige en la puerta— pero viaja oculto con
@@ -14,7 +16,9 @@ import { ROTULO, esTipo, llaveDe, soloDigitos, type TipoDocumento } from './docu
    crearía una persona distinta cada vez. */
 const CLAVES = new Set([
   ...historia.flatMap((s) => s.campos.map((c) => c.clave)),
+  ...laboratorio.flatMap((s) => s.campos.map((c) => c.clave)),
   'tipo_doc',
+  'tipo_atencion',
 ]);
 
 /** Quita tildes y pasa a minúscula, para poder buscar sin depender del acento. */
@@ -207,6 +211,9 @@ export async function guardarBorrador(
       // Si corrigieron la cédula, el caso pasa al paciente correcto.
       pacienteId: paciente.id,
       estado: cerrar ? 'cerrada' : 'borrador',
+      // Viaja en el formulario porque quien crea la atención suele ser el
+      // guardado automático, que no sabe de qué pantalla salió.
+      tipo: datos.tipo_atencion === 'laboratorio' ? 'laboratorio' : 'general',
       fecha: datos.fecha,
       aseguradora: datos.aseguradora ?? null,
       poliza: datos.poliza ?? null,
@@ -220,6 +227,12 @@ export async function guardarBorrador(
       eq(esquema.atencion.medicoId, medicoId),
     ))
     .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
+
+  /* Al cerrarse nace el documento, y con él su PIN de verificación. Acá y no
+     en la pantalla: se cierra desde el formulario nuevo, desde la edición de
+     un borrador y desde el autoguardado, y un documento sin PIN no se puede
+     verificar aunque esté impreso. */
+  if (guardada && cerrar) await asegurarPin(guardada.id);
 
   return guardada ?? null;
 }

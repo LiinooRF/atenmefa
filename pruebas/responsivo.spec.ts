@@ -83,7 +83,7 @@ test.beforeAll(async ({ browser }) => {
     `/sistema?q=${encodeURIComponent(CEDULA_CERRADA)}`,
     '/sistema/borradores',
     '/sistema/atencion/nueva',
-    '/sistema/atencion/nueva?cedula=V-99.800.000',
+    '/sistema/atencion/nueva?cedula=V-99.800.000&tipo=general',
     `/sistema/atencion/${cerrada}`,
     `/sistema/atencion/${cerrada}/cobro`,
     `/sistema/atencion/${cerrada}/editar`,
@@ -133,7 +133,7 @@ test('ninguna pantalla del panel desborda a 390 px', async ({ page }) => {
 test('la barra del panel y el pie de guardar caben sin desplazar', async ({ page }) => {
   // El formulario es del médico: administración no escribe historias.
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva?cedula=V-99.800.000');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.800.000&tipo=general');
 
   // La barra fija de arriba y la de guardar son las dos que pueden empujar.
   for (const caja of ['.sis__barra-int', '.pasos__pie-int']) {

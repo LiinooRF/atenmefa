@@ -221,11 +221,13 @@ test('el enlace de atención nueva de la ficha lleva la cédula ya puesta', asyn
      atención», que a propósito va sin cédula. */
   const enlace = page.getByRole('main').getByRole('link', { name: 'Nueva atención' });
   await expect(enlace).toHaveAttribute(
+    /* Sin tipo: desde el registro se abre la pantalla que pregunta si es
+       atención general o laboratorio, que es lo correcto. */
     'href', `/sistema/atencion/nueva?cedula=${encodeURIComponent(cedulaGuardada)}`,
   );
 
   // Y del otro lado el formulario se abre con el paciente ya reconocido.
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(cedulaGuardada)}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(cedulaGuardada)}&tipo=general`);
   await expect(page.locator('#c-cedula')).toHaveValue(cedulaGuardada);
   await expect(page.locator('.form__nota')).toContainText(NOMBRE);
 });

@@ -23,14 +23,20 @@ interface Props {
   servicio?: Servicio;
   /** En la página de UNA pregunta: la marca como QAPage. */
   pregunta?: PreguntaConPagina;
+  /** Para pantallas que no tienen por qué salir en Google. */
+  sinIndexar?: boolean;
 }
 
 const {
   titulo, descripcion, ruta: rutaPagina = '/', conPreguntas = false, servicio, pregunta,
+  sinIndexar: noIndexar = false,
 } = Astro.props;
 
 const previa = import.meta.env.PREVIA === '1';
-const sinIndexar = previa || rutaPagina === '/404';
+/* La verificación de un documento no tiene por qué estar en Google: no es
+   contenido, es una herramienta para quien ya tiene el papel en la mano, y
+   cada dirección lleva el id de una atención. */
+const sinIndexar = previa || rutaPagina === '/404' || noIndexar;
 
 /* Raíz real del despliegue: dominio + base. En producción la base es "/" y
    esto equivale al dominio; en la vista previa incluye el subdirectorio. */

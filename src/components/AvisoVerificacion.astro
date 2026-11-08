@@ -1,0 +1,51 @@
+---
+/**
+ * Lo que se le dice a quien NO pudo verificar.
+ *
+ * "No calza" cubre a propósito tanto el PIN equivocado como la cédula
+ * equivocada: decir cuál de los dos falló le diría a quien prueba al azar
+ * cuál de los dos ya acertó.
+ */
+import Icono from './Icono.astro';
+import type { Resultado } from '../sistema/lib/verificacion';
+
+interface Props { resultado: Resultado }
+const { resultado } = Astro.props;
+---
+
+{resultado.estado !== 'ok' && (
+  <p class="aviso-ver">
+    <Icono nombre="escudo" tam={18} />
+    <span>
+      {resultado.estado === 'no-calza' && (
+        <><strong>No se pudo verificar.</strong> Los datos no corresponden a
+          ningún documento emitido. Revise que estén copiados tal como aparecen
+          en el papel.</>
+      )}
+      {resultado.estado === 'bloqueado' && (
+        <><strong>Demasiados intentos.</strong> Por seguridad, este documento no
+          admite más intentos por {resultado.minutos} minutos.</>
+      )}
+      {resultado.estado === 'sin-pin' && (
+        <><strong>Ese documento no es definitivo.</strong> La atención todavía
+          no se cerró, así que no hay nada que verificar.</>
+      )}
+    </span>
+  </p>
+)}
+
+<style>
+  .aviso-ver {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin: 0 0 20px;
+    padding: 13px 15px;
+    border-radius: 10px;
+    background: #fdf1f1;
+    border: 1px solid #e9b4b4;
+    color: #8a2020;
+    line-height: 1.5;
+  }
+  .aviso-ver :global(svg) { flex: none; margin-top: 2px; color: var(--rojo); }
+</style>

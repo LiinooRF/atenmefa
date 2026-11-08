@@ -70,7 +70,7 @@ test('la puerta pregunta por la cédula y lo demás viene cerrado', async ({ pag
 
 test('con pasaporte se registra y queda guardado como pasaporte', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?doc=pasaporte&cedula=${PASAPORTE}`);
+  await page.goto(`/sistema/atencion/nueva?doc=pasaporte&cedula=${PASAPORTE}&tipo=general`);
 
   await page.locator('#c-nombre').fill(NOMBRE_EXTRANJERO);
   await page.getByRole('button', { name: 'Guardar y salir' }).click();
@@ -85,7 +85,7 @@ test('con pasaporte se registra y queda guardado como pasaporte', async ({ page 
 test('el mismo pasaporte escrito distinto es la misma persona', async ({ page }) => {
   await entrar(page, 'medico');
   // Con guion, con espacio y en minúscula: en recepción nadie lo teclea igual.
-  await page.goto(`/sistema/atencion/nueva?doc=pasaporte&cedula=${encodeURIComponent('a-773 1204')}`);
+  await page.goto(`/sistema/atencion/nueva?doc=pasaporte&cedula=${encodeURIComponent('a-773 1204')}&tipo=general`);
 
   await expect(page.locator('.form__nota')).toContainText(NOMBRE_EXTRANJERO);
   await expect(page.locator('.form__nota')).toContainText('Pasaporte');
@@ -94,7 +94,7 @@ test('el mismo pasaporte escrito distinto es la misma persona', async ({ page })
 test('un pasaporte de puros números no se come la cédula de otra persona', async ({ page }) => {
   await entrar(page, 'medico');
 
-  await page.goto(`/sistema/atencion/nueva?doc=pasaporte&cedula=${PASAPORTE_NUMERICO}`);
+  await page.goto(`/sistema/atencion/nueva?doc=pasaporte&cedula=${PASAPORTE_NUMERICO}&tipo=general`);
   await page.locator('#c-nombre').fill(NOMBRE_PASAPORTE_NUM);
   await page.getByRole('button', { name: 'Guardar y salir' }).click();
   await expect(page).toHaveURL(/\/sistema\/atencion\/[0-9a-f-]{36}$/);
@@ -102,7 +102,7 @@ test('un pasaporte de puros números no se come la cédula de otra persona', asy
   /* Mismos dígitos, documento distinto. Sin el prefijo en la llave, este
      segundo registro se habría pegado al anterior y dos personas pasarían a
      compartir historia clínica. */
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_HOMONIMA)}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_HOMONIMA)}&tipo=general`);
   await expect(page.locator('.form__nota')).not.toContainText(NOMBRE_PASAPORTE_NUM);
   await expect(page.locator('.form__nota')).toContainText('Paciente nuevo');
 
@@ -134,19 +134,21 @@ test('al que no trae nada el sistema le asigna un número y lo dice', async ({ p
   const asignado = new URL(page.url()).searchParams.get('cedula')!;
   internos.push(`SD:${Number(asignado.slice(3))}`);
 
-  await expect(page.locator('.form__nota')).toContainText(asignado);
-  await expect(page.locator('.form__nota')).toContainText('sin documento');
-
   // Recargar no gasta otro número.
   await page.reload();
   expect(new URL(page.url()).searchParams.get('cedula')).toBe(asignado);
+
+  /* Con el número ya asignado, falta decir qué se le va a hacer. */
+  await page.locator('.clase', { hasText: 'Atención general' }).click();
+  await expect(page.locator('.form__nota')).toContainText(asignado);
+  await expect(page.locator('.form__nota')).toContainText('sin documento');
 });
 
 test('dos personas sin documento no se mezclan, y la que vuelve se reconoce', async ({ page }) => {
   await entrar(page, 'medico');
 
   const registrar = async (nombre: string) => {
-    await page.goto('/sistema/atencion/nueva?doc=interno');
+    await page.goto('/sistema/atencion/nueva?doc=interno&tipo=general');
     const numero = new URL(page.url()).searchParams.get('cedula')!;
     internos.push(`SD:${Number(numero.slice(3))}`);
     await page.locator('#c-nombre').fill(nombre);
@@ -160,7 +162,7 @@ test('dos personas sin documento no se mezclan, y la que vuelve se reconoce', as
   expect(uno).not.toBe(dos);
 
   // El que vuelve con su papelito: el sistema ya lo conoce.
-  await page.goto(`/sistema/atencion/nueva?doc=interno&cedula=${uno}`);
+  await page.goto(`/sistema/atencion/nueva?doc=interno&cedula=${uno}&tipo=general`);
   await expect(page.locator('.form__nota')).toContainText(NOMBRE_SIN_DOC);
   await expect(page.locator('.form__nota')).toContainText(uno);
 });

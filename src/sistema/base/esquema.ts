@@ -5,7 +5,7 @@
  */
 import {
   pgTable, uuid, text, boolean, timestamp, date, numeric, jsonb,
-  bigint, bigserial, inet, pgEnum, index, uniqueIndex,
+  bigint, bigserial, inet, integer, pgEnum, index, uniqueIndex,
 } from 'drizzle-orm/pg-core';
 import { user } from './auth-esquema';
 
@@ -13,6 +13,7 @@ export { user, session, account, verification } from './auth-esquema';
 export const estadoAtencion = pgEnum('estado_atencion', ['borrador', 'cerrada', 'anulada']);
 export const pagaQuien = pgEnum('paga_quien', ['paciente', 'aseguradora', 'empresa']);
 export const tipoDocumento = pgEnum('tipo_documento', ['cedula', 'pasaporte', 'partida', 'interno']);
+export const tipoAtencion = pgEnum('tipo_atencion', ['general', 'laboratorio']);
 
 export const paciente = pgTable('paciente', {
   id: uuid('id').primaryKey().defaultRandom(),
@@ -51,6 +52,8 @@ export const atencion = pgTable('atencion', {
   pacienteId: uuid('paciente_id').notNull().references(() => paciente.id),
   medicoId: text('medico_id').notNull().references(() => user.id),
   estado: estadoAtencion('estado').notNull().default('borrador'),
+  /** Qué formulario le toca. Ver 008-laboratorio.sql. */
+  tipo: tipoAtencion('tipo').notNull().default('general'),
   fecha: date('fecha').notNull(),
   periodo: date('periodo').notNull(),
   aseguradora: text('aseguradora'),
@@ -61,6 +64,10 @@ export const atencion = pgTable('atencion', {
   anuladaMotivo: text('anulada_motivo'),
   creada: timestamp('creada', { withTimezone: true }).notNull().defaultNow(),
   cerrada: timestamp('cerrada', { withTimezone: true }),
+  /** Verificación del documento impreso. Ver 007-verificacion.sql. */
+  pin: text('pin'),
+  intentosFallidos: integer('intentos_fallidos').notNull().default(0),
+  bloqueadaHasta: timestamp('bloqueada_hasta', { withTimezone: true }),
 }, (t) => [
   index('atencion_paciente_idx').on(t.pacienteId),
   index('atencion_periodo_idx').on(t.periodo, t.aseguradora),

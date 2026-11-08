@@ -70,7 +70,8 @@ export const CORRIDA = String(Date.now()).slice(-4);
    entre tablero/cierre.
    Series en uso: 1 atencion · 2 paciente · 3 cobro · 4 cierre · 5 documento
    · 6 responsivo · 7 atajos · 8 pacientes · 9 permisos · 10 puerta
-   · 11 tablero. El siguiente archivo que necesite cédulas toma el 12. */
+   · 11 tablero · 12 verificacion · 13 laboratorio. El siguiente archivo que
+   necesite cédulas toma el 14. */
 export function cedulaDePrueba(archivo: number, n = 0) {
   const serie = `99${archivo}${CORRIDA}${n}`;
   return `V-${serie.slice(0, 2)}.${serie.slice(2, 5)}.${serie.slice(5)}`;
@@ -231,7 +232,13 @@ async function abrirFormulario(page: Page, cedula?: string) {
     await page.goto('/sistema/atencion/nueva');
     return;
   }
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(cedula)}`);
+  /* tipo=general salta la pantalla que pregunta si es atención o
+     laboratorio. Casi todas las pruebas son de la atención clínica y les
+     interesa el formulario, no la bifurcación; la bifurcación tiene su
+     propio archivo. */
+  await page.goto(
+    `/sistema/atencion/nueva?cedula=${encodeURIComponent(cedula)}&tipo=general`,
+  );
   await expect(page.locator('[data-hoja]').first()).toBeAttached();
 
   /* Y se espera a que el formulario termine de volverse "por pasos".

@@ -9,7 +9,7 @@
  * El guardado va al servidor y no al navegador: si la tablet se apaga en
  * mitad de una consulta, el trabajo tiene que estar en la base.
  */
-import { historia } from '../../sistema/historia';
+import { historia, type Seccion } from '../../sistema/historia';
 import Seccion from './Seccion.astro';
 import Atajos from './Atajos.astro';
 import Icono from '../Icono.astro';
@@ -25,16 +25,21 @@ interface Props {
   previos?: Record<string, string>;
   paciente?: string;
   ultima?: { numero: number; fecha: string; idx: string } | null;
+  /* Qué formulario se dibuja. Por omisión la historia clínica completa; la
+     atención de laboratorio pasa el suyo, que tiene dos pasos. El componente
+     no sabe de cuál se trata y no tiene por qué: arma pasos con lo que le
+     den. */
+  modelo?: readonly Seccion[];
 }
 const {
   datos = {}, atencionId = '', numero, pasoInicial = 0,
-  previos = {}, paciente = '', ultima = null,
+  previos = {}, paciente = '', ultima = null, modelo = historia,
 } = Astro.props;
 ---
 
 <div class="pasos" data-atencion={atencionId} data-inicial={pasoInicial}>
   <ol class="pasos__guia" id="pasos-guia" hidden>
-    {historia.map((s, i) => (
+    {modelo.map((s, i) => (
       <li>
         <button type="button" data-ir={i} class="pasos__paso">
           <span class="pasos__num">{i + 1}</span>
@@ -50,7 +55,7 @@ const {
 
   <div class="pasos__cuerpo">
     <Atajos previos={previos} nombre={paciente} ultima={ultima} />
-    {historia.map((s, i) => (
+    {modelo.map((s, i) => (
       <div class="pasos__hoja" data-hoja={i}>
         <Seccion seccion={s} datos={datos} />
       </div>
@@ -270,6 +275,9 @@ const {
     let reloj: ReturnType<typeof setTimeout> | undefined;
     let guardando = false;
     let sucio = false;
+    /* La promesa del guardado que está en vuelo, si hay uno. Sirve para una
+       sola cosa, y es importante: ver más abajo, en el submit. */
+    let enVuelo: Promise<void> | null = null;
 
     const decir = (texto: string, marca?: string) => {
       estado.textContent = texto;
@@ -281,6 +289,11 @@ const {
 
     const guardar = async () => {
       if (guardando || !sucio) return;
+      enVuelo = hacerGuardado();
+      await enVuelo;
+    };
+
+    const hacerGuardado = async () => {
       const datos = new FormData(form);
       datos.set('id', campoId.value);
 
@@ -316,6 +329,7 @@ const {
         decir('Sin conexión con el servidor. No cierre esta pantalla.', 'falla');
       } finally {
         guardando = false;
+        enVuelo = null;
         marcarSecciones();
       }
     };
@@ -339,6 +353,24 @@ const {
       navigator.sendBeacon('/sistema/api/borrador', datos);
     });
 
-    form.addEventListener('submit', () => { clearTimeout(reloj); sucio = false; });
+    /* Si hay un guardado en vuelo, se espera antes de enviar.
+       Sin esto: el médico toca "siguiente" —que guarda— y enseguida
+       "Guardar y salir". El envío sale con el campo del id todavía vacío,
+       porque la respuesta que lo trae no llegó, y el servidor crea una
+       SEGUNDA atención del mismo paciente. Dos historias clínicas para una
+       visita, y nadie se entera hasta que aparecen duplicadas en la lista.
+       requestSubmit y no submit(): hay que conservar qué botón se apretó,
+       porque no es lo mismo guardar que cerrar. */
+    let yaEspere = false;
+    form.addEventListener('submit', (ev) => {
+      clearTimeout(reloj);
+      sucio = false;
+      if (!enVuelo || yaEspere) return;
+
+      ev.preventDefault();
+      yaEspere = true;
+      const apretado = (ev as SubmitEvent).submitter as HTMLElement | null;
+      enVuelo.finally(() => form.requestSubmit(apretado as HTMLButtonElement | undefined));
+    });
   }
 </script>

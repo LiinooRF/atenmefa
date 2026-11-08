@@ -1,0 +1,101 @@
+---
+/**
+ * El resultado de verificar un documento, en las dos entradas: la del QR
+ * (con el id) y la que se escribe a mano (con el N° de atención).
+ *
+ * Lo que muestra está acotado a propósito y vale la pena repetirlo donde se
+ * dibuja: esta página es pública y NO enseña una línea de la historia
+ * clínica. Confirma que el documento existe, de qué fecha es, quién lo firmó
+ * y si sigue vigente.
+ */
+import Icono from './Icono.astro';
+import { comoSeLee } from '../sistema/lib/documento';
+import { clinica } from '../data/clinica';
+import type { Documento } from '../sistema/lib/verificacion';
+
+interface Props { doc: Documento }
+const { doc } = Astro.props;
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', {
+    day: 'numeric', month: 'long', year: 'numeric',
+  });
+---
+
+<div class:list={['tarjeta', doc.anulada && 'tarjeta--anulada']}>
+  <p class="tarjeta__sello">
+    <Icono nombre="escudo" tam={20} />
+    {doc.anulada
+      ? 'Documento emitido por Atenmefa, pero ANULADO'
+      : 'Documento emitido por Atenmefa'}
+  </p>
+
+  {doc.anulada && (
+    <p class="tarjeta__nota">
+      Esta atención fue anulada después de emitirse. El papel existió, pero no
+      debe usarse: pida uno al día al centro.
+    </p>
+  )}
+
+  <dl class="tarjeta__datos">
+    <div><dt>Atención</dt><dd class="cifra">N.° {doc.numero}</dd></div>
+    <div><dt>Fecha</dt><dd>{fechaLarga(doc.fecha)}</dd></div>
+    <div><dt>Paciente</dt><dd>{doc.paciente}</dd></div>
+    <div><dt>Documento</dt><dd class="cifra">{comoSeLee(doc.tipoDoc, doc.documentoPaciente)}</dd></div>
+    {doc.medico && (
+      <div>
+        <dt>Firmado por</dt>
+        <dd>{doc.medico}{doc.colegiatura && ` · C.M. ${doc.colegiatura}`}</dd>
+      </div>
+    )}
+    <div><dt>Contiene</dt><dd>{doc.hojas.join(' y ')}</dd></div>
+  </dl>
+
+  {/* Lo que esta página NO dice, dicho en voz alta: quien verifica a veces
+      espera ver el diagnóstico y conviene explicar por qué no está. */}
+  <p class="tarjeta__limite">
+    Esta comprobación no muestra el contenido clínico. El diagnóstico y el
+    tratamiento son del paciente y de su médico; para pedirlos, hable con el
+    centro al {clinica.contacto.whatsapp.visible}.
+  </p>
+</div>
+
+<style>
+  .tarjeta {
+    border: 1px solid #a9d6bb;
+    border-left: 4px solid #1b7f4b;
+    border-radius: 12px;
+    background: #f4fbf7;
+    padding: 20px 22px;
+  }
+  .tarjeta--anulada { border-color: #e8c98a; border-left-color: #a9742a; background: #fdf7ea; }
+
+  .tarjeta__sello {
+    display: flex;
+    align-items: center;
+    gap: 9px;
+    margin: 0 0 14px;
+    font-weight: 700;
+    color: #15603a;
+  }
+  .tarjeta--anulada .tarjeta__sello { color: #7a5200; }
+  .tarjeta__nota { margin: 0 0 14px; color: #7a5200; line-height: 1.5; }
+
+  .tarjeta__datos { margin: 0; display: grid; gap: 1px; }
+  .tarjeta__datos > div {
+    display: grid;
+    grid-template-columns: minmax(7rem, auto) 1fr;
+    gap: 12px;
+    padding: 7px 0;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.06);
+  }
+  .tarjeta__datos dt { color: var(--tinta-suave); font-size: var(--u-sm); }
+  .tarjeta__datos dd { margin: 0; font-weight: 600; color: var(--tinta); }
+
+  .tarjeta__limite {
+    margin: 16px 0 0;
+    font-size: var(--u-sm);
+    color: var(--tinta-suave);
+    line-height: 1.5;
+  }
+</style>

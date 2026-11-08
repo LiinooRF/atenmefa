@@ -25,7 +25,7 @@ test.afterAll(async () => {
 
 test('el formulario se muestra de a un paso', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000&tipo=general');
 
   const hojas = page.locator('[data-hoja]');
   await expect(hojas).toHaveCount(9);
@@ -42,7 +42,7 @@ test('el formulario se muestra de a un paso', async ({ page }) => {
 
 test('el paso queda en la dirección y sobrevive a una recarga', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000&tipo=general');
   await page.getByRole('button', { name: 'Siguiente' }).click();
   await page.getByRole('button', { name: 'Siguiente' }).click();
   await expect(page).toHaveURL(/paso=2/);
@@ -54,9 +54,9 @@ test('el paso queda en la dirección y sobrevive a una recarga', async ({ page }
 
 test('cerrar atención solo aparece en el último paso', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000&tipo=general');
   await expect(page.getByRole('button', { name: 'Cerrar atención' })).toBeHidden();
-  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000&paso=8');
+  await page.goto('/sistema/atencion/nueva?cedula=V-99.700.000&tipo=general&paso=8');
   await expect(page.getByRole('button', { name: 'Cerrar atención' })).toBeVisible();
 });
 
@@ -66,7 +66,7 @@ test('cerrar atención solo aparece en el último paso', async ({ page }) => {
 
 test('lo escrito sobrevive a una recarga sin haber tocado guardar', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}&tipo=general`);
   await page.locator('[data-ir="0"]').click();
   await page.locator('#c-nombre').fill(NOMBRE);
 
@@ -82,7 +82,7 @@ test('lo escrito sobrevive a una recarga sin haber tocado guardar', async ({ pag
 
 test('no se crea una atención duplicada al cerrar después del guardado automático', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_NUEVA)}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_NUEVA)}&tipo=general`);
   await page.locator('[data-ir="0"]').click();
   await page.locator('#c-nombre').fill('Paciente Sin Duplicar');
   await expect(page).toHaveURL(/\/editar/, { timeout: 15000 });
@@ -99,7 +99,7 @@ test('no se crea una atención duplicada al cerrar después del guardado automá
 
 test('el estado dice cuántos campos faltan para poder cerrar', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}&tipo=general`);
   await page.locator('[data-ir="0"]').click();
   await page.locator('#c-nombre').fill('Paciente Faltantes');
   await expect(page.locator('#pasos-estado')).toContainText('Faltan', { timeout: 15000 });
@@ -123,6 +123,8 @@ test('la cédula conocida rellena los datos personales', async ({ page }) => {
   await page.goto('/sistema/atencion/nueva');
   await page.locator('#cedula').fill(CEDULA);
   await page.getByRole('button', { name: 'Continuar' }).click();
+  // Y entre medio, qué se le va a hacer.
+  await page.locator('.clase', { hasText: 'Atención general' }).click();
 
   await expect(page.locator('#atajos-titulo')).toContainText('Ya atendimos');
   await expect(page.locator('#c-nombre')).toHaveValue(NOMBRE);
@@ -130,7 +132,7 @@ test('la cédula conocida rellena los datos personales', async ({ page }) => {
 
 test('los antecedentes NO se copian solos: se ofrecen', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}&tipo=general`);
   await expect(page.locator('#atajos-previo')).toBeVisible();
 
   // Está a la vista, pero el campo sigue vacío hasta que el médico decida.
@@ -140,7 +142,7 @@ test('los antecedentes NO se copian solos: se ofrecen', async ({ page }) => {
 
 test('el botón de traer antecedentes sí los copia', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}&tipo=general`);
   await expect(page.locator('#atajos-traer')).toBeVisible();
   await page.locator('#atajos-traer').click();
   await expect(page.locator('#c-alergias')).toHaveValue('Penicilina');
@@ -148,7 +150,7 @@ test('el botón de traer antecedentes sí los copia', async ({ page }) => {
 
 test('una cédula desconocida no muestra nada', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto('/sistema/atencion/nueva?cedula=V-98.765.432');
+  await page.goto('/sistema/atencion/nueva?cedula=V-98.765.432&tipo=general');
   await expect(page.locator('.form__nota')).toContainText('Paciente nuevo');
   await expect(page.locator('#atajos-paciente')).toBeHidden();
 });
@@ -157,7 +159,7 @@ test('el formulario por pasos no desborda a 390 px', async ({ page }) => {
   await entrar(page, 'medico');
   await page.setViewportSize({ width: 390, height: 844 });
   for (const paso of [0, 4, 8]) {
-    await page.goto(`/sistema/atencion/nueva?cedula=V-99.700.000&paso=${paso}`);
+    await page.goto(`/sistema/atencion/nueva?cedula=V-99.700.000&tipo=general&paso=${paso}`);
     const m = await page.evaluate(() => ({
       doc: document.documentElement.scrollWidth,
       v: document.documentElement.clientWidth,

@@ -70,7 +70,7 @@ test('la bandeja de borradores dice cuánto falta para poder cerrar', async ({ p
 
 test('sin los campos obligatorios el navegador no deja cerrar', async ({ page }) => {
   await entrar(page);
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_SIN_GUARDAR)}`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_SIN_GUARDAR)}&tipo=general`);
 
   await llenar(page, { nombre: 'Nadie de Prueba' });
   // Cerrar solo se ofrece en el último paso: el médico llega avanzando.

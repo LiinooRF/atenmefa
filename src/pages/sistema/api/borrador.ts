@@ -74,6 +74,10 @@ export const POST: APIRoute = async (ctx) => {
       pacienteId: paciente.id,
       medicoId: usuario.id,
       estado: 'borrador',
+      /* Acá se CREA la atención, así que acá se decide de qué tipo es. El
+         formulario lo manda en un campo oculto: esta ruta no sabe de qué
+         pantalla vino. */
+      tipo: datos.tipo_atencion === 'laboratorio' ? 'laboratorio' : 'general',
       fecha: datos.fecha,
       aseguradora: datos.aseguradora ?? null,
       poliza: datos.poliza ?? null,

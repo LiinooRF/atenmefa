@@ -1,0 +1,106 @@
+---
+/**
+ * Verificar un documento escribiéndolo a mano.
+ *
+ * El QR lleva a /verificar/<id>, pero el id es un uuid que nadie va a
+ * teclear. Quien no puede escanear —o recibió el papel por foto— llega acá
+ * y escribe lo que SÍ está impreso en grande: el N° de atención, la cédula
+ * del paciente y el PIN.
+ *
+ * Pública y sin sesión, y por eso no muestra nada de la historia clínica.
+ */
+import Base from '../../layouts/Base.astro';
+import Icono from '../../components/Icono.astro';
+import Verificado from '../../components/Verificado.astro';
+import Aviso from '../../components/AvisoVerificacion.astro';
+import { verificarPorNumero, type Resultado } from '../../sistema/lib/verificacion';
+
+export const prerender = false;
+
+let resultado: Resultado | null = null;
+let numero = '';
+let documento = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  numero = String(form.get('numero') ?? '').trim();
+  documento = String(form.get('documento') ?? '').trim();
+  resultado = await verificarPorNumero(numero, documento, String(form.get('pin') ?? ''));
+}
+
+const ok = resultado?.estado === 'ok' ? resultado.documento : null;
+---
+
+<Base
+  titulo="Verificar un documento | Atenmefa"
+  descripcion="Compruebe que un informe o un récipe fue emitido por Atenmefa, con el número de atención, la cédula del paciente y el PIN impreso en el documento."
+  ruta="/verificar/"
+  sinIndexar={true}
+>
+  <section class="ver">
+    <div class="contenedor ver__caja">
+      <h1>Verificar un documento</h1>
+
+      {!ok && (
+        <p class="ver__guia">
+          Para comprobar que un informe o un récipe lo emitió Atenmefa, copie los
+          tres datos impresos al pie del documento. Si el papel trae código,
+          escanéelo y se salta este paso.
+        </p>
+      )}
+
+      {resultado && <Aviso resultado={resultado} />}
+
+      {ok ? (
+        <Verificado doc={ok} />
+      ) : (
+        <form method="post" class="ver__forma">
+          <div class="sis-campo">
+            <label for="numero">N° de atención</label>
+            <input
+              id="numero" name="numero" required autocomplete="off" autofocus
+              inputmode="numeric" placeholder="558" value={numero}
+            />
+            <span class="pista">El número grande, arriba a la derecha del documento.</span>
+          </div>
+
+          <div class="sis-campo">
+            <label for="documento">Cédula del paciente</label>
+            <input
+              id="documento" name="documento" required autocomplete="off"
+              placeholder="V-12.345.678" value={documento}
+            />
+            <span class="pista">Como aparece en el documento. Los puntos dan igual.</span>
+          </div>
+
+          <div class="sis-campo">
+            <label for="pin">PIN</label>
+            <input
+              id="pin" name="pin" required autocomplete="off"
+              inputmode="numeric" maxlength="8" placeholder="000000"
+            />
+            <span class="pista">Los seis dígitos impresos junto al código.</span>
+          </div>
+
+          <button type="submit" class="boton boton--rojo">
+            <Icono nombre="escudo" tam={18} />
+            Verificar
+          </button>
+        </form>
+      )}
+    </div>
+  </section>
+</Base>
+
+<style>
+  .ver { padding: 26px 0 56px; }
+  .ver__caja { max-width: min(54ch, 100%); }
+  .ver h1 {
+    margin: 0 0 10px;
+    font-size: clamp(1.6rem, 1.2rem + 1.6vw, 2.2rem);
+    letter-spacing: -0.02em;
+    color: var(--azul);
+  }
+  .ver__guia { margin: 0 0 22px; color: var(--tinta-suave); line-height: 1.6; }
+  .ver__forma { display: grid; gap: 16px; }
+</style>
