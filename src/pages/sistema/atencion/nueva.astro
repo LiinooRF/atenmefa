@@ -55,19 +55,24 @@ if (corte) return corte;
 
 let error = '';
 
-/* Qué se le va a hacer: la historia completa o una toma de laboratorio.
-   Se pregunta DESPUÉS de la cédula y no antes, porque lo primero es saber a
-   quién se atiende: con eso el sistema ya puede rellenar lo que sabe, y la
-   pregunta del tipo llega con el paciente en pantalla. */
-const crudoClase = Astro.url.searchParams.get('tipo');
-let clase = crudoClase === 'laboratorio' ? 'laboratorio' : crudoClase === 'general' ? 'general' : null;
+/* Qué se le va a hacer lo decide el ROL, no una pregunta en pantalla.
 
-/* Con un solo camino posible no se pregunta: recepción solo registra
-   laboratorio y el médico que entra por un enlace de laboratorio sin poder
-   hacerlo no se queda mirando dos botones que no le sirven. */
-if (!clase && puedeLab && !puedeConsulta) clase = 'laboratorio';
-if (clase === 'general' && !puedeConsulta) clase = puedeLab ? 'laboratorio' : null;
-if (clase === 'laboratorio' && !puedeLab) clase = puedeConsulta ? 'general' : null;
+   Antes había un paso en el medio con dos botones, «atención general» o
+   «laboratorio», porque así se había planteado al principio. Dejó de tener
+   sentido cuando el cliente separó los oficios: «¿por qué el médico puede
+   pedir o poner laboratorio? Por eso hay un bioanalista». El médico escribe
+   historias y nada más; recepción y el bioanalista registran órdenes. Nadie
+   puede las dos cosas, así que la pregunta tenía una sola respuesta posible
+   y era un toque de más entre la cédula y el formulario.
+
+   El parámetro `tipo` se sigue leyendo para que un enlace viejo no reviente,
+   pero lo que manda es el permiso. */
+const crudoClase = Astro.url.searchParams.get('tipo');
+const clase = puedeConsulta
+  ? 'general'
+  : puedeLab
+    ? 'laboratorio'
+    : crudoClase === 'laboratorio' ? 'laboratorio' : 'general';
 
 const esLaboratorio = clase === 'laboratorio';
 const modelo = esLaboratorio ? laboratorio : historia;
@@ -193,10 +198,7 @@ if (esLaboratorio && esIdentificador(crudoOrigen)) {
 }
 
 const hayPaciente = alcanza(tipoDoc, cedulaPedida);
-/* Con paciente pero sin elegir todavía, la pantalla del medio pregunta qué
-   se le va a hacer. */
-const elegirClase = hayPaciente && !clase;
-const abrirFormulario = hayPaciente && Boolean(clase);
+const abrirFormulario = hayPaciente;
 
 /* El catálogo de exámenes y la tasa del día, que la pantalla necesita para
    decir cuánto es en bolívares. Solo se piden si de verdad se va a dibujar
@@ -304,44 +306,7 @@ const fechaLarga = (f: string) =>
 ---
 
 <Sistema titulo="Nueva atención">
-  {elegirClase ? (
-    /* La pantalla del medio: ya se sabe a quién, falta qué. Dos botones
-       grandes y nada más; cualquier cosa que se le agregue acá es un paso
-       entre el paciente y el formulario, y esto se hace con el paciente
-       enfrente. */
-    <div class="quien">
-      <h1>¿Qué se le va a hacer?</h1>
-      <p class="quien__nota">
-        {conocido ? (
-          <><strong>{conocido.nombre}</strong> · {comoSeLee(conocido.tipoDoc, conocido.cedula)}</>
-        ) : (
-          <>Paciente nuevo, {comoSeLee(tipoDoc, cedulaPedida)}.</>
-        )}
-      </p>
-
-      <div class="clases">
-        {puedeConsulta && (
-          <a class="clase" href={`${Astro.url.pathname}${Astro.url.search}&tipo=general`}>
-            <Icono nombre="estetoscopio" tam={22} />
-            <strong>Atención general</strong>
-            <span>Consulta, emergencia o procedimiento. Historia clínica completa.</span>
-          </a>
-        )}
-
-        {puedeLab && (
-          <a class="clase" href={`${Astro.url.pathname}${Astro.url.search}&tipo=laboratorio`}>
-            <Icono nombre="laboratorio" tam={22} />
-            <strong>Laboratorio</strong>
-            <span>Toma de muestra y exámenes. Dos pasos.</span>
-          </a>
-        )}
-      </div>
-
-      <p class="quien__salida">
-        <a href="/sistema/atencion/nueva">No es este paciente</a>
-      </p>
-    </div>
-  ) : !abrirFormulario ? (
+  {!abrirFormulario ? (
     <div class="quien">
       <h1>¿A quién va a atender?</h1>
       <p class="quien__nota">
@@ -479,25 +444,6 @@ const fechaLarga = (f: string) =>
   .quien__form input { font-size: var(--u-lg); min-height: 54px; letter-spacing: 0.01em; }
   .quien__form .sis-boton { min-height: 48px; justify-self: start; }
   .quien__salida { margin-top: 18px; font-size: var(--u-sm); }
-
-  .clases { display: grid; gap: 12px; }
-  @media (min-width: 620px) { .clases { grid-template-columns: 1fr 1fr; } }
-
-  .clase {
-    display: grid;
-    gap: 5px;
-    padding: 20px;
-    min-height: 44px;
-    border: 1px solid var(--linea);
-    border-radius: 12px;
-    background: var(--papel);
-    text-decoration: none;
-    color: var(--tinta);
-  }
-  .clase:hover { border-color: var(--azul); background: var(--azul-suave, rgba(17, 22, 99, 0.05)); }
-  .clase :global(svg) { color: var(--azul); }
-  .clase strong { font-size: var(--u-lg); color: var(--azul); }
-  .clase span { font-size: var(--u-sm); color: var(--tinta-suave); line-height: 1.45; }
 
   /* La salida para quien no trae cédula. Discreta y cerrada: está, pero no
      compite con el camino normal. */

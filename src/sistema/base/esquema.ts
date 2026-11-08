@@ -5,7 +5,7 @@
  */
 import {
   pgTable, uuid, text, boolean, timestamp, date, numeric, jsonb,
-  bigint, bigserial, inet, integer, pgEnum, index, uniqueIndex,
+  bigint, bigserial, inet, integer, pgEnum, index, uniqueIndex, primaryKey,
   type AnyPgColumn,
 } from 'drizzle-orm/pg-core';
 import { user } from './auth-esquema';
@@ -106,6 +106,19 @@ export const diagnostico = pgTable('diagnostico', {
   marcadoPor: text('marcado_por').references(() => user.id),
   marcadoEn: timestamp('marcado_en', { withTimezone: true }),
 });
+
+/**
+ * Plantillas de examen del laboratorio, sacadas del archivo de trabajo del
+ * cliente. Ver 013-plantillas.sql.
+ */
+export const plantillaExamen = pgTable('plantilla_examen', {
+  examen: text('examen').notNull(),
+  orden: integer('orden').notNull(),
+  analito: text('analito').notNull(),
+  unidad: text('unidad').notNull().default(''),
+  /** Vacío significa que su hoja no lo decía en una columna rotulada. */
+  referencia: text('referencia').notNull().default(''),
+}, (t) => [primaryKey({ columns: [t.examen, t.orden] })]);
 
 export const servicio = pgTable('servicio', {
   id: uuid('id').primaryKey().defaultRandom(),

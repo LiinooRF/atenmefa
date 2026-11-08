@@ -33,7 +33,7 @@ import { exigir } from '../../../../sistema/lib/guardia';
 import { puedeCargarResultados } from '../../../../sistema/lib/permisos';
 import { anotar, atencionPara } from '../../../../sistema/lib/atenciones';
 import {
-  examenesPedidos, guardarResultados, leerResultados, sinNombre,
+  examenesPedidos, guardarResultados, leerResultados, plantillasDeExamen, sinNombre,
 } from '../../../../sistema/lib/laboratorio';
 import type { Resultado } from '../../../../sistema/laboratorio';
 
@@ -96,6 +96,12 @@ if (Astro.request.method === 'POST' && abierta) {
 
 const registro = (caso.datos ?? {}) as Record<string, string>;
 const pedidos = await examenesPedidos(caso.id);
+
+/* Las plantillas del archivo del cliente: elegir una pone sus renglones con
+   el analito y la unidad ya escritos. Van al navegador porque el agregado
+   es inmediato —son 188 renglones en total, unos 12 KB— y pedirle al
+   servidor una lista de ocho nombres sería un viaje por nada. */
+const plantillas = await plantillasDeExamen();
 
 /**
  * Las líneas que se dibujan.
@@ -215,14 +221,33 @@ const fechaLarga = (f: string) =>
         </table>
       </div>
 
-      <button type="button" class="sis-boton sis-boton--suave" id="res-mas">
-        <Icono nombre="mas" tam={17} />
-        Agregar línea
-      </button>
+      <div class="agregar">
+        <button type="button" class="sis-boton sis-boton--suave" id="res-mas">
+          <Icono nombre="mas" tam={17} />
+          Agregar línea
+        </button>
+
+        {plantillas.length > 0 && (
+          <span class="agregar__plantilla">
+            <label for="res-plantilla">o las líneas de</label>
+            <select id="res-plantilla" data-plantillas={JSON.stringify(plantillas)}>
+              <option value="">un examen…</option>
+              {plantillas.map((p) => (
+                <option value={p.examen}>{p.examen} ({p.analitos.length})</option>
+              ))}
+            </select>
+            <button type="button" class="sis-boton sis-boton--azul" id="res-poner">Poner</button>
+          </span>
+        )}
+      </div>
 
       <p class="nota-ref">
-        El valor de referencia se escribe: es el de este laboratorio y su
-        método, y no hay lista cargada todavía.
+        Las plantillas salen del archivo de laboratorio del centro: traen el
+        analito y su unidad, y el valor de referencia cuando la hoja lo decía
+        en su columna. <strong>Reviselo antes de firmar</strong>: 92 de los
+        188 analitos vienen sin rango porque su hoja no lo señalaba, y
+        deducirlo habría puesto el rango de un examen al lado del resultado
+        de otro.
       </p>
 
       <div class="pie">
@@ -253,10 +278,15 @@ const fechaLarga = (f: string) =>
   const mas = document.getElementById('res-mas');
 
   if (cuerpo && mas) {
+    /* El molde se guarda al cargar, no se busca cada vez. Al poner una
+       plantilla la única fila vacía se reusa —se quita— y entonces no
+       quedaba ninguna de donde clonar: la tabla se vaciaba y no se agregaba
+       nada. */
+    const molde = cuerpo.querySelector('tr')?.cloneNode(true) as HTMLTableRowElement | undefined;
+
     const nuevaFila = () => {
-      const modelo = cuerpo.querySelector('tr');
-      if (!modelo) return null;
-      const fila = modelo.cloneNode(true) as HTMLTableRowElement;
+      if (!molde) return null;
+      const fila = molde.cloneNode(true) as HTMLTableRowElement;
       fila.querySelectorAll('input').forEach((i) => {
         i.value = '';
         /* El rótulo accesible del modelo nombraba a OTRO examen. Acá no se
@@ -273,6 +303,53 @@ const fechaLarga = (f: string) =>
       cuerpo.appendChild(fila);
       fila.querySelector('input')?.focus();
     });
+
+    /* Las líneas de una plantilla, de un golpe. Lo que se agrega es un
+       punto de partida: el analito y la unidad escritos, el rango cuando la
+       hoja del centro lo decía. Todo queda editable. */
+    const elige = document.getElementById('res-plantilla') as HTMLSelectElement | null;
+    const poner = document.getElementById('res-poner');
+
+    if (elige && poner) {
+      type Plantilla = { examen: string; analitos: { analito: string; unidad: string; referencia: string }[] };
+      let plantillas: Plantilla[] = [];
+      try { plantillas = JSON.parse(elige.dataset.plantillas ?? '[]'); } catch { plantillas = []; }
+
+      poner.addEventListener('click', () => {
+        const p = plantillas.find((x) => x.examen === elige.value);
+        if (!p) { elige.focus(); return; }
+
+        /* Si la única fila que hay está vacía, se reusa: apretar sin haber
+           escrito nada dejaba un renglón en blanco arriba de la plantilla. */
+        const filas = [...cuerpo.querySelectorAll('tr')];
+        const soloUnaVacia = filas.length === 1 &&
+          [...filas[0].querySelectorAll('input')].every((i) => !i.value.trim());
+        if (soloUnaVacia) filas[0].remove();
+
+        /* No se repite lo que ya está: poner dos veces la misma plantilla
+           —o una que comparte analitos con otra— no duplica renglones. */
+        const yaEstan = new Set(
+          [...cuerpo.querySelectorAll<HTMLInputElement>('input[name="examen"]')]
+            .map((i) => i.value.trim().toUpperCase())
+            .filter(Boolean),
+        );
+
+        let primera: HTMLInputElement | null = null;
+        for (const a of p.analitos) {
+          if (yaEstan.has(a.analito.toUpperCase())) continue;
+          const fila = nuevaFila();
+          if (!fila) break;
+          const dame = (n: string) => fila.querySelector<HTMLInputElement>(`input[name="${n}"]`);
+          dame('examen')!.value = a.analito;
+          dame('unidad')!.value = a.unidad;
+          dame('referencia')!.value = a.referencia;
+          cuerpo.appendChild(fila);
+          primera ??= dame('valor');
+        }
+        elige.value = '';
+        primera?.focus();
+      });
+    }
 
     cuerpo.addEventListener('click', (e) => {
       const boton = (e.target as HTMLElement).closest('[data-quitar]');
@@ -385,7 +462,21 @@ const fechaLarga = (f: string) =>
   }
   .quitar:hover { background: #fde8e8; color: var(--rojo); }
 
-  #res-mas { margin-top: 12px; }
+  .agregar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin-top: 12px; }
+  .agregar__plantilla { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .agregar__plantilla label { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .agregar__plantilla select {
+    min-height: 44px;
+    max-width: 30ch;
+    padding: 8px 11px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background: var(--papel);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+    color: var(--tinta);
+  }
   .nota-ref { margin-top: 14px; font-size: var(--u-xs); color: var(--tinta-tenue); max-width: 64ch; }
   .oculto { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); }
 

@@ -8,16 +8,30 @@
  */
 import Sistema from '../../layouts/Sistema.astro';
 import Icono from '../../components/Icono.astro';
-import { borradoresAbiertos } from '../../sistema/lib/atenciones';
+import {
+  DIAS_DE_BORRADOR, borradoresAbiertos, limpiarBorradoresViejos,
+} from '../../sistema/lib/atenciones';
 import { exigir } from '../../sistema/lib/guardia';
+import { puede, puedeBorrarBorrador } from '../../sistema/lib/permisos';
 
 export const prerender = false;
 
-const corte = exigir(Astro, 'escribir_historia');
+/* Administración entra también, aunque no escriba historias: el cliente le
+   dio el borrado de borradores. */
+const usuario = Astro.locals.usuario;
+if (!usuario) return Astro.redirect('/sistema/entrar');
+const escribe = puede(usuario.rol as string, 'escribir_historia');
+const corte = escribe ? null : exigir(Astro, 'anular_atencion');
 if (corte) return corte;
+
+/* La limpieza de los veinte días corre acá, al abrir la lista. No hay cron
+   y no hace falta: si nadie entra al sistema en veinte días, tampoco le
+   molesta un borrador viejo. Ver limpiarBorradoresViejos. */
+const limpiados = await limpiarBorradoresViejos();
 
 const borradores = await borradoresAbiertos();
 const listos = borradores.filter((b) => b.faltan.length === 0).length;
+const puedeNuevas = escribe;
 
 const fechaCorta = (f: string) =>
   new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
@@ -42,11 +56,28 @@ const queFalta = (faltan: { rotulo: string }[]) => {
         {listos > 0 && ` · ${listos} ${listos === 1 ? 'listo para cerrar' : 'listos para cerrar'}`}
       </p>
     </div>
-    <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">
-      <Icono nombre="mas" tam={19} />
-      Nueva atención
-    </a>
+    {puedeNuevas && (
+      <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">
+        <Icono nombre="mas" tam={19} />
+        Nueva atención
+      </a>
+    )}
   </div>
+
+  {Astro.url.searchParams.get('borrado') === '1' && (
+    <p class="msj--bien">
+      <Icono nombre="escudo" tam={18} />
+      El borrador se borró. Quedó anotado en la bitácora.
+    </p>
+  )}
+
+  {limpiados > 0 && (
+    <p class="msj--bien">
+      <Icono nombre="reloj" tam={18} />
+      Se fueron {limpiados} {limpiados === 1 ? 'borrador' : 'borradores'} que
+      nadie tocó en {DIAS_DE_BORRADOR} días.
+    </p>
+  )}
 
   {borradores.length === 0 ? (
     <div class="vacio sis-tarjeta">
@@ -55,7 +86,9 @@ const queFalta = (faltan: { rotulo: string }[]) => {
         Las atenciones aparecen acá mientras estén a medio llenar. Al cerrarlas
         pasan a <a href="/sistema">la lista de casos</a>.
       </p>
-      <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">Registrar una atención</a>
+      {puedeNuevas && (
+        <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">Registrar una atención</a>
+      )}
     </div>
   ) : (
     <ul class="pend">
@@ -88,13 +121,77 @@ const queFalta = (faltan: { rotulo: string }[]) => {
               )}
             </span>
           </a>
+
+          {/* Fuera del enlace de la fila: un enlace dentro de otro no es
+              HTML válido y el toque se lo come el de afuera. Lleva a una
+              pantalla que pregunta, no borra de un golpe. */}
+          {puedeBorrarBorrador(usuario, b) && (
+            <a class="pend__borrar" href={`/sistema/atencion/${b.id}/borrar`}
+               aria-label={`Borrar el borrador de ${b.paciente}`}>
+              Borrar
+              {b.quieto >= DIAS_DE_BORRADOR - 5 && (
+                <em>se va en {Math.max(0, DIAS_DE_BORRADOR - b.quieto)} días</em>
+              )}
+            </a>
+          )}
         </li>
       ))}
     </ul>
   )}
+
+  {borradores.length > 0 && (
+    <p class="aviso-dias">
+      Un borrador que nadie toca en {DIAS_DE_BORRADOR} días se borra solo,
+      siempre que no tenga cobro ni resultados cargados. Si tiene algo de eso,
+      se queda hasta que alguien lo borre a mano.
+    </p>
+  )}
 </Sistema>
 
 <style>
+  .msj--bien {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-top: 16px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+    font-size: var(--u-sm);
+  }
+  .msj--bien :global(svg) { flex: none; margin-top: 1px; }
+
+  /* La fila es un enlace y el borrado es otro: van uno al lado del otro. */
+  .pend li { display: flex; align-items: stretch; }
+  .pend li > a:first-child { flex: 1; min-width: 0; }
+
+  .pend__borrar {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    align-items: flex-end;
+    flex: none;
+    gap: 2px;
+    padding: 0 14px;
+    border-left: 1px solid var(--linea-tenue);
+    color: var(--tinta-tenue);
+    text-decoration: none;
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+  .pend__borrar:hover { background: #fdeced; color: var(--rojo); }
+  .pend__borrar em { font-style: normal; font-weight: 400; color: var(--rojo); white-space: nowrap; }
+
+  .aviso-dias {
+    margin-top: 16px;
+    font-size: var(--u-xs);
+    color: var(--tinta-tenue);
+    line-height: 1.6;
+    max-width: 76ch;
+  }
+
   .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
   .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
 

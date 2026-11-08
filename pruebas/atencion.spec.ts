@@ -63,8 +63,10 @@ test('la bandeja de borradores dice cuánto falta para poder cerrar', async ({ p
   await expect(fila).toContainText('Faltan 7 campos');
   await expect(fila).toContainText('edad, sexo, lugar de atención y 4 más');
 
-  // La fila entra directo a la edición, no a la ficha.
-  await fila.getByRole('link').click();
+  /* La fila entra directo a la edición, no a la ficha. El `.first()` es
+     necesario: ahora la fila tiene dos enlaces, el de la fila y el de
+     borrar. */
+  await fila.getByRole('link').first().click();
   await expect(page).toHaveURL(`/sistema/atencion/${borrador}/editar`);
 });
 

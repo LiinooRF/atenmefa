@@ -139,7 +139,8 @@ test('al que no trae nada el sistema le asigna un número y lo dice', async ({ p
   expect(new URL(page.url()).searchParams.get('cedula')).toBe(asignado);
 
   /* Con el número ya asignado, falta decir qué se le va a hacer. */
-  await page.locator('.clase', { hasText: 'Atención general' }).click();
+  /* Ya no hay paso del medio: el formulario que se abre lo decide el rol.
+     El médico escribe historias y nada más, así que entra directo. */
   await expect(page.locator('.form__nota')).toContainText(asignado);
   await expect(page.locator('.form__nota')).toContainText('sin documento');
 });

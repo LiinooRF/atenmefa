@@ -124,7 +124,8 @@ test('la cédula conocida rellena los datos personales', async ({ page }) => {
   await page.locator('#cedula').fill(CEDULA);
   await page.getByRole('button', { name: 'Continuar' }).click();
   // Y entre medio, qué se le va a hacer.
-  await page.locator('.clase', { hasText: 'Atención general' }).click();
+  /* Ya no hay paso del medio: el formulario que se abre lo decide el rol.
+     El médico escribe historias y nada más, así que entra directo. */
 
   await expect(page.locator('#atajos-titulo')).toContainText('Ya atendimos');
   await expect(page.locator('#c-nombre')).toHaveValue(NOMBRE);

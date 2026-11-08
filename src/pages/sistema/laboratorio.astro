@@ -21,13 +21,15 @@ import { colaDelLaboratorio } from '../../sistema/lib/laboratorio';
 import { hoyEnVenezuela } from '../../sistema/lib/atenciones';
 import { enlaceDeWhatsApp, paraWhatsApp } from '../../sistema/lib/telefono';
 import { avisoDeResultados } from '../../sistema/mensajes';
+import { puedeBorrarBorrador } from '../../sistema/lib/permisos';
 
 export const prerender = false;
 
 const corte = exigir(Astro, 'cola_laboratorio');
 if (corte) return corte;
 
-const rol = Astro.locals.usuario?.rol as string;
+const usuario = Astro.locals.usuario!;
+const rol = usuario.rol as string;
 const resulta = puede(rol, 'cargar_resultados');
 const registra = puede(rol, 'registrar_laboratorio');
 
@@ -89,6 +91,13 @@ const ROTULO = {
       </a>
     )}
   </div>
+
+  {Astro.url.searchParams.get('borrado') === '1' && (
+    <p class="msj--bien">
+      <Icono nombre="escudo" tam={18} />
+      La orden se borró. Quedó anotado en la bitácora.
+    </p>
+  )}
 
   <nav class="tabs">
     <a class:list={['tabs__uno', !verEntregadas && 'tabs__uno--actual']}
@@ -154,6 +163,15 @@ const ROTULO = {
               <span>Avisar</span>
             </a>
           )}
+
+          {/* Una orden abierta que no va a ninguna parte se borra. La
+              entregada no: esa está firmada y se anula con motivo. */}
+          {o.enCola !== 'entregada' && puedeBorrarBorrador(usuario, {
+            tipo: 'laboratorio', estado: 'borrador', medicoId: o.medicoId,
+          }) && (
+            <a class="cola__borrar" href={`/sistema/atencion/${o.id}/borrar`}
+               aria-label={`Borrar la orden de ${o.paciente}`}>Borrar</a>
+          )}
         </li>
       ))}
     </ul>
@@ -205,6 +223,33 @@ const ROTULO = {
     font-weight: 700;
   }
   .cola__wa:hover { background: #e9f6ef; }
+
+  .cola__borrar {
+    display: flex;
+    align-items: center;
+    flex: none;
+    padding: 0 14px;
+    border-left: 1px solid var(--linea-tenue);
+    color: var(--tinta-tenue);
+    text-decoration: none;
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+  .cola__borrar:hover { background: #fdeced; color: var(--rojo); }
+
+  .msj--bien {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-top: 16px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+    font-size: var(--u-sm);
+  }
+  .msj--bien :global(svg) { flex: none; margin-top: 1px; }
   .cola__wa :global(svg) { flex: none; }
   /* A 390 px queda el icono: el rótulo se come el ancho del nombre. */
   @media (max-width: 519px) { .cola__wa span { display: none; } .cola__wa { padding: 0 12px; } }

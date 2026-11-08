@@ -22,6 +22,8 @@
  * exactamente lo que había antes.
  */
 import type { Campo } from '../../sistema/historia';
+import { marcados } from '../../sistema/lib/diagnosticos';
+import { comoSeLee } from '../../sistema/cie10';
 
 interface Props {
   campo: Campo;
@@ -32,6 +34,17 @@ interface Props {
 const { campo: c, valor = '', codigo = '' } = Astro.props;
 const id = `c-${c.clave}`;
 const pistaId = `${id}-pista`;
+
+/* Los frecuentes se consultan acá, en el componente, y no se pasan por
+   props desde la pantalla. El campo cuelga de Pasos → Seccion → Campo, que
+   son genéricos: hacerles cruzar un dato que solo usa uno de los campos los
+   ensucia a los tres. Es una consulta indexada de un puñado de filas.
+
+   Van VISIBLES y no escondidos en el desplegable. Es la mitad de lo que el
+   cliente pidió —«que aparezcan de primero»— y es lo que hace que esto se
+   use: lo de todos los días se toca una vez, sin escribir nada. El
+   desplegable queda para lo demás. */
+const frecuentes = (await marcados()).slice(0, 12);
 ---
 
 <div class:list={['campo', `campo--${c.ancho ?? 4}`]} data-dx>
@@ -39,6 +52,19 @@ const pistaId = `${id}-pista`;
     {c.rotulo}
     {c.exigido && <abbr title="Obligatorio para cerrar la atención">*</abbr>}
   </label>
+
+  {frecuentes.length > 0 && (
+    <ul class="dx__rapidos">
+      {frecuentes.map((d) => (
+        <li>
+          <button type="button" class="dx__rapido" data-codigo={d.codigo} data-nombre={comoSeLee(d.nombre)}>
+            {comoSeLee(d.nombre)}
+            <em class="cifra">{d.codigo}</em>
+          </button>
+        </li>
+      ))}
+    </ul>
+  )}
 
   <div class="dx">
     <input
@@ -105,10 +131,21 @@ const pistaId = `${id}-pista`;
     const sexoDelPaciente = () =>
       (document.getElementById('c-sexo') as HTMLSelectElement | null)?.value ?? '';
 
+    /* El frecuente que está puesto se ve puesto. Sin esto, con el campo ya
+       lleno los botones se veían todos iguales y no había forma de saber
+       cuál se eligió. */
+    const marcarRapidos = () => {
+      caja.querySelectorAll<HTMLButtonElement>('.dx__rapido').forEach((b) => {
+        const puesto = Boolean(oculto.value) && b.dataset.codigo === oculto.value;
+        b.setAttribute('aria-pressed', String(puesto));
+      });
+    };
+
     const mostrarCodigo = (codigo: string) => {
       oculto.value = codigo;
       chapa.textContent = codigo;
       caja.querySelector<HTMLElement>('.dx__elegido')!.hidden = !codigo;
+      marcarRapidos();
     };
 
     const cerrar = () => {
@@ -142,22 +179,18 @@ const pistaId = `${id}-pista`;
         li.setAttribute('aria-selected', String(i === marcado));
         if (i === marcado) li.dataset.marcado = '';
 
+        /* El nombre primero y el código al final: se busca leyendo el
+           nombre, el código es para confirmar. Al revés obligaba a saltarse
+           cinco caracteres en cada renglón para empezar a leer. */
         const nombre = document.createElement('span');
         nombre.className = 'dx__nombre';
         nombre.textContent = d.nombre;
 
-        const cod = document.createElement('span');
+        const cod = document.createElement('em');
         cod.className = 'dx__cod cifra';
         cod.textContent = d.codigo;
 
-        li.append(cod, nombre);
-
-        if (d.frecuente) {
-          const m = document.createElement('em');
-          m.className = 'dx__marca';
-          m.textContent = 'frecuente';
-          li.append(m);
-        }
+        li.append(nombre, cod);
 
         /* El aviso del sexo. No bloquea: el catálogo no trae la restricción
            en todas las rúbricas, así que bloquear con un dato incompleto
@@ -165,7 +198,7 @@ const pistaId = `${id}-pista`;
         if (d.sexo && sexo && d.sexo !== sexo) {
           const ojo = document.createElement('em');
           ojo.className = 'dx__ojo';
-          ojo.textContent = `catálogo: solo ${d.sexo.toLowerCase()}`;
+          ojo.textContent = `solo ${d.sexo.toLowerCase()}`;
           li.append(ojo);
         }
 
@@ -204,20 +237,17 @@ const pistaId = `${id}-pista`;
         mostrarCodigo('');
       }
 
-      /* Y se cierra la lista HASTA que lleguen los resultados de lo que
-         ahora dice el campo. Dejarla abierta mientras se teclea parece más
-         vivo y es una trampa: lo que está en pantalla es el resultado de
-         una búsqueda anterior, y quien le dé a un renglón elige algo que no
-         tiene nada que ver con lo que acabó de escribir. Entre tecla y
-         tecla no hay lista; apareciendo al parar de escribir, que es cuando
-         uno la mira.
+      /* Se invalida lo que esté en vuelo y la lista se queda como está
+         hasta que lleguen los resultados nuevos. Cerrarla en cada tecla
+         hacía parpadear media pantalla mientras se escribe, que es
+         exactamente la queja; y no hacía falta, porque elegir un renglón
+         REEMPLAZA el texto por el nombre del diagnóstico: quien toca lo que
+         está viendo se lleva lo que vio.
 
-         Y se descarta lo que esté en vuelo: la búsqueda que disparó el foco
-         —con el campo todavía vacío— llegaba DESPUÉS de este cierre y
-         volvía a abrir la lista con los resultados de otra cosa. Cerrarla
-         sin invalidar la respuesta no alcanza. */
+         Invalidar sí hace falta: la búsqueda que dispara el foco —con el
+         campo todavía vacío— llegaba después y repintaba la lista con los
+         resultados de otra cosa. */
       pedido++;
-      cerrar();
       clearTimeout(reloj);
       reloj = setTimeout(buscar, 250);
     });
@@ -242,6 +272,22 @@ const pistaId = `${id}-pista`;
       }
     });
 
+    /* Los botones de los frecuentes: un toque y queda puesto, sin escribir
+       ni esperar una búsqueda. Es para lo que se marcan. */
+    caja.querySelectorAll<HTMLButtonElement>('.dx__rapido').forEach((b) => {
+      b.addEventListener('click', () => {
+        elegir({
+          codigo: b.dataset.codigo!,
+          nombre: b.dataset.nombre!,
+          oficial: b.dataset.nombre!,
+          sexo: null,
+          frecuente: true,
+          usos: 0,
+        });
+      });
+    });
+    marcarRapidos();
+
     /* Soltar el código y quedarse con el texto: pasa cuando el médico
        encontró algo parecido pero no es eso, y prefiere escribirlo él. */
     quitar.addEventListener('click', () => {
@@ -264,6 +310,48 @@ const pistaId = `${id}-pista`;
   }
   abbr { color: var(--rojo); text-decoration: none; font-weight: 700; }
   .pista { font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  /* Los frecuentes, a la vista. Fichas que se tocan, no un desplegable: es
+     lo que se usa todos los días y tiene que estar a un toque. */
+  .dx__rapidos {
+    list-style: none;
+    margin: 0 0 9px;
+    padding: 0;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .dx__rapido {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    /* 44 px, como todo lo que se toca con el dedo en el panel. */
+    min-height: 44px;
+    padding: 0 13px;
+    border: 1px solid var(--linea);
+    border-radius: 999px;
+    background: var(--papel);
+    color: var(--tinta);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+    line-height: 1.25;
+    text-align: left;
+    cursor: pointer;
+  }
+  .dx__rapido:hover { border-color: var(--azul-medio); background: var(--bruma); }
+  .dx__rapido em {
+    font-style: normal;
+    font-size: var(--u-xs);
+    font-weight: 700;
+    color: var(--tinta-tenue);
+  }
+  .dx__rapido[aria-pressed='true'] {
+    border-color: var(--azul);
+    background: var(--azul);
+    color: #fff;
+  }
+  .dx__rapido[aria-pressed='true'] em { color: rgb(255 255 255 / 0.72); }
 
   .dx { position: relative; }
   .dx input[type='text'] {
@@ -324,40 +412,41 @@ const pistaId = `${id}-pista`;
   }
   .dx__lista[hidden] { display: none; }
 
+  /* Un renglón por diagnóstico: el nombre ocupa la línea y el código va al
+     final, alineado. Antes el código iba primero y había que saltárselo en
+     cada renglón para empezar a leer. */
   .dx__lista li {
-    display: flex;
-    flex-wrap: wrap;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
     align-items: baseline;
-    gap: 4px 9px;
+    column-gap: 12px;
     /* 44 px: se toca con el dedo, de pie y con la tablet en la mano. */
     min-height: 44px;
-    padding: 8px 10px;
-    border-radius: 7px;
+    padding: 9px 11px;
+    border-radius: 8px;
     cursor: pointer;
     font-size: var(--u-sm);
-    line-height: 1.35;
+    line-height: 1.4;
   }
+  .dx__lista li + li { border-top: 1px solid var(--linea-tenue); }
   .dx__lista li:hover,
-  .dx__lista li[data-marcado] { background: var(--azul-tenue); }
+  .dx__lista li[data-marcado] { background: var(--azul-tenue); border-top-color: transparent; }
 
+  .dx__nombre { min-width: 0; }
   .dx__cod {
-    flex: none;
+    grid-column: 2;
+    font-style: normal;
     font-weight: 700;
     color: var(--azul);
     font-size: var(--u-xs);
-    min-width: 3.4em;
+    white-space: nowrap;
   }
-  .dx__nombre { flex: 1 1 14ch; min-width: 0; }
-  .dx__marca {
-    flex: none;
+  .dx__ojo {
+    grid-column: 1 / -1;
     font-style: normal;
     font-size: var(--u-xs);
-    letter-spacing: 0.03em;
-    text-transform: uppercase;
-    font-weight: 700;
-    color: var(--tinta-tenue);
+    color: #7a5200;
   }
-  .dx__ojo { flex: none; font-style: normal; font-size: var(--u-xs); color: #7a5200; }
 
   .dx__nada { margin: 7px 0 0; font-size: var(--u-xs); color: var(--tinta-tenue); }
   .dx__nada[hidden] { display: none; }

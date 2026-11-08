@@ -38,11 +38,11 @@ test('al médico le queda el menú plano, sin desplegables', async ({ page }) =>
   await expect(page.locator('.sis__grupo')).toHaveCount(0);
 });
 
-test('administración ve seis entradas en vez de diez sueltas', async ({ page }) => {
+test('administración ve siete entradas en vez de once sueltas', async ({ page }) => {
   await entrar(page, 'administracion');
 
   expect(await deLaBarra(page)).toEqual([
-    'Casos', 'Laboratorio', 'Pacientes', 'Cobros', 'Reportes', 'Administración',
+    'Casos', 'Borradores', 'Laboratorio', 'Pacientes', 'Cobros', 'Reportes', 'Administración',
   ]);
 
   const dentro = async (grupo: string) =>

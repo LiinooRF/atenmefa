@@ -51,7 +51,7 @@ test('administración no ve ningún botón que lleve a escribir una historia', a
   await expect(page.locator('a[href="/sistema/atencion/nueva"]')).toHaveCount(0);
 });
 
-test('administración no ve nueva atención ni borradores en el menú', async ({ page }) => {
+test('administración ve lo suyo y no la puerta de escribir historias', async ({ page }) => {
   await entrar(page, 'administracion');
   const menu = page.locator('.sis__nav');
 
@@ -64,8 +64,11 @@ test('administración no ve nueva atención ni borradores en el menú', async ({
   await expect(menu.getByRole('link', { name: 'Cierre del mes' })).toBeVisible();
   await expect(menu.getByRole('link', { name: 'Servicios y precios' })).toBeVisible();
 
+  /* «Nueva atención» no, porque no escribe historias. «Borradores» SÍ: el
+     cliente le dio el borrado de borradores, así que ahora tiene trabajo
+     en esa pantalla. */
   await expect(menu.getByRole('link', { name: 'Nueva atención' })).toHaveCount(0);
-  await expect(menu.getByRole('link', { name: 'Borradores' })).toHaveCount(0);
+  await expect(menu.getByRole('link', { name: 'Borradores' })).toHaveCount(1);
 });
 
 /* ---------------------------------------------------------------

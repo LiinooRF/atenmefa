@@ -1,0 +1,182 @@
+---
+/**
+ * Borrar un borrador.
+ *
+ * Es la única cosa que se borra de una atención. Se puede porque un
+ * borrador no está firmado: no entró en el cierre del mes, no se imprimió
+ * con PIN y no se le entregó a nadie. Una atención CERRADA no se borra
+ * nunca: se anula con motivo, que es otra pantalla.
+ *
+ * Tiene pantalla propia y no es un botón en la lista a propósito. Un botón
+ * de borrar suelto entre filas se aprieta sin querer, y acá se muestra qué
+ * se va a perder antes de preguntar.
+ */
+import Sistema from '../../../../layouts/Sistema.astro';
+import Icono from '../../../../components/Icono.astro';
+import { exigir } from '../../../../sistema/lib/guardia';
+import { puedeBorrarBorrador } from '../../../../sistema/lib/permisos';
+import {
+  DIAS_DE_BORRADOR, anotar, atencionPara, borrarBorrador, faltantes,
+} from '../../../../sistema/lib/atenciones';
+import { renglonesDe } from '../../../../sistema/lib/cobro';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'ver_casos');
+if (corte) return corte;
+
+const { id } = Astro.params;
+const usuario = Astro.locals.usuario!;
+
+const caso = await atencionPara(id!);
+if (!caso) return Astro.redirect('/sistema');
+
+const esLab = caso.tipo === 'laboratorio';
+const puedo = puedeBorrarBorrador(usuario, caso);
+const datos = (caso.datos ?? {}) as Record<string, string>;
+
+/* Qué se va a perder, en números: no es lo mismo tirar una pantalla vacía
+   que una historia a medio escribir con el cobro ya cargado. */
+const renglones = await renglonesDe(caso.id);
+const escritos = Object.keys(datos).filter(
+  (k) => !['fecha', 'medico', 'tipo_doc', 'tipo_atencion', 'hora_inicio'].includes(k) && datos[k],
+).length;
+const resultados = (caso.resultados ?? []).filter((r) => r.valor).length;
+
+let error = '';
+
+if (Astro.request.method === 'POST' && puedo) {
+  try {
+    const borrada = await borrarBorrador(caso.id);
+    /* La anotación va DESPUÉS del borrado y sin atencion_id: la fila ya no
+       existe, así que lo que había queda en el detalle. Ver
+       012-borradores.sql. */
+    await anotar(usuario.id, 'borro_borrador', undefined, {
+      numero: borrada.numero,
+      tipo: borrada.tipo,
+      /* `paciente_nombre` y no `paciente`: esa clave la usa la bitácora
+         para el ID del paciente y la pantalla la castea a uuid. */
+      paciente_nombre: borrada.paciente,
+      cedula: borrada.cedula,
+      campos: escritos,
+      renglones: renglones.length,
+    });
+    return Astro.redirect(esLab ? '/sistema/laboratorio?borrado=1' : '/sistema/borradores?borrado=1');
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo borrar el borrador.';
+  }
+}
+
+const faltan = faltantes(datos, caso.tipo).length;
+const volver = esLab ? '/sistema/laboratorio' : '/sistema/borradores';
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
+---
+
+<Sistema titulo={`Borrar ${caso.numero}`}>
+  <nav class="miga">
+    <a href={volver}>{esLab ? 'Laboratorio' : 'Borradores'}</a> <span>/</span>
+    {esLab ? 'Orden' : 'Atención'} {caso.numero} <span>/</span> Borrar
+  </nav>
+
+  <section class="sis-tarjeta caja">
+    {caso.estado !== 'borrador' ? (
+      <>
+        <h1>Esta atención ya no es un borrador</h1>
+        <p>
+          La atención N° {caso.numero} de {caso.paciente} está
+          <strong> {caso.estado}</strong>. Lo firmado no se borra: si algo quedó
+          mal, administración la anula con su motivo y se registra una nueva.
+        </p>
+        <div class="acciones">
+          <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}`}>Ver la ficha</a>
+        </div>
+      </>
+    ) : !puedo ? (
+      <>
+        <h1>Este borrador no es suyo</h1>
+        <p>
+          El borrador N° {caso.numero} de {caso.paciente} lo abrió {caso.medico}.
+          Lo borra quien lo empezó, o administración. Si nadie lo toca, se va
+          solo en {DIAS_DE_BORRADOR} días.
+        </p>
+        <div class="acciones">
+          <a class="sis-boton sis-boton--azul" href={volver}>Volver</a>
+        </div>
+      </>
+    ) : (
+      <>
+        <h1>¿Borrar el {esLab ? 'la orden' : 'borrador'} N° {caso.numero}?</h1>
+        <p>
+          De <strong>{caso.paciente}</strong> ({caso.cedula}), abierto el
+          {' '}{fechaLarga(caso.fecha)} por {caso.medico}.
+        </p>
+
+        <ul class="pierde">
+          <li>
+            {escritos === 0
+              ? 'No tiene ningún campo escrito.'
+              : `${escritos} ${escritos === 1 ? 'campo escrito' : 'campos escritos'}${faltan > 0 ? `, y le faltan ${faltan} para poder cerrarse` : ''}.`}
+          </li>
+          {resultados > 0 && (
+            <li class="pierde--ojo">
+              <strong>{resultados} {resultados === 1 ? 'resultado cargado' : 'resultados cargados'}</strong>,
+              que se pierden con el borrado.
+            </li>
+          )}
+          {renglones.length > 0 && (
+            <li class="pierde--ojo">
+              <strong>{renglones.length} {renglones.length === 1 ? 'renglón de cobro' : 'renglones de cobro'}</strong>,
+              que se van con la atención. Si ya se le cobró al paciente, esto no
+              es lo que hay que hacer.
+            </li>
+          )}
+        </ul>
+
+        <p class="nota">
+          No se puede deshacer. Queda anotado en la bitácora quién lo borró y
+          qué número era.
+        </p>
+
+        {error && <p class="sis-error"><Icono nombre="escudo" tam={18} />{error}</p>}
+
+        <form method="post" class="acciones">
+          <button type="submit" class="sis-boton sis-boton--suave anular">
+            Borrar el borrador
+          </button>
+          <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}/editar`}>
+            No, seguir llenándolo
+          </a>
+        </form>
+      </>
+    )}
+  </section>
+</Sistema>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .caja { max-width: 64ch; }
+  .caja h1 { font-size: var(--u-xl); }
+  .caja p { margin-top: 11px; color: var(--tinta-suave); line-height: 1.55; }
+  .caja p strong { color: var(--tinta); }
+
+  .pierde { list-style: none; margin: 16px 0 0; padding: 0; display: grid; gap: 7px; }
+  .pierde li {
+    padding: 9px 12px;
+    border-radius: 8px;
+    background: var(--bruma);
+    font-size: var(--u-sm);
+    line-height: 1.5;
+  }
+  .pierde--ojo { background: #fdf0d9; color: #7a5200; }
+  .pierde--ojo strong { color: #7a5200; }
+
+  .nota { font-size: var(--u-xs) !important; color: var(--tinta-tenue) !important; }
+  .acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 20px; }
+  .sis-error { margin-top: 16px; display: flex; align-items: flex-start; gap: 9px; }
+</style>

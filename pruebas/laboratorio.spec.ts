@@ -30,6 +30,7 @@ test.describe.configure({ mode: 'serial' });
 const CEDULA = cedulaDePrueba(13, 0);
 const CEDULA_GENERAL = cedulaDePrueba(13, 1);
 const CEDULA_PEDIDOS = cedulaDePrueba(13, 2);
+const CEDULA_PLANTILLA = cedulaDePrueba(13, 3);
 const NOMBRE = 'Carmen Rosa Laboratorio de Prueba';
 
 const EXAMEN_A = 'Hematología completa de prueba';
@@ -37,7 +38,7 @@ const EXAMEN_B = 'Glicemia de prueba';
 
 const limpiar = () =>
   conBase(async (sql) => {
-    for (const c of [CEDULA, CEDULA_GENERAL, CEDULA_PEDIDOS]) {
+    for (const c of [CEDULA, CEDULA_GENERAL, CEDULA_PEDIDOS, CEDULA_PLANTILLA]) {
       const busca = c.replace(/\D/g, '');
       const suyas = sql`SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
                          WHERE p.cedula_busca = ${busca}`;
@@ -71,27 +72,30 @@ test.afterAll(async () => {
    La puerta.
    ------------------------------------------------------------------ */
 
-test('después de la cédula pregunta qué se le va a hacer', async ({ page }) => {
+test('al médico, después de la cédula, se le abre la historia y nada más', async ({ page }) => {
+  /* Antes había un paso en el medio con dos botones. Dejó de tener sentido
+     cuando el cliente separó los oficios: «¿por qué el médico puede pedir o
+     poner laboratorio? Por eso hay un bioanalista». Con una sola respuesta
+     posible, la pregunta era un toque de más. */
   await entrar(page, 'medico');
   await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
 
-  /* La pregunta llega DESPUÉS del paciente y no antes: con la cédula ya
-     resuelta, la elección se hace con la persona en pantalla. */
-  await expect(page.getByRole('heading', { name: '¿Qué se le va a hacer?' })).toBeVisible();
-  expect(await page.locator('.clase strong').allInnerTexts())
-    .toEqual(['Atención general', 'Laboratorio']);
-
-  // Todavía no hay formulario: primero se elige.
-  await expect(page.locator('#c-nombre')).toHaveCount(0);
+  await expect(page.getByRole('heading', { name: '¿Qué se le va a hacer?' })).toHaveCount(0);
+  await expect(page.locator('#c-nombre')).toBeVisible();
+  await expect(page.locator('input[name="tipo_atencion"]')).toHaveValue('general');
 });
 
-test('a recepción no se le pregunta: solo puede laboratorio', async ({ page }) => {
-  /* Con un solo camino posible, preguntar es un paso de más y dos botones de
-     los cuales uno no sirve. */
+test('el médico no puede abrir una orden de laboratorio ni pedirla', async ({ page }) => {
+  await entrar(page, 'medico');
+  /* Ni forzando el parámetro: lo que manda es el permiso. */
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}&tipo=laboratorio`);
+  await expect(page.locator('input[name="tipo_atencion"]')).toHaveValue('general');
+  await expect(page.locator('#c-idx')).toHaveCount(1);        // es la historia completa
+});
+
+test('a recepción se le abre la orden, y nunca la historia', async ({ page }) => {
   await entrar(page, 'recepcionista');
   await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
-
-  await expect(page.getByRole('heading', { name: '¿Qué se le va a hacer?' })).toHaveCount(0);
   await expect(page.locator('#c-nombre')).toBeVisible();
   await expect(page.locator('input[name="tipo_atencion"]')).toHaveValue('laboratorio');
 });
@@ -109,8 +113,8 @@ test('recepción no puede abrir el formulario de la historia clínica', async ({
    ------------------------------------------------------------------ */
 
 test('el formulario de laboratorio tiene dos pasos y ningún campo clínico', async ({ page }) => {
-  await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}&tipo=laboratorio`);
+  await entrar(page, 'recepcionista');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}`);
 
   const pasos = await page.locator('[data-ir]').allInnerTexts();
   expect(pasos.map((p) => p.replace(/\s+/g, ' ').trim())).toEqual(['1 Registro', '2 Exámenes']);
@@ -368,23 +372,33 @@ test('la cola pone lo más viejo arriba', async ({ page }) => {
 
 test('la atención general sigue teniendo su formulario completo', async ({ page }) => {
   await entrar(page, 'medico');
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_GENERAL)}&tipo=general`);
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_GENERAL)}`);
 
   expect(await page.locator('[data-ir]').count()).toBeGreaterThan(5);
   await expect(page.locator('#c-idx')).toHaveCount(1);       // el diagnóstico
 });
 
-test('los exámenes pedidos en una consulta quedan colgados de ella', async ({ page }) => {
+test('el médico abre la consulta y no ve el botón de pedir exámenes', async ({ page }) => {
   await entrar(page, 'medico');
-
-  // Una consulta, guardada como borrador.
   await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_PEDIDOS)}&tipo=general`);
   await page.locator('#c-nombre').fill('Pedido Desde Consulta de Prueba');
   await page.getByRole('button', { name: 'Guardar y salir' }).click();
   await expect(page).toHaveURL(FICHA);
-  const consulta = idDeLaFicha(page.url());
+  await expect(page.getByRole('link', { name: 'Pedir exámenes' })).toHaveCount(0);
+});
 
-  // Desde la consulta, "Pedir exámenes".
+test('los exámenes pedidos en una consulta quedan colgados de ella', async ({ page }) => {
+  /* Lo abre recepción desde la consulta del médico: él indica los exámenes
+     escribiéndolos en su historia, y quien registra la orden es recepción.
+     Era la duda que el cliente dejó abierta —«¿se queda aparte o se anexa a
+     la historia médica?»— y se anexa. */
+  await entrar(page, 'recepcionista');
+  const [previa] = await conBase((sql) => sql`
+    SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
+     WHERE p.cedula_busca = ${CEDULA_PEDIDOS.replace(/\D/g, '')} AND a.tipo = 'general'`);
+  const consulta = previa.id as string;
+
+  await page.goto(`/sistema/atencion/${consulta}`);
   await page.getByRole('link', { name: 'Pedir exámenes' }).click();
   await expect(page.locator('input[name="tipo_atencion"]')).toHaveValue('laboratorio');
   await expect(page.locator('input[name="origen"]')).toHaveValue(consulta);
@@ -457,4 +471,114 @@ test('el Excel no existe para una consulta', async ({ page }) => {
      WHERE p.cedula_busca = ${CEDULA_PEDIDOS.replace(/\D/g, '')} AND a.tipo = 'general'`);
   const r = await page.request.get(`/sistema/atencion/${consulta.id}/resultados.xlsx`);
   expect(r.status()).toBe(404);
+});
+
+/* ------------------------------------------------------------------
+   Las plantillas del archivo del cliente.
+   ------------------------------------------------------------------ */
+
+test('se registra una orden para cargarle una plantilla', async ({ page }) => {
+  await entrar(page, 'recepcionista');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_PLANTILLA)}&tipo=laboratorio`);
+  await page.locator('#c-nombre').fill('Plantilla de Prueba Mendoza');
+  await page.locator('#c-edad').fill('50');
+  await page.locator('#c-sexo').selectOption('Masculino');
+  await page.getByRole('button', { name: 'Guardar la orden' }).click();
+  await expect(page).toHaveURL(FICHA);
+});
+
+test('las plantillas entraron, y los rangos que entraron son los de su hoja', async () => {
+  const [n] = await conBase((sql) => sql`
+    SELECT COUNT(DISTINCT examen)::int AS examenes, COUNT(*)::int AS analitos,
+           COUNT(*) FILTER (WHERE referencia <> '')::int AS con_rango
+      FROM plantilla_examen`);
+  expect(n.examenes).toBe(35);
+  expect(n.analitos).toBe(188);
+  /* 92 vienen en blanco a propósito: su hoja no los decía en una columna
+     rotulada y deducirlos ponía el rango de un examen al lado del
+     resultado de otro. Ver 013-plantillas.sql. */
+  expect(n.con_rango).toBe(96);
+
+  /* Cinco que se verificaron a mano contra el archivo. Si una carga futura
+     los mueve, esta prueba lo dice antes de que salga impreso. */
+  const filas = await conBase((sql) => sql`
+    SELECT examen, analito, unidad, referencia FROM plantilla_examen
+     WHERE (examen = 'QUIMICA RUTINA' AND analito IN ('GLICEMIA', 'ACIDO URICO'))
+        OR (examen = 'PERFIL LIPIDICO' AND analito = 'HDL-COLESTEROL')
+        OR (examen = 'TRANS-BIL-PROT' AND analito = 'ALBUMINA')
+        OR (examen = 'ESPECIAL DE GLICEMIA' AND analito = 'HEMOGLOBINA GLICADA (HbA1c)')
+     ORDER BY examen, analito`);
+
+  expect(filas.map((f) => `${f.analito} · ${f.unidad} · ${f.referencia}`)).toEqual([
+    'HEMOGLOBINA GLICADA (HbA1c) · % · 4,0-6,3',
+    'HDL-COLESTEROL · mg/dl · > 40',
+    'ACIDO URICO · mg/dl · HOMBRES: 2,5 - 6,2 / MUJERES: 3,7 - 7,7',
+    'GLICEMIA · mg/dl · 70 - 99',
+    'ALBUMINA · g/dl · 3,5 - 4,8',
+  ]);
+
+  /* Orina y heces NO están, y es a propósito: son formularios de dos
+     mitades y leerlos por columna emparejaba el aspecto macroscópico con el
+     rango de los leucocitos del microscópico. */
+  const fuera = await conBase((sql) => sql`
+    SELECT 1 FROM plantilla_examen WHERE examen IN ('ORINA', 'HECES')`);
+  expect(fuera.length).toBe(0);
+});
+
+test('poner una plantilla llena los renglones, y ponerla dos veces no los duplica', async ({ page }) => {
+  const [orden] = await conBase((sql) => sql`
+    SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
+     WHERE p.cedula_busca = ${CEDULA_PLANTILLA.replace(/\D/g, '')} AND a.tipo = 'laboratorio'`);
+
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${orden.id}/resultados`);
+
+  await page.locator('#res-plantilla').selectOption('PERFIL LIPIDICO');
+  await page.getByRole('button', { name: 'Poner' }).click();
+
+  // Cinco analitos, con su unidad y su rango ya escritos.
+  await expect(page.locator('#res-cuerpo tr')).toHaveCount(5);
+
+  /* Se leen los tres campos de cada fila de una vez. Localizar por el texto
+     no sirve —lo que dice «HDL-COLESTEROL» es el value de un input, no
+     contenido de texto— y por [value=] tampoco: eso mira el ATRIBUTO del
+     HTML y el script escribe la propiedad. */
+  const renglones = () =>
+    page.locator('#res-cuerpo tr').evaluateAll((filas) =>
+      filas.map((f) => {
+        const dame = (n: string) => (f.querySelector(`input[name="${n}"]`) as HTMLInputElement)?.value ?? '';
+        return [dame('examen'), dame('unidad'), dame('referencia')].join(' · ');
+      }),
+    );
+
+  expect(await renglones()).toContain('HDL-COLESTEROL · mg/dl · > 40');
+
+  // Otra vez la misma: no se duplica nada.
+  await page.locator('#res-plantilla').selectOption('PERFIL LIPIDICO');
+  await page.getByRole('button', { name: 'Poner' }).click();
+  await expect(page.locator('#res-cuerpo tr')).toHaveCount(5);
+
+  /* Y una que comparte analitos con la anterior solo agrega los que
+     faltan: química rutina trae colesterol y triglicéridos, que ya están. */
+  await page.locator('#res-plantilla').selectOption('QUIMICA RUTINA');
+  await page.getByRole('button', { name: 'Poner' }).click();
+  const nombres = await page.locator('#res-cuerpo input[name="examen"]').evaluateAll(
+    (is) => is.map((i) => (i as HTMLInputElement).value),
+  );
+  expect(new Set(nombres).size).toBe(nombres.length);
+  expect(nombres).toContain('GLICEMIA');
+
+  // Lo cargado se guarda con su referencia.
+  const filaHdl = page.locator('#res-cuerpo tr').nth(
+    (await renglones()).findIndex((t) => t.startsWith('HDL-COLESTEROL')),
+  );
+  await filaHdl.locator('input[name="valor"]').fill('55');
+  await page.getByRole('button', { name: 'Guardar y seguir después' }).click();
+  await expect(page.locator('.form__aviso--bien')).toBeVisible();
+
+  const [guardada] = await conBase((sql) => sql`
+    SELECT resultados FROM atencion WHERE id = ${orden.id}`);
+  const hdl = (guardada.resultados as { examen: string; valor: string; referencia: string }[])
+    .find((r) => r.examen === 'HDL-COLESTEROL');
+  expect(hdl).toMatchObject({ valor: '55', unidad: 'mg/dl', referencia: '> 40' });
 });

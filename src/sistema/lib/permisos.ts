@@ -9,9 +9,11 @@
  *
  *   · son cuatro roles: «administrador, médico, bioanalista y
  *     recepcionista»;
- *   · el médico NO carga resultados y el bioanalista NO escribe historias:
- *     «el médico va a poder hacer la atención y el bioanalista la del
- *     laboratorio»;
+ *   · el médico NO carga resultados NI registra órdenes, y el bioanalista
+ *     NO escribe historias: «el médico va a poder hacer la atención y el
+ *     bioanalista la del laboratorio». El médico lee lo que volvió y nada
+ *     más; indicar los exámenes lo hace donde siempre, escribiéndolo en su
+ *     historia;
  *   · los cuatro pueden LEER la historia clínica y descargarla, «si es que
  *     lo necesitan». Lo preguntamos y contestó que sí.
  *
@@ -74,11 +76,12 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
     'enviar_documento',
     'cargar_cobro',
     'ver_pacientes',
-    /* Puede pedir exámenes y leer lo que vuelve, pero no tiene la cola del
-       laboratorio en su menú: el que llega solo a hacerse una toma no es un
-       caso suyo y no tiene por qué cruzarle la pantalla. Lo que él pidió lo
-       ve colgado de su propia consulta. */
-    'registrar_laboratorio',
+    /* LEE el laboratorio y no lo toca. El médico indica los exámenes en su
+       historia, como siempre; la orden la registra recepción y los
+       resultados los carga el bioanalista. El cliente lo dijo así: «¿por
+       qué el médico puede pedir o poner laboratorio? Por eso hay un
+       bioanalista». Lo que sí necesita es ver lo que volvió, y eso le
+       aparece colgado de su propia consulta y en la ficha del paciente. */
     'ver_laboratorio',
   ],
 
@@ -184,6 +187,30 @@ const NOMBRES: Record<Rol, string> = {
   bioanalista: 'Bioanalista',
   recepcionista: 'Recepción',
 };
+
+/**
+ * Quién puede borrar un borrador.
+ *
+ * El dueño el suyo, y administración cualquiera. Lo pidió así el cliente:
+ * «el médico empieza una y no la termina, en borradores la puede borrar,
+ * igual que el bioanalista», y «el admin puede borrar borradores».
+ *
+ * Se apoya en 'anular_atencion' para el caso de administración en vez de
+ * inventar un permiso nuevo: es el permiso que ya significa «puede deshacer
+ * atenciones», y deshacer un borrador es la versión barata de eso. Lo
+ * firmado sigue necesitando anularse con motivo escrito.
+ */
+export function puedeBorrarBorrador(
+  usuario: { id: string; rol?: string | null } | null,
+  atencion: { tipo: string; estado: string; medicoId: string },
+): boolean {
+  if (!usuario) return false;
+  if (atencion.estado !== 'borrador') return false;
+  if (puede(usuario.rol, 'anular_atencion')) return true;
+  return atencion.tipo === 'laboratorio'
+    ? puedeEditarOrden(usuario, atencion)
+    : puedeEditarAtencion(usuario, atencion);
+}
 
 /**
  * Una orden de laboratorio abierta la corrige cualquiera de recepción.

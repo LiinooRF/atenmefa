@@ -123,6 +123,37 @@ export async function sincronizarExamenes(
   return { agregados: faltan.length, quitados: sobran.length };
 }
 
+/**
+ * Las plantillas de examen que mandó el cliente.
+ *
+ * Elegir una pone sus renglones con el analito y la unidad ya escritos, que
+ * es la mayor parte del trabajo de cargar un resultado. Lo que NO hace es
+ * cerrar nada: el valor de referencia cae en un campo editable al lado del
+ * valor que se está tecleando, y hay 92 analitos que vienen sin rango
+ * porque su hoja no lo decía en una columna rotulada. Ver
+ * 013-plantillas.sql, que explica por qué no se dedujo.
+ */
+export async function plantillasDeExamen() {
+  const filas = await bd
+    .select({
+      examen: esquema.plantillaExamen.examen,
+      analito: esquema.plantillaExamen.analito,
+      unidad: esquema.plantillaExamen.unidad,
+      referencia: esquema.plantillaExamen.referencia,
+    })
+    .from(esquema.plantillaExamen)
+    .orderBy(asc(esquema.plantillaExamen.examen), asc(esquema.plantillaExamen.orden));
+
+  const porExamen = new Map<string, { analito: string; unidad: string; referencia: string }[]>();
+  for (const f of filas) {
+    const lista = porExamen.get(f.examen) ?? [];
+    lista.push({ analito: f.analito, unidad: f.unidad, referencia: f.referencia });
+    porExamen.set(f.examen, lista);
+  }
+
+  return [...porExamen.entries()].map(([examen, analitos]) => ({ examen, analitos }));
+}
+
 /** Lo que se le pidió, como se lee en el informe. Uno por línea. */
 export const textoDeExamenes = (nombres: readonly string[]) => nombres.join('\n');
 
@@ -228,6 +259,8 @@ export async function colaDelLaboratorio(opciones: { entregadas?: boolean } = {}
       estado: esquema.atencion.estado,
       resultados: esquema.atencion.resultados,
       origenId: esquema.atencion.origenId,
+      /* Para saber quién puede borrar la orden abierta. */
+      medicoId: esquema.atencion.medicoId,
       aseguradora: esquema.atencion.aseguradora,
       paciente: esquema.paciente.nombre,
       cedula: esquema.paciente.cedula,

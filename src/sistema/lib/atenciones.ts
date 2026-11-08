@@ -290,11 +290,32 @@ export async function borradoresAbiertos(limite = 100) {
       creada: esquema.atencion.creada,
       aseguradora: esquema.atencion.aseguradora,
       datos: esquema.atencion.datos,
+      tipo: esquema.atencion.tipo,
+      /* Lo filtra el WHERE, pero la fila igual lo lleva: quien decide si se
+         puede borrar lo mira, y sin la columna venía undefined y el botón
+         no aparecía nunca. */
+      estado: esquema.atencion.estado,
+      /* Para saber quién puede borrar cada uno: el dueño el suyo,
+         administración cualquiera. */
+      medicoId: esquema.atencion.medicoId,
+      medico: esquema.user.name,
+      /* Días sin que nadie lo toque, contados como los cuenta el borrado
+         automático: la última línea de bitácora, o la creación si no tiene
+         ninguna. Así la pantalla avisa con el mismo número con el que se va
+         a borrar, y no con otro parecido. */
+      quieto: sql<number>`GREATEST(0, FLOOR(EXTRACT(EPOCH FROM (
+        now() - GREATEST(
+          ${esquema.atencion.creada},
+          COALESCE((SELECT MAX(b.momento) FROM bitacora b
+                     WHERE b.atencion_id = ${esquema.atencion.id}), ${esquema.atencion.creada})
+        )
+      )) / 86400))::int`,
       paciente: esquema.paciente.nombre,
       cedula: esquema.paciente.cedula,
     })
     .from(esquema.atencion)
     .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+    .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
     .where(and(
       eq(esquema.atencion.estado, 'borrador'),
       eq(esquema.atencion.tipo, 'general'),
@@ -310,7 +331,133 @@ export async function borradoresAbiertos(limite = 100) {
       ...caso,
       idx: campos.idx ?? '',
       motivo: campos.motivo ?? '',
+      quieto: Number(caso.quieto ?? 0),
       faltan: faltantes(campos),
     };
   });
+}
+
+/* ------------------------------------------------------------------
+   Borrar un borrador.
+   ------------------------------------------------------------------
+
+   Es la única cosa que se borra de una atención, y se puede porque un
+   borrador no está firmado: no entró en el cierre del mes, no se imprimió
+   con PIN y no se le entregó a nadie. Lo cerrado se anula con motivo y
+   autor, como siempre.
+
+   Quién: el dueño del borrador —el médico el suyo, recepción o el
+   bioanalista la orden abierta— y administración cualquiera. Lo pidió así
+   el cliente.
+   ------------------------------------------------------------------ */
+
+/** Días que sobrevive un borrador que nadie toca. Lo fijó el cliente. */
+export const DIAS_DE_BORRADOR = 20;
+
+/**
+ * Lo que hay que saber de un borrador antes de borrarlo, para poder dejar
+ * constancia de lo que había.
+ */
+async function resumenDelBorrador(id: string) {
+  const [fila] = await bd
+    .select({
+      id: esquema.atencion.id,
+      numero: esquema.atencion.numero,
+      estado: esquema.atencion.estado,
+      tipo: esquema.atencion.tipo,
+      fecha: esquema.atencion.fecha,
+      medicoId: esquema.atencion.medicoId,
+      paciente: esquema.paciente.nombre,
+      cedula: esquema.paciente.cedula,
+    })
+    .from(esquema.atencion)
+    .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+    .where(eq(esquema.atencion.id, id))
+    .limit(1);
+  return fila ?? null;
+}
+
+/**
+ * Borra un borrador y devuelve lo que borró, para la bitácora.
+ *
+ * El estado va en el WHERE y no solo comprobado antes: entre que la pantalla
+ * mostró el botón y alguien lo apretó, el borrador pudo haberse cerrado, y
+ * una atención firmada no se borra ni por accidente.
+ */
+export async function borrarBorrador(id: string) {
+  if (!esIdentificador(id)) throw new Error('Esa atención ya no está.');
+
+  const antes = await resumenDelBorrador(id);
+  if (!antes) throw new Error('Esa atención ya no está.');
+  if (antes.estado !== 'borrador') {
+    throw new Error('Esta atención ya no es un borrador: se cerró mientras mirabas la pantalla.');
+  }
+
+  const borradas = await bd
+    .delete(esquema.atencion)
+    .where(and(
+      eq(esquema.atencion.id, id),
+      eq(esquema.atencion.estado, 'borrador'),
+    ))
+    .returning({ id: esquema.atencion.id });
+
+  if (borradas.length === 0) {
+    throw new Error('Esta atención ya no es un borrador: se cerró mientras mirabas la pantalla.');
+  }
+
+  return antes;
+}
+
+/**
+ * Borra los borradores que nadie tocó en veinte días.
+ *
+ * Corre cuando alguien abre la lista de borradores. No hay cron y no hace
+ * falta: si nadie entra al sistema en veinte días, tampoco le molesta un
+ * borrador viejo. Que la limpieza dependa de que alguien mire es feo en
+ * teoría y suficiente acá.
+ *
+ * DOS CONDICIONES, Y LAS DOS IMPORTAN
+ *
+ *   · «sin tocar» es la última línea de bitácora, no la fecha de creación.
+ *     Un borrador abierto hace un mes y editado ayer está vivo;
+ *   · se borra solo lo que no tiene NADA adentro: ni renglones de cobro ni
+ *     resultados cargados. Si hay plata o mediciones, se queda y lo borra
+ *     una persona si quiere. Un cobro que desaparece solo es un agujero en
+ *     la caja, y una medición que desaparece sola es peor.
+ */
+export async function limpiarBorradoresViejos(): Promise<number> {
+  const borradas = await bd.execute<{ id: string; numero: number; paciente: string }>(sql`
+    WITH viejos AS (
+      SELECT a.id
+        FROM atencion a
+       WHERE a.estado = 'borrador'
+         AND GREATEST(
+               a.creada,
+               COALESCE((SELECT MAX(b.momento) FROM bitacora b WHERE b.atencion_id = a.id), a.creada)
+             ) < now() - ${`${DIAS_DE_BORRADOR} days`}::interval
+         AND NOT EXISTS (SELECT 1 FROM renglon r WHERE r.atencion_id = a.id)
+         AND jsonb_array_length(COALESCE(a.resultados, '[]'::jsonb)) = 0
+    )
+    DELETE FROM atencion
+     WHERE id IN (SELECT id FROM viejos)
+    RETURNING id, numero, (SELECT p.nombre FROM paciente p WHERE p.id = paciente_id) AS paciente
+  `);
+
+  /* Una línea por borrador que se fue, sin usuario: no lo borró nadie. El
+     número y el paciente quedan en el detalle porque la atención ya no
+     existe y atencion_id queda en null. */
+  for (const b of borradas) {
+    await bd.insert(esquema.bitacora).values({
+      usuarioId: null,
+      accion: 'borro_borrador',
+      detalle: {
+        automatico: true,
+        dias: DIAS_DE_BORRADOR,
+        numero: b.numero,
+        paciente_nombre: b.paciente,
+      },
+    });
+  }
+
+  return borradas.length;
 }

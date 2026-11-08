@@ -34,7 +34,10 @@ const usuario = Astro.locals.usuario;
    escribir un menú distinto por rol. */
 type Icono = 'latido' | 'mas' | 'reloj' | 'laboratorio' | 'escudo' | 'estetoscopio' | 'recibo';
 
-interface Entrada { href: string; texto: string; permiso: Permiso }
+/* Una entrada puede abrirse con cualquiera de varios permisos: los
+   borradores los ve el médico porque los escribe y administración porque
+   los borra, y es la misma pantalla. */
+interface Entrada { href: string; texto: string; permiso: Permiso | Permiso[] }
 interface Bloque { texto: string; icono: Icono; entradas: Entrada[] }
 
 const MENU: Bloque[] = [
@@ -45,7 +48,8 @@ const MENU: Bloque[] = [
     { href: '/sistema/atencion/nueva', texto: 'Nueva atención', permiso: 'escribir_historia' },
   ] },
   { texto: 'Borradores', icono: 'reloj', entradas: [
-    { href: '/sistema/borradores', texto: 'Borradores', permiso: 'escribir_historia' },
+    /* El médico porque los escribe; administración porque los borra. */
+    { href: '/sistema/borradores', texto: 'Borradores', permiso: ['escribir_historia', 'anular_atencion'] },
   ] },
   { texto: 'Laboratorio', icono: 'laboratorio', entradas: [
     { href: '/sistema/laboratorio', texto: 'Laboratorio', permiso: 'cola_laboratorio' },
@@ -79,7 +83,13 @@ const esLaDeAhora = (href: string) =>
   href === '/sistema' ? aqui === href : aqui === href || aqui.startsWith(`${href}/`);
 
 const menu = MENU
-  .map((b) => ({ ...b, entradas: b.entradas.filter((e) => puede(usuario?.rol as string, e.permiso)) }))
+  .map((b) => ({
+    ...b,
+    entradas: b.entradas.filter((e) =>
+      (Array.isArray(e.permiso) ? e.permiso : [e.permiso])
+        .some((p) => puede(usuario?.rol as string, p)),
+    ),
+  }))
   .filter((b) => b.entradas.length > 0)
   .map((b) => ({
     ...b,

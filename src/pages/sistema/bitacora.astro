@@ -35,8 +35,15 @@ if (hastaTxt) filtros.push(lte(esquema.bitacora.momento, new Date(`${hastaTxt}T2
    no cuelgan de ninguna atención: llevan el id del paciente en `detalle`. Sin
    este segundo join la columna "Sobre qué" salía con un guion y el registro
    decía que alguien leyó datos de salud sin decir de quién, que es lo único
-   que justifica anotarlo. El filtro por forma de uuid es necesario: `detalle`
-   es libre y un ->> que no sea uuid revienta el cast. */
+   que justifica anotarlo.
+
+   El cast va dentro de un CASE y no detrás de un AND. `detalle` es libre y
+   el día que una anotación guarde algo que no sea un uuid bajo esa clave,
+   el cast revienta y la bitácora entera deja de abrir: Postgres no promete
+   evaluar los operandos de un AND en orden, así que la comprobación de
+   forma NO protege al cast que está al lado. CASE sí garantiza el orden.
+   Pasó de verdad: una anotación nueva guardó el NOMBRE del paciente ahí y
+   la pantalla empezó a dar 500. */
 const suPaciente = alias(esquema.paciente, 'su_paciente');
 
 const filas = await bd
@@ -59,8 +66,10 @@ const filas = await bd
   .leftJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
   .leftJoin(
     suPaciente,
-    sql`${esquema.bitacora.detalle}->>'paciente' ~ '^[0-9a-f-]{36}$'
-        AND ${suPaciente.id} = (${esquema.bitacora.detalle}->>'paciente')::uuid`,
+    sql`${suPaciente.id} = CASE
+          WHEN ${esquema.bitacora.detalle}->>'paciente' ~ '^[0-9a-f-]{36}$'
+          THEN (${esquema.bitacora.detalle}->>'paciente')::uuid
+        END`,
   )
   .where(filtros.length ? and(...filtros) : undefined)
   .orderBy(desc(esquema.bitacora.momento))
@@ -91,6 +100,13 @@ const COMO_SE_LEE: Record<string, string> = {
   cambio_su_clave: 'Cambió su propia clave',
   vio_paciente: 'Abrió la ficha del paciente',
   cambio_telefono: 'Corrigió un teléfono',
+  cambio_contacto: 'Corrigió datos de contacto',
+  cambio_paciente: 'Corrigió los datos del paciente',
+  creo_paciente: 'Registró un paciente',
+  borro_paciente: 'Borró una ficha sin atenciones',
+  borro_borrador: 'Borró un borrador',
+  envio: 'Le envió el documento al paciente',
+  diagnostico: 'Tocó los diagnósticos frecuentes',
 };
 
 const ACCIONES = Object.keys(COMO_SE_LEE);

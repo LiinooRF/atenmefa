@@ -25,11 +25,12 @@ test.describe.configure({ mode: 'serial' });
 
 const CEDULA = cedulaDePrueba(15, 0);
 const CEDULA_MANO = cedulaDePrueba(15, 1);
+const CEDULA_RAPIDO = cedulaDePrueba(15, 2);
 const NOMBRE = 'Diagnóstico de Prueba Rangel';
 
 const limpiar = () =>
   conBase(async (sql) => {
-    for (const c of [CEDULA, CEDULA_MANO]) {
+    for (const c of [CEDULA, CEDULA_MANO, CEDULA_RAPIDO]) {
       const busca = c.replace(/\D/g, '');
       const suyas = sql`SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
                          WHERE p.cedula_busca = ${busca}`;
@@ -299,4 +300,44 @@ test('lo escrito a mano aparece como candidato a codificar', async ({ page }) =>
   await entrar(page, 'administracion');
   await page.goto('/sistema/diagnosticos');
   await expect(page.locator('.mano')).toContainText('Lo que el médico quiera escribir');
+});
+
+test('los marcados salen como botones, a un toque y sin escribir', async ({ page }) => {
+  /* Es la mitad del pedido —«que aparezcan de primero»— y es lo que hace
+     que esto se use: lo de todos los días se toca una vez. Escondidos
+     dentro del desplegable no servían de nada. */
+  /* I10 quedó marcado en la prueba de reordenar, unas líneas más arriba:
+     este archivo va en serie. Dos sesiones en una misma prueba no se
+     pueden —entrar() cuenta con llegar al formulario de login y con una
+     sesión abierta /sistema/entrar redirige al panel—. */
+  await entrar(page, 'medico');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_RAPIDO)}&tipo=general`);
+
+  /* Al paso del diagnóstico: el formulario va por pasos y arranca en el
+     del paciente, así que los botones existen pero están escondidos. */
+  await llenar(page, { idx: '' });
+
+  const rapido = page.locator('.dx__rapido', { hasText: 'I10' });
+  await expect(rapido).toBeVisible();
+  await expect(rapido).toHaveAttribute('aria-pressed', 'false');
+
+  await rapido.click();
+  await expect(page.locator('#c-idx')).toHaveValue('Hipertensión esencial (primaria)');
+  await expect(page.locator('#c-idx-codigo')).toHaveValue('I10');
+  // El que está puesto se ve puesto.
+  await expect(rapido).toHaveAttribute('aria-pressed', 'true');
+
+  // Y si se escribe encima, el código se va y el botón se apaga.
+  await page.locator('#c-idx').pressSequentially(' algo mío');
+  await expect(page.locator('#c-idx-codigo')).toHaveValue('');
+  await expect(rapido).toHaveAttribute('aria-pressed', 'false');
+});
+
+test('sin ninguno marcado no hay botones, y el campo sigue sirviendo', async ({ page }) => {
+  await conBase((sql) => sql`UPDATE diagnostico SET frecuente = false, orden = NULL WHERE frecuente`);
+  await entrar(page, 'medico');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_RAPIDO)}&tipo=general`);
+  await llenar(page, { idx: 'resfriado' });
+  await expect(page.locator('.dx__rapidos')).toHaveCount(0);
+  await expect(page.locator('#c-idx-lista li').first()).toContainText('J00');
 });

@@ -8,7 +8,9 @@ import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
 import { dinero, frasePagador, montoRenglon, renglonesDe, resumir } from '../../../sistema/lib/cobro';
 import { eq, desc, and, ne } from 'drizzle-orm';
 import { exigir } from '../../../sistema/lib/guardia';
-import { puede, puedeCargarResultados, puedeEditarAtencion, puedeEditarOrden } from '../../../sistema/lib/permisos';
+import {
+  puede, puedeBorrarBorrador, puedeCargarResultados, puedeEditarAtencion, puedeEditarOrden,
+} from '../../../sistema/lib/permisos';
 import { examenesPedidos, ordenesDe } from '../../../sistema/lib/laboratorio';
 import { comoSeLee } from '../../../sistema/lib/documento';
 
@@ -223,6 +225,13 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
       {caso.estado === 'cerrada' && puede(usuario.rol as string, 'anular_atencion') && (
         <a class="sis-boton sis-boton--suave anular" href={`/sistema/atencion/${caso.id}/anular`}>
           Anular
+        </a>
+      )}
+      {/* Un borrador se borra; lo cerrado se anula con motivo. Son dos
+          cosas distintas y nunca aparecen las dos a la vez. */}
+      {puedeBorrarBorrador(usuario, caso) && (
+        <a class="sis-boton sis-boton--suave anular" href={`/sistema/atencion/${caso.id}/borrar`}>
+          Borrar
         </a>
       )}
       <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}/documento`} target="_blank">

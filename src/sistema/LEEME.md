@@ -30,8 +30,24 @@ Son dos mitades y dos personas, como él lo describió: «el recepcionista va a
 colocar el nombre del paciente, los exámenes que se va a hacer… y el propio
 licenciado va a colocar, de esos exámenes, los resultados».
 
+- **El médico no pone ni pide laboratorio.** Lo preguntó el cliente —«¿por
+  qué el médico puede pedir o poner laboratorio? Por eso hay un
+  bioanalista»— y es la línea que separa los oficios: él indica los
+  exámenes escribiéndolos en su historia, recepción registra la orden y el
+  bioanalista carga los resultados. El médico LEE lo que volvió.
+- Por eso tampoco hay un paso que pregunte «¿atención general o
+  laboratorio?»: lo decide el rol, y preguntar algo con una sola respuesta
+  posible era un toque de más entre la cédula y el formulario.
 - La orden se registra en dos pasos y no nueve: no hay examen físico ni
   diagnóstico que escribir.
+- **Las plantillas de examen salen del archivo del cliente**
+  (`LABORATORIO CA.xls`): 35 exámenes y 188 analitos con su unidad. El
+  bioanalista elige el examen y le aparecen los renglones. 92 de los 188
+  vienen SIN valor de referencia a propósito: solo se cargó el rango cuando
+  la cabecera de su propia hoja señalaba la columna. Deducirlo ponía el
+  rango de un examen al lado del resultado de otro —la ferritina salía con
+  el de la testosterona femenina—. Ver `base/013-plantillas.sql`, que
+  explica también tres defectos del propio archivo que él debería arreglar.
 - **Marcar un examen ES cargarlo a la cuenta.** No hay una lista de lo que se
   le hace y otra de lo que se le cobra; el total se dice en dólares y en
   bolívares, con la tasa del BCV y su fecha.
@@ -88,6 +104,22 @@ años:
   documento para confirmar. Es lo único que se borra de verdad en todo el
   sistema, y se puede porque una ficha sin atenciones no tiene un solo dato
   clínico adentro: es un error de tipeo con nombre.
+
+## Borrar un borrador
+
+Es lo único que se borra de una atención, y se puede porque un borrador no
+está firmado: no entró en el cierre del mes, no se imprimió con PIN y no se
+le entregó a nadie. Lo cerrado se anula con motivo, como siempre.
+
+- lo borra **quien lo abrió** —el médico el suyo, recepción o el bioanalista
+  la orden— y **administración cualquiera**;
+- el que nadie toca en **20 días se borra solo**, y «sin tocar» es la última
+  línea de bitácora, no la fecha de creación;
+- el automático NO toca lo que tenga renglones de cobro o resultados
+  cargados. Un cobro que desaparece solo es un agujero en la caja. Eso se
+  queda hasta que una persona decida;
+- la limpieza corre cuando alguien abre `/sistema/borradores`. No hay cron:
+  si nadie entra en veinte días, tampoco le molesta un borrador viejo.
 
 ## Decisiones que ya están tomadas
 
