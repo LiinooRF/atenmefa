@@ -110,9 +110,18 @@ const TODAS: Record<string, Marca> = {
 
 export const marca: Marca = TODAS[entorno('MARCA') ?? 'atenmefa'] ?? ATENMEFA;
 
-/** Las variables de color de esta marca, para pegar en un <style>. */
+/**
+ * Las variables de color de esta marca, para pegar en un <style>.
+ *
+ * El selector es `html:root` y no `:root` a propósito: Astro decide por su
+ * cuenta si la hoja global va enlazada o incrustada, y cuando la incrusta
+ * queda DESPUÉS de este bloque. Con la misma especificidad gana la última,
+ * así que los colores de la marca se perdían y la demostración salía con
+ * los del otro centro. Un selector más específico gana sin depender del
+ * orden.
+ */
 export const variablesDeLaMarca = (p = marca.paleta) =>
-  [
+  'html:root{' + [
     `--azul-profundo:${p.profundo}`,
     `--azul:${p.base}`,
     `--azul-medio:${p.medio}`,
@@ -121,4 +130,4 @@ export const variablesDeLaMarca = (p = marca.paleta) =>
     `--rojo-hondo:${p.acentoHondo}`,
     `--flota:0 10px 24px -10px rgb(${p.sombra} / 0.45), 0 2px 6px -2px rgb(${p.sombra} / 0.2)`,
     `--flota-alta:0 22px 48px -18px rgb(${p.sombra} / 0.55), 0 4px 10px -4px rgb(${p.sombra} / 0.22)`,
-  ].join(';');
+  ].join(';') + '}';

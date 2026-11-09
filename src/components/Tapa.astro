@@ -17,7 +17,7 @@ import { marca, variablesDeLaMarca } from '../data/marca';
     <meta name="robots" content="noindex, nofollow" />
     <title>{marca.nombre}</title>
     <link rel="icon" href={marca.logo} />
-    <style set:html={`:root{${variablesDeLaMarca()}}`}></style>
+    <style set:html={variablesDeLaMarca()}></style>
   </head>
   <body>
     <main class="tapa">

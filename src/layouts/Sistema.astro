@@ -114,7 +114,7 @@ const menu = MENU
     <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#0b0f45" />
     <link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" />
-    {marca.id !== 'atenmefa' && <style set:html={`:root{${variablesDeLaMarca()}}`} />}
+    {marca.id !== 'atenmefa' && <style set:html={variablesDeLaMarca()} />}
   </head>
 
   <body class:list={['sis', desnuda && 'sis--desnuda']}>

@@ -290,7 +290,7 @@ const jsonLd = JSON.stringify({ '@context': 'https://schema.org', '@graph': graf
     {/* Los colores de la marca activa. Van acá y no en global.css para
         que el mismo build sirva para el centro real y para la demo: lo
         único que cambia es la variable MARCA del entorno. */}
-    {marca.id !== 'atenmefa' && <style set:html={`:root{${variablesDeLaMarca()}}`} />}
+    {marca.id !== 'atenmefa' && <style set:html={variablesDeLaMarca()} />}
   </head>
 
   <body>
