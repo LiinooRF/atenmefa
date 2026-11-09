@@ -39,7 +39,10 @@ const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
   </div>
 
   <div class="contenedor pie__legal">
-    <p>© {anio} Atenmefa. Todos los derechos reservados.</p>
+    {/* La razón social y el RIF, como van en la papelería del centro.
+        En un sitio de salud es lo que separa un negocio real de una página
+        cualquiera, y es lo primero que mira quien va a facturar. */}
+    <p>© {anio} {clinica.razonSocial} · RIF {clinica.rif}</p>
     <p>La información de este sitio es orientativa y no sustituye una consulta médica.</p>
   </div>
 </footer>

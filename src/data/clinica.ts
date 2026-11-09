@@ -15,9 +15,24 @@ export type Pendiente<T> = T | null;
 
 export const clinica = {
   nombre: 'Atenmefa',
+  /** La razón social, como va en la papelería y en el informe de laboratorio. */
+  razonSocial: 'ATENMEFA JT, C.A.',
+  rif: 'J-50864866-8',
   nombreLargo: 'Atenmefa — Atención Médica Familiar',
   descripcionCorta:
-    'Centro de atención médica familiar, servicios a domicilio y traslados en ambulancia en Ciudad Bolívar.',
+    'Centro médico con laboratorio clínico propio, consultas especializadas, ecosonografías, atención a domicilio y traslados en ambulancia en Ciudad Bolívar.',
+  /**
+   * Cómo se presenta el centro, en sus palabras. Es la frase que una
+   * búsqueda con IA puede citar, y dice dos cosas comprobables: que el
+   * laboratorio está adentro y que los bioanalistas son egresados de la
+   * Universidad de Oriente.
+   */
+  quienesSomos:
+    'Atenmefa es un centro médico de Ciudad Bolívar integrado por médicos ' +
+    'especialistas y licenciados en Bioanálisis egresados de la Universidad ' +
+    'de Oriente. Reúne en un mismo lugar consultas especializadas, ' +
+    'laboratorio clínico propio, ecosonografías, atención a domicilio y ' +
+    'traslados en ambulancia.',
   /** Del folleto: «Servicios de salud a domicilio». No estaba en el sitio. */
   aDomicilio: true,
 
@@ -69,6 +84,11 @@ export const clinica = {
   /**
    * PENDIENTE: horarios reales, por día.
    * Formato schema.org: ['Mo-Fr 08:00-17:00', 'Sa 08:00-12:00']
+   *
+   * El cliente mandó una tabla de horarios y pidió expresamente que no
+   * fuera al sitio todavía. Un horario publicado que no se cumple es de lo
+   * que más castiga la ficha local, así que se queda en null: mientras
+   * siga así, ninguna sección de horarios se muestra.
    */
   horarios: null as Pendiente<string[]>,
   horariosTexto: null as Pendiente<string>,
@@ -82,6 +102,86 @@ export const clinica = {
   /** Redes y perfiles que confirman la identidad del negocio (sameAs en schema). */
   perfiles: ['https://instagram.com/atenmefa'],
 } as const;
+
+/**
+ * Cómo se define el centro, en sus propias palabras.
+ *
+ * Son suyas y por eso van textuales: una misión reescrita por nosotros
+ * suena a plantilla y es exactamente lo que un lector —y un buscador con
+ * IA— descarta. Lo único que se tocó fue la puntuación.
+ */
+export const proposito = [
+  {
+    titulo: 'Misión',
+    texto:
+      'Hacer accesibles los servicios que ofrecemos y atender en forma adecuada ' +
+      'y eficiente las necesidades de la comunidad, para obtener un mejor nivel ' +
+      'de calidad de vida en el cuidado de su salud.',
+  },
+  {
+    titulo: 'Visión',
+    texto:
+      'Ser una empresa innovadora y reconocida por satisfacer las necesidades de ' +
+      'servicios prehospitalarios, ambulatorios, domiciliarios y de traslado, a la ' +
+      'colectividad y a las empresas, trabajando la prevención de las enfermedades.',
+  },
+  {
+    titulo: 'Nuestro compromiso',
+    texto:
+      'Satisfacer las necesidades de nuestros usuarios con la atención y la ' +
+      'experiencia de nuestros especialistas y la mejora continua de todos ' +
+      'nuestros servicios, en lo que llamamos Salud Familiar.',
+  },
+] as const;
+
+/**
+ * Las especialidades que atiende el centro. Son catorce y están en su
+ * folleto, una por una.
+ *
+ * Importan más de lo que parece: nadie busca «centro médico», busca
+ * «oftalmólogo pediátrico en Ciudad Bolívar». Cada renglón de esta lista es
+ * una búsqueda que hoy no llega al sitio porque el sitio no la nombra.
+ */
+export const especialidades = [
+  'Oftalmología de adultos y pediátrica',
+  'Cirugía infantil y del adolescente',
+  'Ginecología y obstetricia',
+  'Medicina deportiva de alto rendimiento',
+  'Medicina general',
+  'Medicina familiar',
+  'Medicina interna',
+  'Odontología',
+  'Traumatología',
+  'Salud pública',
+  'Cardiología',
+  'Psiquiatría',
+  'Pediatría',
+  'Geriatría',
+] as const;
+
+/**
+ * Las áreas del laboratorio, como las nombra el propio centro. No son los
+ * exámenes sueltos —esos son ciento cuarenta y uno y están en el sistema—,
+ * son las áreas en las que se agrupan.
+ */
+export const areasDeLaboratorio = [
+  'Hematología',
+  'Bioquímica',
+  'Uroanálisis y coproanálisis',
+  'Bacteriología',
+  'Serología',
+  'Inmunología (toxoplasma IgG – IgM)',
+  'Antígeno prostático',
+  'Dosificación de hormonas',
+  'Citologías y biopsias',
+  'Perfil COVID-19 e hisopado',
+] as const;
+
+/** Los estudios de ecosonografía que hace el centro, de su folleto. */
+export const ecosonografias = [
+  'Abdominal', 'Pélvico', 'Transvaginal', 'Mamario', 'Renal', 'Vesicular',
+  'Prostático', 'Testicular', 'Tiroides', 'Partes blandas', 'Colon',
+] as const;
 
 /**
  * El equipo. Esto es lo que decide si Google y Gemini citan al sitio:
@@ -172,16 +272,24 @@ export const servicios: readonly Servicio[] = [
     slug: 'laboratorio-clinico',
     nombre: 'Laboratorio clínico',
     titulo: 'Laboratorio clínico en Ciudad Bolívar',
-    resumen: 'Hematología, química sanguínea, orina, heces y perfiles de rutina.',
+    resumen:
+      'Laboratorio propio dentro del centro: hematología, bioquímica, uroanálisis, ' +
+      'bacteriología, serología, inmunología y hormonas. También a domicilio.',
     entrada:
-      'Atenmefa procesa exámenes de laboratorio en su local del C.C. Santa Catalina, en La Sabanita, Ciudad Bolívar. Incluye hematología completa, química sanguínea, orina y heces.',
+      'El laboratorio clínico de Atenmefa funciona dentro del propio centro, en el C.C. ' +
+      'Santa Catalina de Ciudad Bolívar, atendido por licenciados en Bioanálisis egresados ' +
+      'de la Universidad de Oriente. Cubre hematología, bioquímica, uroanálisis y ' +
+      'coproanálisis, bacteriología, serología, inmunología, hormonas y citologías, y hace ' +
+      'toma de muestra a domicilio.',
     cobertura: 'Ciudad Bolívar',
     destacado: true,
     incluye: [
-      'Hematología completa',
-      'Química sanguínea: glicemia, urea, creatinina, perfil lipídico',
-      'Examen de orina',
-      'Examen de heces',
+      'Hematología y bioquímica (glicemia, urea, creatinina, perfil lipídico)',
+      'Uroanálisis, coproanálisis y bacteriología',
+      'Serología, inmunología y dosificación de hormonas',
+      'Antígeno prostático, citologías y biopsias',
+      'Perfil COVID-19 e hisopado',
+      'Toma de muestra a domicilio',
     ],
     precioDesde: null,
     duracion: null,
@@ -299,6 +407,117 @@ export const servicios: readonly Servicio[] = [
     preguntas: [
       { slug: 'atienden-heridas-el-mismo-dia', pregunta: '¿Atienden heridas el mismo día?', respuesta: null },
       { slug: 'incluye-el-retiro-de-los', pregunta: '¿Incluye el retiro de los puntos?', respuesta: null },
+    ],
+  },
+  {
+    slug: 'ecosonografias',
+    nombre: 'Ecosonografías',
+    titulo: 'Ecosonografías en Ciudad Bolívar',
+    resumen:
+      'Abdominal, pélvico, transvaginal, mamario, renal, prostático, tiroides y partes blandas.',
+    entrada:
+      'Atenmefa hace ecosonografías en su local del C.C. Santa Catalina, en Ciudad Bolívar: ' +
+      'abdominal, pélvico, transvaginal, mamario, renal, vesicular, prostático, testicular, ' +
+      'tiroides, partes blandas y colon.',
+    cobertura: 'Ciudad Bolívar',
+    destacado: true,
+    incluye: [
+      'Abdominal, pélvico y transvaginal',
+      'Mamario, tiroides y partes blandas',
+      'Renal, vesicular y prostático',
+      'Testicular y colon',
+    ],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { slug: 'orden-medica-eco', pregunta: '¿Necesito orden médica para una ecosonografía?', respuesta: null },
+      { slug: 'preparacion-eco-abdominal', pregunta: '¿Cómo hay que prepararse para una eco abdominal?', respuesta: null },
+      { slug: 'informe-eco-mismo-dia', pregunta: '¿Entregan el informe el mismo día?', respuesta: null },
+    ],
+  },
+  {
+    slug: 'atencion-a-domicilio',
+    nombre: 'Atención a domicilio',
+    titulo: 'Consulta médica y laboratorio a domicilio en Ciudad Bolívar',
+    resumen:
+      'Consulta médica, toma de muestras de laboratorio y enfermería en la casa del paciente.',
+    entrada:
+      'Atenmefa atiende a domicilio en Ciudad Bolívar: consulta médica, toma de muestras para ' +
+      'el laboratorio, enfermería y suministro de tratamiento en el hogar. Se coordina por ' +
+      'teléfono o WhatsApp al 0414-893.91.76.',
+    cobertura: 'Ciudad Bolívar',
+    destacado: true,
+    incluye: [
+      'Consulta médica en la casa del paciente',
+      'Toma de muestra para exámenes de laboratorio',
+      'Servicios de enfermería y suministro de tratamiento',
+      'Alquiler de kit de oxígeno',
+    ],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { slug: 'hasta-donde-van-a-domicilio', pregunta: '¿Hasta qué zonas de Ciudad Bolívar van a domicilio?', respuesta: null },
+      { slug: 'laboratorio-en-casa', pregunta: '¿Pueden sacar la muestra de sangre en la casa?', respuesta: null },
+      { slug: 'cuanto-cuesta-domicilio', pregunta: '¿Cuánto cuesta la consulta a domicilio?', respuesta: null },
+    ],
+  },
+  {
+    slug: 'examenes-ocupacionales',
+    nombre: 'Exámenes ocupacionales',
+    titulo: 'Exámenes médicos de ingreso, egreso y periódicos para empresas',
+    resumen:
+      'Evaluación pre-empleo, post-empleo y vacacional, con laboratorio e informe de aptitud.',
+    entrada:
+      'Atenmefa hace exámenes médicos de ingreso, egreso y periódicos para trabajadores, con ' +
+      'laboratorio clínico incluido y elaboración del informe de aptitud. Se atiende en ' +
+      'Ciudad Bolívar y en Puerto Ordaz.',
+    cobertura: 'Ciudad Bolívar y Puerto Ordaz',
+    destacado: false,
+    incluye: [
+      'Evaluación pre-empleo, post-empleo y vacacional',
+      'Exámenes de laboratorio clínico',
+      'Elaboración del informe de aptitud',
+      'Atención primaria a los empleados de la empresa',
+    ],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { slug: 'cuantos-trabajadores-por-dia', pregunta: '¿Cuántos trabajadores pueden evaluar por día?', respuesta: null },
+      { slug: 'van-a-la-empresa', pregunta: '¿Van hasta la empresa o el trabajador va al centro?', respuesta: null },
+      { slug: 'informe-de-aptitud', pregunta: '¿El informe de aptitud lo firma un médico ocupacional?', respuesta: null },
+    ],
+  },
+  {
+    slug: 'medicina-deportiva',
+    nombre: 'Medicina deportiva',
+    titulo: 'Medicina deportiva y cobertura de eventos en Ciudad Bolívar',
+    resumen:
+      'Lesiones deportivas, revisión médica de deportistas y cobertura de eventos y gimnasios.',
+    entrada:
+      'Atenmefa atiende medicina deportiva de alto rendimiento en Ciudad Bolívar: tratamiento ' +
+      'de lesiones, revisión médica de deportistas, control de salud en gimnasios y cobertura ' +
+      'médica de eventos deportivos y recreativos.',
+    cobertura: 'Ciudad Bolívar',
+    destacado: false,
+    incluye: [
+      'Tratamiento de lesiones deportivas',
+      'Revisión médica de deportistas y control en gimnasios',
+      'Cobertura de eventos deportivos y recreativos',
+      'Masajes terapéuticos de rehabilitación y terapia para el dolor',
+    ],
+    precioDesde: null,
+    duracion: null,
+    preparacion: null,
+    entrega: null,
+    preguntas: [
+      { slug: 'cobertura-de-un-evento', pregunta: '¿Cómo se contrata la cobertura médica de un evento?', respuesta: null },
+      { slug: 'ambulancia-en-el-evento', pregunta: '¿La cobertura incluye ambulancia en el sitio?', respuesta: null },
     ],
   },
   {

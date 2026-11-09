@@ -1,0 +1,65 @@
+---
+/**
+ * Quiénes son, en sus palabras.
+ *
+ * La misión y la visión suelen ser relleno. Acá no: son las del centro,
+ * textuales, y dicen dos cosas comprobables que ningún competidor local
+ * pone por escrito —que el laboratorio está adentro y que los bioanalistas
+ * son egresados de la Universidad de Oriente—. Eso es lo que un buscador
+ * con IA puede citar, y lo que un paciente usa para decidir.
+ */
+import { clinica, proposito } from '../data/clinica';
+---
+
+<section class="seccion" id="nosotros">
+  <div class="contenedor">
+    <div class="titulo-seccion">
+      <h2>Salud familiar, en un solo lugar</h2>
+      <p class="guia">{clinica.quienesSomos}</p>
+    </div>
+
+    <ul class="prop">
+      {proposito.map((p) => (
+        <li>
+          <h3>{p.titulo}</h3>
+          <p>{p.texto}</p>
+        </li>
+      ))}
+    </ul>
+  </div>
+</section>
+
+<style>
+  .prop {
+    list-style: none;
+    margin: clamp(26px, 4vw, 38px) 0 0;
+    padding: 0;
+    display: grid;
+    gap: 16px;
+  }
+  /* Tres columnas solo cuando hay sitio: a 760 px los párrafos quedaban
+     en columnas de cinco palabras. */
+  @media (min-width: 860px) {
+    .prop { grid-template-columns: repeat(3, 1fr); gap: 22px; }
+  }
+
+  .prop li {
+    padding: clamp(18px, 2.4vw, 24px);
+    border: 1px solid var(--linea);
+    border-radius: 14px;
+    background: var(--papel);
+  }
+  .prop h3 {
+    margin: 0 0 8px;
+    font-family: var(--titulares);
+    font-size: var(--u-base);
+    font-weight: 700;
+    color: var(--azul);
+  }
+  .prop p {
+    margin: 0;
+    font-size: var(--u-sm);
+    line-height: 1.65;
+    color: var(--tinta-suave);
+  }
+</style>

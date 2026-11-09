@@ -72,6 +72,10 @@ const fichaClinica: Record<string, unknown> = {
   '@id': idClinica,
   name: clinica.nombre,
   alternateName: clinica.nombreLargo,
+  /* La razón social y el RIF: es lo que hace que Google empareje la ficha
+     con un negocio registrado y no con una página suelta. */
+  legalName: clinica.razonSocial,
+  taxID: clinica.rif,
   description: clinica.descripcionCorta,
   url: base,
   logo: new URL('logo.png', base).href,
@@ -84,15 +88,23 @@ const fichaClinica: Record<string, unknown> = {
     { '@type': 'State', name: 'Bolívar' },
     { '@type': 'Country', name: 'Venezuela' },
   ],
-  medicalSpecialty: ['Emergency', 'PrimaryCare', 'Pathology'],
-  paymentAccepted: clinica.pagos.join(', '),
-  currenciesAccepted: 'VES, USD',
-  sameAs: [...clinica.perfiles],
+  /* Las especialidades en el vocabulario de schema.org, no las de su
+     folleto: acá los valores son una lista cerrada y un nombre inventado
+     invalida la ficha entera. Las catorce en castellano van en la página,
+     que es donde las lee una persona. */
+  medicalSpecialty: [
+    'Emergency', 'PrimaryCare', 'Pathology', 'Pediatric', 'Obstetric',
+    'Cardiovascular', 'Psychiatric', 'Geriatric', 'Dentistry',
+    'Musculoskeletal', 'PublicHealth', 'Surgical', 'InternalMedicine',
+  ],
   availableService: servicios.map((s) => ({
     '@type': 'MedicalProcedure',
     name: s.nombre,
     description: s.resumen,
   })),
+  paymentAccepted: clinica.pagos.join(', '),
+  currenciesAccepted: 'VES, USD',
+  sameAs: [...clinica.perfiles],
   employee: equipo.map((m) => ({ '@id': `${base}/#${m.nombre.replace(/\W+/g, '-').toLowerCase()}` })),
 };
 
