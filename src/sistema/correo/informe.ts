@@ -147,7 +147,9 @@ export function htmlDelInforme(d: DatosDelInforme): string {
               <tr>
                 <td style="font-family:Arial,Helvetica,sans-serif">
                   <strong style="font-size:19px;color:${AZUL}">${escapar(d.centro.nombre)}</strong><br />
-                  <span style="font-size:12px;color:${GRIS}">${escapar(d.centro.razon)} · RIF ${escapar(d.centro.rif)}</span><br />
+                  ${d.centro.rif || d.centro.razon
+                    ? `<span style="font-size:12px;color:${GRIS}">${escapar(d.centro.razon)}${d.centro.razon && d.centro.rif ? ' · ' : ''}${d.centro.rif ? `RIF ${escapar(d.centro.rif)}` : ''}</span><br />`
+                    : ''}
                   <span style="font-size:12px;color:${GRIS}">${escapar(d.centro.direccion)}</span><br />
                   <span style="font-size:12px;color:${GRIS}">${escapar(d.centro.telefono)}</span>
                 </td>
@@ -209,7 +211,9 @@ export function textoDelInforme(d: DatosDelInforme): string {
   const esLab = d.tipo === 'laboratorio';
   const lineas: string[] = [
     d.centro.nombre,
-    `${d.centro.razon} · RIF ${d.centro.rif}`,
+    ...(d.centro.razon || d.centro.rif
+      ? [`${d.centro.razon}${d.centro.razon && d.centro.rif ? ' · ' : ''}${d.centro.rif ? `RIF ${d.centro.rif}` : ''}`]
+      : []),
     esLab ? `Informe de laboratorio N° ${d.numero}` : `Informe de atención N° ${d.numero}`,
     fechaLarga(d.fecha),
     '',

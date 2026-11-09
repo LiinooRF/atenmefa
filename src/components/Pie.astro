@@ -43,7 +43,12 @@ const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
     {/* La razón social y el RIF, como van en la papelería del centro.
         En un sitio de salud es lo que separa un negocio real de una página
         cualquiera, y es lo primero que mira quien va a facturar. */}
-    <p>© {anio} {clinica.razonSocial} · RIF {clinica.rif}</p>
+    {/* Sin razón social ni RIF —la demostración no los tiene— el renglón
+        se queda con el nombre a secas en vez de mostrar «· RIF» vacío. */}
+    <p>
+      © {anio} {clinica.razonSocial || clinica.nombre}
+      {clinica.rif && ` · RIF ${clinica.rif}`}
+    </p>
     <p>La información de este sitio es orientativa y no sustituye una consulta médica.</p>
   </div>
 </footer>
