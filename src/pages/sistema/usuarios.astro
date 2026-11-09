@@ -10,7 +10,7 @@ import Icono from '../../components/Icono.astro';
 import { exigir } from '../../sistema/lib/guardia';
 import {
   listarUsuarios, crearUsuario, correoTomado, cambiarEstado, cambiarRol,
-  cambiarClave, claveFloja, ROLES, usuarioPorId, corregirUsuario,
+  cambiarClave, claveFloja, ROLES, usuarioPorId, corregirUsuario, quitarDosFactores,
 } from '../../sistema/lib/usuarios';
 import { anotar } from '../../sistema/lib/atenciones';
 import { nombreDelRol, type Rol } from '../../sistema/lib/permisos';
@@ -44,6 +44,17 @@ if (Astro.request.method === 'POST') {
       const id = await crearUsuario({ nombre, correo, clave, rol, colegiatura });
       await anotar(yo.id, 'creo_usuario', undefined, { usuario: id, correo, rol });
       aviso = `Cuenta creada para ${nombre}. Pásele la clave por un medio seguro y pídale que la cambie al entrar.`;
+    }
+  }
+
+  if (accion === 'quitar-2fa') {
+    const id = String(form.get('id') ?? '');
+    const quien = await usuarioPorId(id);
+    if (!quien) error = 'Esa cuenta ya no existe.';
+    else {
+      await quitarDosFactores(id);
+      await anotar(yo.id, 'dos_factores', undefined, { usuario: id, accion: 'quitado_por_admin' });
+      aviso = `${quien.name} vuelve a entrar solo con su clave. Avísele para que lo active de nuevo.`;
     }
   }
 
@@ -127,7 +138,10 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
             <div class="gente__quien">
               <strong>{u.nombre}{u.id === yo.id ? ' · usted' : ''}</strong>
               <small>{u.correo}</small>
-              <small>{nombreDelRol(u.rol)}{u.colegiatura ? ` · ${u.colegiatura}` : ''}</small>
+              <small>
+                {nombreDelRol(u.rol)}{u.colegiatura ? ` · ${u.colegiatura}` : ''}
+                {u.dosFactores && <span class="conclave"> · con código</span>}
+              </small>
             </div>
 
             <div class="gente__acciones">
@@ -154,6 +168,19 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
             {/* Corregir el nombre y las matrículas. Faltaba, y se notaba:
                 la colegiatura solo se podía poner al crear la cuenta, y es
                 lo que sale impreso debajo de la firma en cada informe. */}
+            {/* Quitarle el segundo factor: es la única salida cuando
+                alguien perdió el teléfono y no guardó los códigos de
+                respaldo. Queda en bitácora. */}
+            {u.dosFactores && (
+              <form method="post" class="enlinea">
+                <input type="hidden" name="accion" value="quitar-2fa" />
+                <input type="hidden" name="id" value={u.id} />
+                <button type="submit" class="sis-boton sis-boton--suave">
+                  Perdió el teléfono: quitarle el código
+                </button>
+              </form>
+            )}
+
             <details class="gente__clave">
               <summary>Corregir sus datos</summary>
               <form method="post" class="datos">
@@ -237,6 +264,8 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
 </Sistema>
 
 <style>
+  .conclave { color: #15663f; font-weight: 600; }
+
   .datos { display: grid; gap: 9px; margin-top: 10px; }
   .datos label { display: grid; gap: 3px; }
   .datos span { font-size: var(--u-xs); color: var(--tinta-tenue); font-weight: 600; }

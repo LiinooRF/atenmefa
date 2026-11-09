@@ -7,10 +7,12 @@
  */
 import { betterAuth } from 'better-auth';
 import { drizzleAdapter } from 'better-auth/adapters/drizzle';
+import { twoFactor } from 'better-auth/plugins';
 import { lt } from 'drizzle-orm';
 import { bd } from './base';
 import * as esquema from '../base/auth-esquema';
 import { entorno, exigido } from './entorno';
+import { marca } from '../../data/marca';
 
 const secreto = exigido('AUTH_SECRETO', 'una cadena larga y aleatoria');
 
@@ -33,6 +35,29 @@ export const auth = betterAuth({
     expiresIn: 60 * 60 * 24 * 7,
     updateAge: 60 * 60 * 24,
   },
+
+  plugins: [
+    /**
+     * Segundo factor con aplicación (TOTP) y códigos de respaldo.
+     *
+     * Nace apagado para todos y lo prende cada uno desde Mi cuenta. Esto
+     * guarda historias clínicas: una clave repartida por WhatsApp al dar
+     * de alta es, en la práctica, la única puerta.
+     *
+     * El emisor es el nombre de la marca activa, que es lo que la persona
+     * va a ver en su aplicación. Con «Atenmefa» y «VivA Salud» corriendo
+     * el mismo código, poner un nombre fijo haría que las dos entradas se
+     * llamaran igual en el teléfono de quien tenga las dos.
+     */
+    twoFactor({
+      issuer: marca.nombre,
+      /* Diez códigos de respaldo. Sin ellos, el día que alguien cambie de
+         teléfono se queda afuera de su propio sistema y la única salida es
+         que otro administrador se lo desactive; si el que perdió el
+         teléfono ES el administrador, no hay salida. */
+      backupCodeOptions: { amount: 10, length: 10 },
+    }),
+  ],
 
   advanced: {
     /* Better Auth guarda la IP de cada sesión por omisión. En local la

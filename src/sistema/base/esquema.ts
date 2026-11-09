@@ -11,7 +11,7 @@ import {
 import { user } from './auth-esquema';
 import type { Resultado } from '../laboratorio';
 
-export { user, session, account, verification } from './auth-esquema';
+export { user, session, account, verification, twoFactor } from './auth-esquema';
 export const estadoAtencion = pgEnum('estado_atencion', ['borrador', 'cerrada', 'anulada']);
 export const pagaQuien = pgEnum('paga_quien', ['paciente', 'aseguradora', 'empresa']);
 export const tipoDocumento = pgEnum('tipo_documento', ['cedula', 'pasaporte', 'partida', 'interno']);

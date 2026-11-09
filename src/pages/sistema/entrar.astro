@@ -30,6 +30,18 @@ if (Astro.request.method === 'POST') {
         // Better Auth devuelve la cookie de sesión en la respuesta;
         // hay que pasarla a la redirección o el login no persiste.
         const cookies = r.headers.getSetCookie?.() ?? [];
+
+        /* Con segundo factor, acá TODAVÍA no hay sesión: Better Auth
+           contesta 200 con `twoFactorRedirect` y una galleta firmada que
+           dice de quién es el intento. Sin este desvío, la redirección
+           mandaba al panel, el panel no veía sesión y devolvía al login,
+           en círculo y sin decir por qué. */
+        const cuerpo = await r.clone().json().catch(() => ({}) as Record<string, unknown>);
+        if ((cuerpo as { twoFactorRedirect?: boolean }).twoFactorRedirect) {
+          const alCodigo = Astro.redirect('/sistema/codigo');
+          for (const c of cookies) alCodigo.headers.append('set-cookie', c);
+          return alCodigo;
+        }
         /* Cada rol a su pantalla: el bioanalista y recepción al
            laboratorio, que es donde trabajan.
            

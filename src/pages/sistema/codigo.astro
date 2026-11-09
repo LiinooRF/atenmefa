@@ -1,0 +1,180 @@
+---
+/**
+ * El segundo paso de entrar: el código de la aplicación.
+ *
+ * Quien llega acá ya puso su clave bien. Todavía no tiene sesión: lo único
+ * que trae es una galleta firmada que dice de quién es el intento, y que
+ * Better Auth puso al contestar el login. Por eso esta pantalla está
+ * exceptuada del guardia del panel —si pidiera sesión, mandaría al login y
+ * de ahí otra vez acá, en círculo.
+ *
+ * Acepta las dos cosas en el mismo campo: el código de seis cifras de la
+ * aplicación y uno de los de respaldo. Obligar a elegir entre dos campos a
+ * alguien que acaba de perder el teléfono es poner un trámite donde ya hay
+ * un problema.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { auth } from '../../sistema/lib/auth';
+import { marca } from '../../data/marca';
+import { bd, esquema } from '../../sistema/lib/base';
+import { eq } from 'drizzle-orm';
+import { dondeEmpieza } from '../../sistema/lib/permisos';
+
+export const prerender = false;
+
+let error = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const escrito = String(form.get('codigo') ?? '').replace(/\s|-/g, '');
+
+  if (!escrito) {
+    error = 'Escriba el código.';
+  } else {
+    /* Seis cifras es el de la aplicación; cualquier otra cosa se prueba
+       como código de respaldo. Probar los dos siempre gastaría un intento
+       de los que llevan al bloqueo. */
+    const esDeLaApp = /^\d{6}$/.test(escrito);
+
+    try {
+      const r = esDeLaApp
+        ? await auth.api.verifyTOTP({
+            body: { code: escrito },
+            headers: Astro.request.headers,
+            asResponse: true,
+          })
+        : await auth.api.verifyBackupCode({
+            body: { code: escrito },
+            headers: Astro.request.headers,
+            asResponse: true,
+          });
+
+      if (r.ok) {
+        const cookies = r.headers.getSetCookie?.() ?? [];
+
+        /* A qué pantalla va cada rol. La sesión recién nace en esta
+           respuesta, así que todavía no se puede preguntar por ella: el
+           rol sale del cuerpo si viene, y si no, del panel de siempre. */
+        const cuerpo = await r.clone().json().catch(() => ({}) as Record<string, unknown>);
+        const correo = (cuerpo as { user?: { email?: string } }).user?.email ?? '';
+        let rol: string | undefined;
+        if (correo) {
+          const [quien] = await bd
+            .select({ rol: esquema.user.rol })
+            .from(esquema.user)
+            .where(eq(esquema.user.email, correo.toLowerCase()))
+            .limit(1);
+          rol = quien?.rol;
+        }
+
+        const salida = Astro.redirect(dondeEmpieza(rol));
+        for (const c of cookies) salida.headers.append('set-cookie', c);
+        return salida;
+      }
+
+      error = esDeLaApp
+        ? 'Ese código no es correcto o ya venció. Mire la aplicación y pruebe con el siguiente.'
+        : 'Ese código de respaldo no sirve. Cada uno se usa una sola vez.';
+    } catch {
+      error = 'No se pudo comprobar el código. Vuelva a entrar con su clave.';
+    }
+  }
+}
+---
+
+<Sistema titulo="Código" desnuda>
+  <div class="entrar">
+    <div class="entrar__caja">
+      <div class="entrar__marca">
+        <img src={marca.logo} width="52" height="52" alt="" />
+        <span>
+          <strong>{marca.nombre}</strong>
+          <small>Sistema interno</small>
+        </span>
+      </div>
+
+      <h1>Su código</h1>
+      <p class="entrar__nota">
+        Abra su aplicación de códigos y escriba el número que muestra para
+        {marca.nombre}.
+      </p>
+
+      {error && (
+        <p class="sis-error">
+          <Icono nombre="escudo" tam={18} />
+          {error}
+        </p>
+      )}
+
+      <form method="post" class="entrar__form">
+        <div class="sis-campo">
+          <label for="codigo">Código</label>
+          <input
+            id="codigo" name="codigo" inputmode="numeric" autocomplete="one-time-code"
+            required autofocus placeholder="000000" class="codigo"
+          />
+          <span class="pista">
+            Si perdió el teléfono, escriba acá uno de sus códigos de
+            respaldo. Sirve una sola vez.
+          </span>
+        </div>
+        <button type="submit" class="sis-boton sis-boton--primario entrar__boton">Entrar</button>
+      </form>
+
+      <p class="entrar__salida">
+        <a href="/sistema/entrar">Volver a empezar</a>
+      </p>
+    </div>
+  </div>
+</Sistema>
+
+<style>
+  .entrar {
+    min-height: 100dvh;
+    display: grid;
+    place-items: center;
+    padding: 24px;
+    background:
+      radial-gradient(90% 70% at 50% 0%, var(--azul) 0%, transparent 60%),
+      var(--azul-profundo);
+  }
+
+  .entrar__caja {
+    width: 100%;
+    max-width: 430px;
+    background: var(--papel);
+    border-radius: var(--radio);
+    padding: 34px;
+    box-shadow: var(--flota-alta);
+  }
+
+  .entrar__marca { display: flex; align-items: center; gap: 12px; margin-bottom: 26px; }
+  .entrar__marca img { border-radius: 50%; }
+  .entrar__marca span { display: flex; flex-direction: column; line-height: 1.2; }
+  .entrar__marca strong {
+    font-family: var(--titulares);
+    font-size: 1.22rem;
+    font-weight: 800;
+    letter-spacing: -0.025em;
+    color: var(--azul);
+  }
+  .entrar__marca small { font-size: 0.74rem; color: var(--tinta-tenue); }
+
+  .entrar h1 { font-size: var(--u-2xl); }
+  .entrar__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-suave); }
+  .sis-error { margin-top: 20px; }
+  .entrar__form { display: grid; gap: 16px; margin-top: 22px; }
+  .entrar__boton { width: 100%; min-height: 46px; margin-top: 4px; }
+
+  /* Grande y separado: se copia de un teléfono que se tiene en la otra
+     mano, y seis cifras juntas se leen mal. */
+  .codigo {
+    font-size: 1.5rem;
+    letter-spacing: 0.22em;
+    text-align: center;
+  }
+
+  .entrar__salida { margin-top: 16px; text-align: center; font-size: var(--u-xs); }
+  .entrar__salida a { color: var(--tinta-tenue); }
+</style>

@@ -1,5 +1,5 @@
 import { relations } from "drizzle-orm";
-import { pgTable, text, timestamp, boolean, index } from "drizzle-orm/pg-core";
+import { pgTable, text, timestamp, boolean, integer, index } from "drizzle-orm/pg-core";
 
 export const user = pgTable("user", {
   id: text("id").primaryKey(),
@@ -22,7 +22,32 @@ export const user = pgTable("user", {
   firma: text("firma"),
   msds: text("msds"),
   activo: boolean("activo").default(true),
+  /** Lo prende cada uno desde Mi cuenta. Ver 018-dos-factores.sql. */
+  twoFactorEnabled: boolean("two_factor_enabled").default(false).notNull(),
 });
+
+/**
+ * El segundo factor de cada quien.
+ *
+ * Las columnas están calcadas del esquema que declara el complemento de
+ * Better Auth. Si falta una, el que deja de funcionar es el login entero y
+ * no solo el segundo factor, con un error que no nombra la columna.
+ */
+export const twoFactor = pgTable(
+  "two_factor",
+  {
+    id: text("id").primaryKey(),
+    secret: text("secret").notNull(),
+    backupCodes: text("backup_codes").notNull(),
+    userId: text("user_id")
+      .notNull()
+      .references(() => user.id, { onDelete: "cascade" }),
+    verified: boolean("verified").default(true).notNull(),
+    failedVerificationCount: integer("failed_verification_count").default(0).notNull(),
+    lockedUntil: timestamp("locked_until"),
+  },
+  (t) => [index("two_factor_user_id_idx").on(t.userId)],
+);
 
 export const session = pgTable(
   "session",

@@ -32,6 +32,7 @@ export async function listarUsuarios() {
       colegiatura: esquema.user.colegiatura,
       msds: esquema.user.msds,
       activo: esquema.user.activo,
+      dosFactores: esquema.user.twoFactorEnabled,
       creado: esquema.user.createdAt,
     })
     .from(esquema.user)
@@ -137,6 +138,29 @@ export async function corregirUsuario(
       msds: datos.msds || null,
     })
     .where(eq(esquema.user.id, usuarioId));
+}
+
+/**
+ * Quitarle el segundo factor a alguien que perdió el teléfono.
+ *
+ * Es la única salida de ese callejón: sin el teléfono y sin códigos de
+ * respaldo, la persona no entra ni puede apagárselo ella misma. Lo hace
+ * otro administrador y queda en bitácora, que es justo el caso donde la
+ * auditoría importa: alguien le abrió la puerta a alguien.
+ *
+ * Se borra la fila del segundo factor además de apagar la marca: dejar el
+ * secreto viejo haría que, al volver a activarlo, la aplicación de la
+ * persona siguiera mostrando códigos que ya no valen.
+ */
+export async function quitarDosFactores(usuarioId: string) {
+  await bd.delete(esquema.twoFactor).where(eq(esquema.twoFactor.userId, usuarioId));
+  await bd
+    .update(esquema.user)
+    .set({ twoFactorEnabled: false })
+    .where(eq(esquema.user.id, usuarioId));
+  /* Y se cierran sus sesiones: si entró con el segundo factor puesto y
+     después se lo quitamos, lo que quedó abierto ya no corresponde. */
+  await bd.delete(esquema.session).where(eq(esquema.session.userId, usuarioId));
 }
 
 export async function usuarioPorId(id: string) {

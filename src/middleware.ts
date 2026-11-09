@@ -107,7 +107,12 @@ export const onRequest = defineMiddleware(async (ctx, siguiente) => {
   const usuario = sesion?.user ?? null;
   ctx.locals.usuario = usuario && usuario.activo !== false ? usuario : null;
 
-  const esEntrar = ruta === '/sistema/entrar' || ruta === '/sistema/entrar/';
+  /* La pantalla del código del segundo factor es parte de entrar: quien
+     está ahí ya puso su clave bien, pero todavía no tiene sesión. Si
+     pidiera sesión, mandaría al login y de ahí otra vez al código, en
+     círculo. */
+  const esEntrar = ruta === '/sistema/entrar' || ruta === '/sistema/entrar/'
+    || ruta === '/sistema/codigo' || ruta === '/sistema/codigo/';
   if (!ctx.locals.usuario && !esEntrar) {
     /* A una pantalla se la manda al login; a una llamada de datos se le
        contesta 401. Redirigir una llamada de fetch devuelve el HTML de la

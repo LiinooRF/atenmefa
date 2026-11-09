@@ -8,10 +8,12 @@
 import Sistema from '../../layouts/Sistema.astro';
 import Icono from '../../components/Icono.astro';
 import { auth } from '../../sistema/lib/auth';
+import { marca } from '../../data/marca';
 import { cambiarClave, claveFloja } from '../../sistema/lib/usuarios';
 import { anotar } from '../../sistema/lib/atenciones';
 import { bd, esquema } from '../../sistema/lib/base';
 import { eq } from 'drizzle-orm';
+import QR from 'qrcode';
 
 export const prerender = false;
 
@@ -20,6 +22,15 @@ let error = '';
 let listo = false;
 let avisoFirma = '';
 let errorFirma = '';
+
+/* El segundo factor. `paso` manda qué se dibuja: nada, el QR esperando el
+   código, o los códigos de respaldo recién generados. */
+let paso: 'nada' | 'escanear' | 'respaldo' = 'nada';
+let error2fa = '';
+let aviso2fa = '';
+let totpUri = '';
+let qrDataUri = '';
+let respaldo: string[] = [];
 
 /* El tope. Una firma escaneada decente pesa menos de 30 KB; 120 deja
    margen de sobra y evita que alguien suba una foto de 4 MB que después
@@ -31,7 +42,67 @@ if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
   const accion = String(form.get('accion') ?? 'clave');
 
-  if (accion === 'firma') {
+  if (accion === '2fa-activar') {
+    /* Se pide la clave otra vez: prender el segundo factor desde una
+       sesión que alguien dejó abierta es justamente lo que el segundo
+       factor tendría que impedir. */
+    const clave = String(form.get('clave') ?? '');
+    try {
+      const r = await auth.api.enableTwoFactor({
+        body: { password: clave, issuer: marca.nombre },
+        headers: Astro.request.headers,
+      });
+      totpUri = (r as { totpURI?: string }).totpURI ?? '';
+      respaldo = (r as { backupCodes?: string[] }).backupCodes ?? [];
+      if (totpUri) {
+        qrDataUri = await QR.toDataURL(totpUri, { margin: 1, width: 260 });
+        paso = 'escanear';
+      } else {
+        error2fa = 'No se pudo preparar el segundo factor. Pruebe otra vez.';
+      }
+    } catch {
+      error2fa = 'La clave no es correcta.';
+    }
+  } else if (accion === '2fa-confirmar') {
+    const codigo = String(form.get('codigo') ?? '').replace(/\s/g, '');
+    try {
+      await auth.api.verifyTOTP({
+        body: { code: codigo },
+        headers: Astro.request.headers,
+      });
+      await anotar(yo.id, 'dos_factores', undefined, { accion: 'activado' });
+      aviso2fa = 'Segundo factor activado. La próxima vez que entre le va a pedir el código.';
+      paso = 'nada';
+    } catch {
+      error2fa = 'Ese código no es correcto o ya venció. Mire la aplicación y pruebe con el siguiente.';
+      /* Se vuelve a dibujar el QR: si el código estaba mal, la persona
+         todavía no terminó de escanear y mandarla al principio la obliga
+         a borrar la entrada de la aplicación y empezar de nuevo. */
+      try {
+        const r = await auth.api.getTOTPURI({
+          body: { password: String(form.get('clave') ?? '') },
+          headers: Astro.request.headers,
+        });
+        totpUri = (r as { totpURI?: string }).totpURI ?? '';
+        if (totpUri) {
+          qrDataUri = await QR.toDataURL(totpUri, { margin: 1, width: 260 });
+          paso = 'escanear';
+        }
+      } catch { /* sin clave a mano no se puede repintar: queda el error */ }
+    }
+  } else if (accion === '2fa-apagar') {
+    const clave = String(form.get('clave') ?? '');
+    try {
+      await auth.api.disableTwoFactor({
+        body: { password: clave },
+        headers: Astro.request.headers,
+      });
+      await anotar(yo.id, 'dos_factores', undefined, { accion: 'apagado' });
+      aviso2fa = 'Segundo factor apagado. Ahora entra solo con su clave.';
+    } catch {
+      error2fa = 'La clave no es correcta.';
+    }
+  } else if (accion === 'firma') {
     const archivo = form.get('firma');
     if (form.get('quitar') === 'si') {
       await bd.update(esquema.user).set({ firma: null }).where(eq(esquema.user.id, yo.id));
@@ -102,7 +173,11 @@ if (Astro.request.method === 'POST') {
 }
 
 const [miFicha] = await bd
-  .select({ firma: esquema.user.firma, colegiatura: esquema.user.colegiatura })
+  .select({
+    firma: esquema.user.firma,
+    colegiatura: esquema.user.colegiatura,
+    dosFactores: esquema.user.twoFactorEnabled,
+  })
   .from(esquema.user)
   .where(eq(esquema.user.id, yo.id))
   .limit(1);
@@ -155,6 +230,84 @@ const [miFicha] = await bd
             vacía y había que firmarlo a mano uno por uno. En un
             laboratorio que entrega veinte al día, eso es media hora de
             firmar papeles. */}
+        {/* Segundo factor. Va antes que la firma porque es lo que
+            protege todo lo demás. */}
+        <h2 class="caja__titulo">Entrar con código</h2>
+
+        {error2fa && <p class="sis-error"><Icono nombre="escudo" tam={18} />{error2fa}</p>}
+        {aviso2fa && <p class="msj--bien"><Icono nombre="escudo" tam={18} />{aviso2fa}</p>}
+
+        {paso === 'escanear' ? (
+          <section class="sis-tarjeta formulario">
+            <p class="caja__nota">
+              Abra su aplicación de códigos —Google Authenticator, Authy, la
+              que use— y escanee esto. Después escriba el código de seis
+              cifras que aparezca, para confirmar que quedó bien.
+            </p>
+            <img class="qr" src={qrDataUri} width="260" height="260"
+                 alt="Código QR para configurar la aplicación" />
+            <details class="amano">
+              <summary>No puedo escanear</summary>
+              <p class="caja__nota">Escriba esta clave en la aplicación, a mano:</p>
+              <code class="amano__clave">{totpUri.match(/secret=([^&]+)/)?.[1] ?? ''}</code>
+            </details>
+
+            {respaldo.length > 0 && (
+              <div class="respaldo">
+                <strong>Guarde estos códigos de respaldo ahora</strong>
+                <p>
+                  Son la única forma de entrar si pierde el teléfono. Cada
+                  uno sirve una sola vez. No se vuelven a mostrar.
+                </p>
+                <ul>{respaldo.map((c) => <li class="cifra">{c}</li>)}</ul>
+              </div>
+            )}
+
+            <form method="post" class="enlinea2">
+              <input type="hidden" name="accion" value="2fa-confirmar" />
+              <div class="sis-campo">
+                <label for="codigo">Código de la aplicación</label>
+                <input id="codigo" name="codigo" inputmode="numeric" autocomplete="one-time-code"
+                       maxlength="6" required placeholder="000000" />
+              </div>
+              <button type="submit" class="sis-boton sis-boton--primario">Confirmar</button>
+            </form>
+          </section>
+        ) : miFicha?.dosFactores ? (
+          <form method="post" class="sis-tarjeta formulario">
+            <input type="hidden" name="accion" value="2fa-apagar" />
+            <p class="caja__nota">
+              <strong>Está activado.</strong> Al entrar le pedimos su clave y
+              después el código de la aplicación.
+            </p>
+            <div class="sis-campo">
+              <label for="clave-apagar">Su clave, para apagarlo</label>
+              <input id="clave-apagar" name="clave" type="password" required
+                     autocomplete="current-password" />
+            </div>
+            <button type="submit" class="sis-boton sis-boton--suave">Apagar el segundo factor</button>
+          </form>
+        ) : (
+          <form method="post" class="sis-tarjeta formulario">
+            <input type="hidden" name="accion" value="2fa-activar" />
+            <p class="caja__nota">
+              Con esto, además de su clave hace falta un código que cambia
+              cada treinta segundos en su teléfono. Si alguien le ve la
+              clave, igual no entra.
+            </p>
+            <div class="sis-campo">
+              <label for="clave-2fa">Su clave, para empezar</label>
+              <input id="clave-2fa" name="clave" type="password" required
+                     autocomplete="current-password" />
+              <span class="pista">
+                Se pide de nuevo a propósito: prenderlo desde una sesión que
+                quedó abierta es justo lo que esto tiene que impedir.
+              </span>
+            </div>
+            <button type="submit" class="sis-boton sis-boton--primario">Activar</button>
+          </form>
+        )}
+
         <h2 class="caja__titulo">Mi firma</h2>
         <p class="caja__nota">
           Si carga su firma escaneada, sale impresa en los informes que
@@ -214,6 +367,51 @@ const [miFicha] = await bd
   .hecho .sis-boton { margin-top: 5px; }
 
   .caja__titulo { margin-top: 10px; font-size: var(--u-lg); }
+
+  .qr { align-self: center; border: 1px solid var(--linea); border-radius: 10px; background: #fff; }
+  .amano summary { cursor: pointer; font-size: var(--u-sm); color: var(--azul); }
+  .amano__clave {
+    display: block;
+    margin-top: 6px;
+    padding: 9px 11px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background: var(--panel);
+    font-size: var(--u-sm);
+    word-break: break-all;
+  }
+
+  /* Los códigos de respaldo se muestran UNA vez. El recuadro es fuerte a
+     propósito: quien los pasa de largo se entera el día que pierde el
+     teléfono, y ese día ya no hay nada que hacer. */
+  .respaldo {
+    padding: 14px;
+    border: 1px solid #e2b23d;
+    border-left: 4px solid #e2b23d;
+    border-radius: 9px;
+    background: #fdf6e4;
+  }
+  .respaldo strong { display: block; font-size: var(--u-sm); }
+  .respaldo p { margin: 5px 0 10px; font-size: var(--u-xs); color: var(--tinta-suave); line-height: 1.5; }
+  .respaldo ul {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: 6px;
+  }
+  .respaldo li {
+    padding: 7px 9px;
+    border-radius: 7px;
+    background: var(--papel);
+    font-size: var(--u-sm);
+    font-weight: 700;
+    text-align: center;
+  }
+
+  .enlinea2 { display: grid; gap: 10px; }
+  .enlinea2 .sis-boton { justify-self: start; }
   .par { display: flex; flex-wrap: wrap; gap: 8px; }
   .msj--bien {
     display: flex; gap: 9px; align-items: center;
