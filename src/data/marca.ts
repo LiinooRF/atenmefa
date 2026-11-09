@@ -84,7 +84,9 @@ const ATENMEFA: Marca = {
  */
 const VIVA_SALUD: Marca = {
   id: 'vivosalud',
-  nombre: entorno('MARCA_NOMBRE') || 'Viva Salud',
+  /* «VivA Salud», con la A en mayúscula: así se escribe la marca. No es
+     un error de tipeo que alguien vaya a querer «corregir» después. */
+  nombre: entorno('MARCA_NOMBRE') || 'VivA Salud',
   bajada: entorno('MARCA_BAJADA') || 'Red de salud',
   razonSocial: entorno('MARCA_RAZON') || '',
   rif: entorno('MARCA_RIF') || '',
