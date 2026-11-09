@@ -1,0 +1,148 @@
+---
+/**
+ * Los valores de referencia de cada examen.
+ *
+ * Hasta acá vivían solamente dentro de la pantalla de cargar resultados:
+ * se escribían solos al elegir el examen y se podían corregir en ESA
+ * orden, para ese paciente. No había forma de verlos todos ni de arreglar
+ * uno de una vez para todas las órdenes siguientes, y el archivo del
+ * cliente dejó 51 analitos sin rango porque su hoja no lo traía.
+ *
+ * Esta pantalla es para eso: ver qué examen está completo, cuál no, y
+ * escribirlo. No la maneja administración sino el laboratorio —y también
+ * administración—, porque un rango de referencia depende del método y del
+ * equipo con el que se corre la prueba, y eso lo sabe quien mide.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { resumenDePlantillas } from '../../sistema/lib/laboratorio';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'editar_plantillas');
+if (corte) return corte;
+
+const examenes = await resumenDePlantillas();
+
+const analitos = examenes.reduce((t, e) => t + e.analitos, 0);
+const faltan = examenes.reduce((t, e) => t + e.sinRango, 0);
+const completos = examenes.filter((e) => e.sinRango === 0).length;
+
+/* Primero los que tienen algo que arreglar: la pantalla se abre para
+   llenar lo que falta, no para mirar lo que ya está. */
+const ordenados = [...examenes].sort(
+  (a, b) => b.sinRango - a.sinRango || a.examen.localeCompare(b.examen, 'es'),
+);
+---
+
+<Sistema titulo="Valores de referencia">
+  <nav class="miga"><a href="/sistema/laboratorio">Laboratorio</a> <span>/</span> Valores de referencia</nav>
+
+  <header class="cab">
+    <h1>Valores de referencia</h1>
+    <p class="cab__nota">
+      Lo que se escribe acá es lo que sale impreso al lado de cada resultado
+      y lo que se carga solo cuando el bioanalista elige el examen.
+      {examenes.length} exámenes, {analitos} analitos.
+    </p>
+  </header>
+
+  {faltan > 0 ? (
+    <p class="aviso">
+      <Icono nombre="escudo" tam={18} />
+      <span>
+        <strong>{faltan} {faltan === 1 ? 'analito' : 'analitos'} sin rango.</strong>
+        {' '}Salen del archivo del laboratorio, que no los traía en ninguna
+        columna de su fila. Deducirlos habría puesto el rango de un examen
+        al lado del resultado de otro, así que quedaron en blanco: los
+        escribe el laboratorio.
+      </span>
+    </p>
+  ) : (
+    <p class="aviso aviso--bien">
+      <Icono nombre="escudo" tam={18} />
+      <span>Todos los analitos tienen su rango.</span>
+    </p>
+  )}
+
+  <ul class="lista">
+    {ordenados.map((e) => (
+      <li>
+        <a href={`/sistema/plantillas/${encodeURIComponent(e.examen)}`}>
+          <span class="lista__nombre">{e.examen}</span>
+          <span class="lista__cuenta">
+            {e.analitos} {e.analitos === 1 ? 'analito' : 'analitos'}
+          </span>
+          {e.sinRango > 0 ? (
+            <span class="lista__falta">{e.sinRango} sin rango</span>
+          ) : (
+            <span class="lista__listo">completo</span>
+          )}
+        </a>
+      </li>
+    ))}
+  </ul>
+
+  <p class="pie">
+    {completos} de {examenes.length} exámenes están completos. Orina y heces
+    no están en esta lista: son formularios de dos mitades y el rango de una
+    no es el de la otra, así que se cargan a mano en cada orden.
+  </p>
+</Sistema>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 72ch; }
+
+  .aviso {
+    display: flex;
+    gap: 10px;
+    align-items: flex-start;
+    margin: 18px 0;
+    padding: 12px 14px;
+    border: 1px solid #e2b23d;
+    border-left: 4px solid #e2b23d;
+    border-radius: 9px;
+    background: #fdf6e4;
+    font-size: var(--u-sm);
+    line-height: 1.55;
+    max-width: 78ch;
+  }
+  .aviso--bien { border-color: #2f8f5b; border-left-color: #2f8f5b; background: #eaf6ef; }
+
+  .lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .lista a {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    /* 44 px: la regla de la casa para todo lo que se toca. */
+    min-height: 52px;
+    padding: 0 14px;
+    border: 1px solid var(--linea);
+    border-radius: 9px;
+    background: var(--papel);
+    color: var(--tinta);
+    text-decoration: none;
+  }
+  .lista a:hover { border-color: var(--azul-medio); background: var(--bruma); }
+  .lista__nombre { flex: 1; min-width: 0; font-weight: 600; font-size: var(--u-sm); }
+  .lista__cuenta { flex: none; font-size: var(--u-xs); color: var(--tinta-tenue); }
+  .lista__falta {
+    flex: none;
+    padding: 3px 9px;
+    border-radius: 999px;
+    background: #fdf1d8;
+    color: #8a5a00;
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+  .lista__listo { flex: none; font-size: var(--u-xs); color: #2f8f5b; font-weight: 600; }
+
+  .pie { margin-top: 18px; font-size: var(--u-xs); color: var(--tinta-tenue); max-width: 72ch; line-height: 1.55; }
+</style>

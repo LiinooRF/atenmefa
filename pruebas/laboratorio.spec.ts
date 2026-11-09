@@ -23,6 +23,7 @@
 import { test, expect } from '@playwright/test';
 import {
   conBase, entrar, cedulaDePrueba, sembrarExamen, borrarExamen, idDeLaFicha, FICHA, llenar,
+  hoyEnCaracas,
 } from './apoyo';
 
 test.describe.configure({ mode: 'serial' });
@@ -35,6 +36,7 @@ const CEDULA_CALCULO = cedulaDePrueba(13, 4);
 const CEDULA_SIN_PRECIO = cedulaDePrueba(13, 5);
 const CEDULA_HEMA = cedulaDePrueba(13, 6);
 const CEDULA_COAG = cedulaDePrueba(13, 7);
+const CEDULA_RANGO = cedulaDePrueba(13, 8);
 const NOMBRE = 'Carmen Rosa Laboratorio de Prueba';
 
 const EXAMEN_A = 'Hematología completa de prueba';
@@ -43,7 +45,8 @@ const EXAMEN_B = 'Glicemia de prueba';
 const limpiar = () =>
   conBase(async (sql) => {
     for (const c of [CEDULA, CEDULA_GENERAL, CEDULA_PEDIDOS, CEDULA_PLANTILLA,
-                     CEDULA_CALCULO, CEDULA_SIN_PRECIO, CEDULA_HEMA, CEDULA_COAG]) {
+                     CEDULA_CALCULO, CEDULA_SIN_PRECIO, CEDULA_HEMA, CEDULA_COAG,
+                     CEDULA_RANGO]) {
       const busca = c.replace(/\D/g, '');
       const suyas = sql`SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
                          WHERE p.cedula_busca = ${busca}`;
@@ -63,7 +66,7 @@ test.beforeAll(async () => {
      tasa la pantalla no puede decir cuánto es en bolívares. */
   await conBase(async (sql) => {
     await sql`INSERT INTO tasa (fecha, bolivares)
-              VALUES (CURRENT_DATE, 40.000000)
+              VALUES (${hoyEnCaracas()}, 40.000000)
               ON CONFLICT (fecha) DO UPDATE SET bolivares = 40.000000`;
   });
 });
@@ -965,4 +968,143 @@ test('el informe impreso separa los bloques de la hoja', async ({ page }) => {
      subtítulo vacío en un informe firmado es un hueco. */
   await expect(tabla.locator('.valores__seccion'))
     .not.toContainText(['TIEMPO DE TROMBOPLASTINA PARCIAL ACTIVADA']);
+});
+
+/* ------------------------------------------------------------------
+   Los valores de referencia.
+   ------------------------------------------------------------------
+
+   Vivían solo dentro de la pantalla de cargar resultados: se escribían
+   solos al elegir el examen y se corregían para ESA orden. No había forma
+   de arreglar uno de una vez para todas las órdenes siguientes, y el
+   archivo del cliente dejó 51 analitos sin rango.
+   ------------------------------------------------------------------ */
+
+test('el bioanalista ve la lista de exámenes y cuántos rangos faltan', async ({ page }) => {
+  await entrar(page, 'bioanalista');
+  await page.goto('/sistema/plantillas');
+
+  await expect(page.locator('.lista li')).toHaveCount(35);
+  await expect(page.locator('.aviso')).toContainText('sin rango');
+
+  // Los que tienen algo que arreglar van primero.
+  const primero = page.locator('.lista li').first();
+  await expect(primero.locator('.lista__falta')).toBeVisible();
+});
+
+test('recepción no entra: los rangos los escribe quien mide', async ({ page }) => {
+  await entrar(page, 'recepcionista');
+  await page.goto('/sistema/plantillas');
+  await expect(page.locator('body')).toContainText('Los valores de referencia los escribe el laboratorio.');
+});
+
+test('el médico tampoco', async ({ page }) => {
+  await entrar(page, 'medico');
+  await page.goto('/sistema/plantillas');
+  await expect(page.locator('body')).toContainText('Los valores de referencia los escribe el laboratorio.');
+});
+
+test('escribir un rango lo deja puesto para las órdenes que vienen', async ({ page }) => {
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/plantillas/${encodeURIComponent('COAG.')}`);
+
+  /* Por el atributo value y no por hasText: lo que dice «TIEMPO CONTROL»
+     es el value de un input, no texto de la fila, y hasText no lo ve. Acá
+     sí sirve el atributo porque estos renglones los pinta el servidor; en
+     la pantalla de resultados, donde los agrega el navegador, no. */
+  const fila = (analito: string) =>
+    page.locator('#pl-cuerpo tr')
+      .filter({ has: page.locator(`input[name="analito"][value="${analito}"]`) })
+      .first();
+
+  /* El tiempo control sale del archivo con su unidad y sin rango: es uno
+     de los 51 que el laboratorio tiene que escribir. */
+  const control = fila('TIEMPO CONTROL');
+  await expect(control.locator('input[name="unidad"]')).toHaveValue('seg');
+  await expect(control).toHaveAttribute('data-falta', '');
+
+  await control.locator('input[name="referencia"]').fill('11 - 13 seg');
+  // El amarillo se apaga al escribir: es la confirmación de que quedó.
+  await expect(control).not.toHaveAttribute('data-falta', '');
+
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.locator('.msj--bien')).toContainText('renglones');
+
+  const [guardado] = await conBase((sql) => sql`
+    SELECT referencia FROM plantilla_examen
+     WHERE examen = 'COAG.' AND analito = 'TIEMPO CONTROL' ORDER BY orden LIMIT 1`);
+  expect(guardado.referencia).toBe('11 - 13 seg');
+
+  /* Y lo que importa: el bioanalista abre una orden NUEVA —la de arriba
+     ya quedó entregada y una entregada no se vuelve a cargar—, pone esa
+     plantilla, y el rango ya viene escrito. */
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_RANGO)}`);
+  await page.locator('#c-nombre').fill('Rango de Prueba Goitia');
+  await page.locator('#c-edad').fill('51');
+  await page.locator('#c-sexo').selectOption('Masculino');
+  await page.getByRole('button', { name: 'Guardar la orden' }).click();
+  await expect(page).toHaveURL(FICHA);
+
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_RANGO)}/resultados`);
+  await page.locator('#res-plantilla').selectOption('COAG.');
+  await page.getByRole('button', { name: 'Poner' }).click();
+
+  const nombres = await renglonesDe(page);
+  const donde = nombres.indexOf('TIEMPO CONTROL');
+  await expect(
+    page.locator('#res-cuerpo tr').nth(donde).locator('input[name="referencia"]'),
+  ).toHaveValue('11 - 13 seg');
+});
+
+/* Esta prueba agrega y quita renglones, así que trabaja sobre una
+   plantilla propia y no sobre una del archivo del cliente. Quitarle un
+   renglón a TIPIAJE-VSG —que tiene dos— la dejaba con uno solo, y una hoja
+   de un solo analito deja de ser un perfil: la prueba de perfiles de otro
+   archivo empezó a contar 30 en vez de 31. */
+const PLANTILLA_PRUEBA = 'ZZ PRUEBA DE RENGLONES';
+
+test('un renglón sin nombre no se guarda, y se puede quitar uno que sobra', async ({ page }) => {
+  await conBase((sql) => sql`
+    INSERT INTO plantilla_examen (examen, orden, analito, unidad, referencia) VALUES
+      (${PLANTILLA_PRUEBA}, 1, 'PRIMERO', 'mg/dl', '1 - 2'),
+      (${PLANTILLA_PRUEBA}, 2, 'SEGUNDO', 'mg/dl', '3 - 4'),
+      (${PLANTILLA_PRUEBA}, 3, 'TERCERO', 'mg/dl', '5 - 6')
+    ON CONFLICT (examen, orden) DO NOTHING`);
+
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/plantillas/${encodeURIComponent(PLANTILLA_PRUEBA)}`);
+  await expect(page.locator('#pl-cuerpo tr')).toHaveCount(3);
+
+  // Una línea en blanco de apretar «agregar» de más: no llega a la base.
+  await page.getByRole('button', { name: 'Agregar renglón' }).click();
+  await expect(page.locator('#pl-cuerpo tr')).toHaveCount(4);
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.locator('.msj--bien')).toBeVisible();
+
+  const [n] = await conBase((sql) => sql`
+    SELECT COUNT(*)::int AS n FROM plantilla_examen WHERE examen = ${PLANTILLA_PRUEBA}`);
+  expect(n.n).toBe(3);
+
+  // Y uno que sobra se quita.
+  await page.locator('#pl-cuerpo tr').last().locator('[data-quitar]').click();
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.locator('.msj--bien')).toBeVisible();
+
+  const quedan = await conBase((sql) => sql`
+    SELECT orden, analito FROM plantilla_examen
+     WHERE examen = ${PLANTILLA_PRUEBA} ORDER BY orden`);
+  expect(quedan.map((f) => f.analito)).toEqual(['PRIMERO', 'SEGUNDO']);
+
+  /* Y el orden se renumera sin huecos: la clave es (examen, orden) y un
+     hueco rompe la carga siguiente. */
+  expect(quedan.map((f) => f.orden)).toEqual([1, 2]);
+
+  await conBase((sql) => sql`
+    DELETE FROM plantilla_examen WHERE examen = ${PLANTILLA_PRUEBA}`);
+});
+
+test('cambiar un rango queda en bitácora', async ({ page }) => {
+  await entrar(page, 'administracion');
+  await page.goto('/sistema/bitacora?accion=plantilla');
+  await expect(page.locator('table')).toContainText('Cambió los valores de referencia');
 });

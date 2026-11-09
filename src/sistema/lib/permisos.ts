@@ -54,6 +54,7 @@ export type Permiso =
   | 'cola_laboratorio'     // la pantalla con lo que el laboratorio tiene pendiente
   | 'registrar_laboratorio'// crear la orden: quién es y qué se le va a hacer
   | 'cargar_resultados'    // escribir los valores y firmarlos
+  | 'editar_plantillas'    // los rangos de referencia y las unidades de cada examen
   | 'enviar_documento'     // mandar el informe por WhatsApp o correo
   | 'ver_marketing';       // cómo va el tráfico del sitio público
 
@@ -98,6 +99,7 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
     'imprimir_documento',
     'cargar_cobro',
     'editar_catalogo',
+    'editar_plantillas',
     'ver_cierre',
     'exportar_cierre',
     'ver_bitacora',
@@ -132,6 +134,10 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
     'cola_laboratorio',
     'registrar_laboratorio',
     'cargar_resultados',
+    /* Los rangos de referencia los escribe quien mide. No es cosa de
+       administración: cada laboratorio tiene los suyos y dependen del
+       método y del equipo con el que se corre la prueba. */
+    'editar_plantillas',
     'imprimir_documento',
     'enviar_documento',
     'ver_pacientes',
@@ -286,6 +292,7 @@ export const porQueNo: Record<Permiso, string> = {
   cola_laboratorio: 'La cola del laboratorio es del bioanalista y de recepción.',
   registrar_laboratorio: 'Su usuario no puede registrar órdenes de laboratorio.',
   cargar_resultados: 'Los resultados los carga y firma el bioanalista.',
+  editar_plantillas: 'Los valores de referencia los escribe el laboratorio.',
   enviar_documento: 'Su usuario no puede enviar el informe al paciente.',
   ver_marketing: 'Las métricas del sitio son de administración.',
 };

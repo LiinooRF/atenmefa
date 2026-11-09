@@ -53,6 +53,10 @@ const MENU: Bloque[] = [
   ] },
   { texto: 'Laboratorio', icono: 'laboratorio', entradas: [
     { href: '/sistema/laboratorio', texto: 'Laboratorio', permiso: 'cola_laboratorio' },
+    /* Acá y no en Cobros: un rango de referencia depende del método y del
+       equipo con el que se corre la prueba, no del precio. Lo escribe
+       quien mide. */
+    { href: '/sistema/plantillas', texto: 'Valores de referencia', permiso: 'editar_plantillas' },
   ] },
   { texto: 'Pacientes', icono: 'latido', entradas: [
     { href: '/sistema/pacientes', texto: 'Pacientes', permiso: 'ver_pacientes' },

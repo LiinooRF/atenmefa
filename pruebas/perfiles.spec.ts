@@ -10,7 +10,9 @@
  * cinco igual, y eso es justo lo que no puede pasar.
  */
 import { test, expect } from '@playwright/test';
-import { conBase, entrar, cedulaDePrueba, borrarPacientes, FICHA, llenar } from './apoyo';
+import {
+  conBase, entrar, cedulaDePrueba, borrarPacientes, FICHA, llenar, hoyEnCaracas,
+} from './apoyo';
 
 test.describe.configure({ mode: 'serial' });
 
@@ -76,7 +78,7 @@ test('un perfil marca sus exámenes y se puede quitar cualquiera', async ({ page
     UPDATE servicio SET precio = 10.00
      WHERE nombre IN ('COLESTEROL TOTAL', 'HDL-COLESTEROL', 'TRIGLICERIDOS')`);
   await conBase((sql) => sql`
-    INSERT INTO tasa (fecha, bolivares) VALUES (CURRENT_DATE, 40.000000)
+    INSERT INTO tasa (fecha, bolivares) VALUES (${hoyEnCaracas()}, 40.000000)
     ON CONFLICT (fecha) DO UPDATE SET bolivares = 40.000000`);
 
   await entrar(page, 'recepcionista');

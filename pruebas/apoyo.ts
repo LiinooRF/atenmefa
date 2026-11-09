@@ -750,3 +750,17 @@ export async function borrarMediciones(desde: Date) {
     await sql`DELETE FROM evento WHERE momento >= ${desde}`;
   });
 }
+
+/**
+ * El día según Caracas, que es el que usa el sistema.
+ *
+ * NO `current_date` de Postgres: el servidor de la base corre en UTC y
+ * desde las 20:00 de Caracas allá ya es el día siguiente. Una tasa
+ * sembrada con `current_date` queda fechada mañana, la pantalla busca la
+ * de hoy y no la encuentra: el total en bolívares desaparece y la prueba
+ * falla sola todas las noches, siempre después de las ocho.
+ */
+export const hoyEnCaracas = () =>
+  new Intl.DateTimeFormat('en-CA', {
+    timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit',
+  }).format(new Date());

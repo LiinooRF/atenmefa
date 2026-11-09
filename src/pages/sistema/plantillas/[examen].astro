@@ -1,0 +1,280 @@
+---
+/**
+ * Los renglones de un examen: analito, unidad y valor de referencia.
+ *
+ * Esto es lo que se carga solo cuando el bioanalista elige el examen en la
+ * pantalla de resultados, y lo que sale impreso al lado de cada valor.
+ * Corregirlo acá lo corrige para todas las órdenes que vengan; lo que ya
+ * está guardado en una orden vieja no se toca, porque un informe firmado
+ * dice lo que decía el día que se firmó.
+ */
+import Sistema from '../../../layouts/Sistema.astro';
+import Icono from '../../../components/Icono.astro';
+import { anotar } from '../../../sistema/lib/atenciones';
+import { exigir } from '../../../sistema/lib/guardia';
+import { plantillaDe, guardarPlantilla } from '../../../sistema/lib/laboratorio';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'editar_plantillas');
+if (corte) return corte;
+
+const usuario = Astro.locals.usuario!;
+const examen = decodeURIComponent(Astro.params.examen ?? '');
+
+let aviso = '';
+let error = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const analitos = form.getAll('analito').map(String);
+  const unidades = form.getAll('unidad').map(String);
+  const referencias = form.getAll('referencia').map(String);
+
+  /* Los tres arreglos vienen del mismo formulario y tienen que medir lo
+     mismo. Si no, algo se perdió en el camino y guardar emparejaría el
+     rango de un analito con el de al lado: se para acá. */
+  if (analitos.length !== unidades.length || analitos.length !== referencias.length) {
+    error = 'Los renglones llegaron incompletos. Vuelva a cargar la página y pruebe otra vez.';
+  } else {
+    const cuantos = await guardarPlantilla(
+      examen,
+      analitos.map((a, i) => ({ analito: a, unidad: unidades[i], referencia: referencias[i] })),
+    );
+    await anotar(usuario.id, 'plantilla', undefined, { examen, renglones: cuantos });
+    aviso = `Guardado. ${cuantos} ${cuantos === 1 ? 'renglón' : 'renglones'}.`;
+  }
+}
+
+const filas = await plantillaDe(examen);
+if (filas.length === 0 && !aviso) return Astro.redirect('/sistema/plantillas');
+
+const sinRango = filas.filter((f) => !f.referencia.trim()).length;
+
+/* Un renglón sin unidad ni rango es un subtítulo del informe —«TIEMPO DE
+   PROTROMBINA:», «ANALISIS QUIMICO:»— y no un analito al que le falte
+   algo. No se cuenta entre los que faltan ni se pinta en amarillo. */
+const esTitulo = (f: { unidad: string; referencia: string; analito: string }) =>
+  !f.unidad.trim() && !f.referencia.trim() && /[:：]$/.test(f.analito.trim());
+const faltanDeVerdad = filas.filter((f) => !f.referencia.trim() && !esTitulo(f)).length;
+---
+
+<Sistema titulo={`Referencia · ${examen}`}>
+  <nav class="miga">
+    <a href="/sistema/laboratorio">Laboratorio</a> <span>/</span>
+    <a href="/sistema/plantillas">Valores de referencia</a> <span>/</span> {examen}
+  </nav>
+
+  <header class="cab">
+    <h1>{examen}</h1>
+    <p class="cab__nota">
+      {filas.length} {filas.length === 1 ? 'renglón' : 'renglones'}.
+      {faltanDeVerdad > 0
+        ? ` ${faltanDeVerdad} sin rango de referencia.`
+        : ' Todos tienen su rango.'}
+    </p>
+  </header>
+
+  {error && <p class="sis-error msj"><Icono nombre="escudo" tam={18} />{error}</p>}
+  {aviso && <p class="msj msj--bien"><Icono nombre="escudo" tam={18} />{aviso}</p>}
+
+  <form method="post">
+    <div class="tablon">
+      <table class="pl">
+        <thead>
+          <tr>
+            <th scope="col" class="pl__que">Analito</th>
+            <th scope="col">Unidad</th>
+            <th scope="col">Valor de referencia</th>
+            <th scope="col"><span class="oculto">Quitar</span></th>
+          </tr>
+        </thead>
+        <tbody id="pl-cuerpo">
+          {filas.map((f, i) => (
+            <tr data-falta={!f.referencia.trim() && !esTitulo(f) ? '' : undefined}>
+              <td data-rotulo="Analito">
+                <input type="text" name="analito" value={f.analito}
+                       aria-label={`Analito del renglón ${i + 1}`} autocomplete="off" />
+              </td>
+              <td data-rotulo="Unidad">
+                <input type="text" name="unidad" value={f.unidad}
+                       aria-label={`Unidad de ${f.analito}`} autocomplete="off" />
+              </td>
+              <td data-rotulo="Valor de referencia">
+                <input type="text" name="referencia" value={f.referencia}
+                       aria-label={`Valor de referencia de ${f.analito}`} autocomplete="off" />
+              </td>
+              <td class="pl__quitar">
+                <button type="button" class="quitar" data-quitar
+                        aria-label={`Quitar ${f.analito}`}>×</button>
+              </td>
+            </tr>
+          ))}
+        </tbody>
+      </table>
+    </div>
+
+    <div class="agregar">
+      <button type="button" class="sis-boton sis-boton--suave" id="pl-mas">
+        <Icono nombre="mas" tam={17} />
+        Agregar renglón
+      </button>
+    </div>
+
+    <p class="nota">
+      Tal como se escriba acá sale impreso: «70 - 140 ml / min.», «Hombre:
+      12-17 / Mujer: 11-15», «HASTA 200». No hace falta que sean números —el
+      informe lo copia como texto— y por eso caben los cualitativos, que se
+      informan «NEGATIVO».
+    </p>
+    <p class="nota">
+      Un renglón sin unidad y sin rango cuyo nombre termina en dos puntos es
+      un <strong>subtítulo</strong> del informe, no un analito: así es como
+      la hoja de coagulación separa el tiempo de protrombina del PTT. Esos no
+      cuentan entre los que faltan.
+    </p>
+
+    <div class="pie">
+      <span class="pie__estado">
+        {sinRango === filas.length && filas.length > 0
+          ? 'Ninguno tiene rango todavía.'
+          : `${filas.length - sinRango} de ${filas.length} con rango.`}
+      </span>
+      <div class="pie__botones">
+        <a class="sis-boton sis-boton--suave" href="/sistema/plantillas">Volver</a>
+        <button type="submit" class="sis-boton sis-boton--primario">
+          <Icono nombre="escudo" tam={17} />
+          Guardar
+        </button>
+      </div>
+    </div>
+  </form>
+</Sistema>
+
+<script>
+  /* Agregar y quitar renglones. El orden de la pantalla ES el orden del
+     informe: al guardar se vuelven a numerar de arriba abajo. */
+  const cuerpo = document.getElementById('pl-cuerpo');
+  const mas = document.getElementById('pl-mas');
+
+  if (cuerpo && mas) {
+    /* El molde se saca de la primera fila al cargar, antes de que alguien
+       la edite: clonar la ÚLTIMA copiaría lo que esa fila tenga escrito. */
+    const molde = cuerpo.querySelector('tr')?.cloneNode(true) as HTMLTableRowElement | undefined;
+
+    mas.addEventListener('click', () => {
+      if (!molde) return;
+      const fila = molde.cloneNode(true) as HTMLTableRowElement;
+      fila.removeAttribute('data-falta');
+      fila.querySelectorAll('input').forEach((i) => { i.value = ''; });
+      cuerpo.appendChild(fila);
+      fila.querySelector('input')?.focus();
+    });
+
+    cuerpo.addEventListener('click', (e) => {
+      const boton = (e.target as HTMLElement).closest('[data-quitar]');
+      if (!boton) return;
+      const fila = boton.closest('tr');
+      /* Nunca se queda sin ninguna: si es la última se vacía en vez de
+         borrarse, para que quede dónde escribir. */
+      if (cuerpo.querySelectorAll('tr').length > 1) fila?.remove();
+      else fila?.querySelectorAll('input').forEach((i) => { i.value = ''; });
+    });
+
+    /* El amarillo se apaga en cuanto se escribe el rango: ver que el aviso
+       se va es la confirmación de que quedó cargado. */
+    cuerpo.addEventListener('input', (e) => {
+      const campo = e.target as HTMLInputElement;
+      if (campo.name !== 'referencia') return;
+      const fila = campo.closest('tr');
+      if (campo.value.trim()) fila?.removeAttribute('data-falta');
+    });
+  }
+</script>
+
+<style>
+  .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
+  .miga a { color: var(--tinta-suave); text-decoration: none; }
+  .miga a:hover { color: var(--azul); text-decoration: underline; }
+  .miga span { margin-inline: 5px; }
+
+  .cab h1 { font-size: var(--u-xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .msj {
+    display: flex; gap: 9px; align-items: center;
+    margin: 16px 0; padding: 11px 13px; border-radius: 9px; font-size: var(--u-sm);
+  }
+  .msj--bien { border: 1px solid #2f8f5b; background: #eaf6ef; color: #1f6b43; }
+
+  /* La tabla se desplaza dentro de su caja: el panel nunca se mueve de lado. */
+  .tablon { margin-top: 16px; border: 1px solid var(--linea); border-radius: 10px; overflow-x: auto; background: var(--papel); }
+  .pl { width: 100%; min-width: 680px; border-collapse: collapse; }
+  .pl th {
+    text-align: left; padding: 9px 12px;
+    border-bottom: 1px solid var(--linea);
+    font-size: var(--u-xs); text-transform: uppercase; letter-spacing: 0.05em;
+    color: var(--tinta-tenue); background: var(--panel);
+  }
+  .pl td { padding: 4px 8px; border-bottom: 1px solid var(--linea-tenue); }
+  .pl tbody tr:last-child td { border-bottom: 0; }
+  .pl__que { width: 34%; }
+  .pl__quitar { width: 44px; text-align: center; }
+
+  .pl input {
+    width: 100%;
+    /* 44 px de alto: se escribe de pie, en el mesón. */
+    min-height: 44px;
+    padding: 6px 9px;
+    border: 1px solid transparent;
+    border-radius: 7px;
+    background: transparent;
+    font: inherit; font-family: var(--ui); font-size: var(--u-sm);
+  }
+  .pl input:hover { border-color: var(--linea); }
+  .pl input:focus { border-color: var(--azul); background: var(--papel); outline: none; }
+
+  /* El que no tiene rango se ve de lejos: es la razón de esta pantalla. */
+  .pl tr[data-falta] { background: #fdf6e4; }
+  .pl tr[data-falta] input[name='referencia'] { border-color: #e2b23d; }
+
+  .quitar {
+    width: 32px; height: 32px;
+    border: 1px solid var(--linea); border-radius: 7px;
+    background: var(--papel); color: var(--tinta-tenue);
+    font-size: 1.1rem; line-height: 1; cursor: pointer;
+  }
+  .quitar:hover { border-color: var(--rojo); color: var(--rojo); }
+
+  .agregar { margin-top: 12px; }
+  .oculto {
+    position: absolute; width: 1px; height: 1px;
+    overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+  }
+
+  .nota { margin: 12px 0 0; font-size: var(--u-xs); color: var(--tinta-tenue); max-width: 76ch; line-height: 1.55; }
+
+  .pie {
+    display: flex; flex-wrap: wrap; gap: 12px;
+    align-items: center; justify-content: space-between;
+    margin-top: 20px; padding-top: 16px; border-top: 1px solid var(--linea-tenue);
+  }
+  .pie__estado { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .pie__botones { display: flex; flex-wrap: wrap; gap: 8px; }
+
+  @media (max-width: 620px) {
+    .pl { min-width: 0; }
+    .pl thead { display: none; }
+    .pl, .pl tbody, .pl tr, .pl td { display: block; width: 100%; }
+    .pl tr { padding: 10px 12px; border-bottom: 1px solid var(--linea); position: relative; }
+    .pl td { border: 0; padding: 2px 0; }
+    .pl td::before {
+      content: attr(data-rotulo);
+      display: block;
+      font-size: var(--u-xs); color: var(--tinta-tenue); margin-bottom: 2px;
+    }
+    .pl input { border-color: var(--linea); background: var(--papel); }
+    .pl__quitar { position: absolute; top: 10px; right: 12px; width: auto; }
+    .pl__quitar::before { content: none; }
+  }
+</style>

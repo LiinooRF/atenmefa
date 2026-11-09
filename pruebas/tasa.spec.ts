@@ -20,16 +20,9 @@
  * la pantalla salga a buscarla.
  */
 import { test, expect } from '@playwright/test';
-import { conBase, entrar, montoDeTexto } from './apoyo';
-
-/* El día según Caracas, que es el que usa el sistema. NO current_date de
-   Postgres: el servidor corre en UTC y desde las 20:00 de Caracas ya es el
-   día siguiente, así que una tasa insertada con current_date quedaba
-   fechada mañana y la pantalla no la encontraba. */
-const hoyEnCaracas = () =>
-  new Intl.DateTimeFormat('en-CA', {
-    timeZone: 'America/Caracas', year: 'numeric', month: '2-digit', day: '2-digit',
-  }).format(new Date());
+/* hoyEnCaracas vive en apoyo.ts: lo necesitan tres archivos y la copia
+   suelta acá era la única que estaba bien. */
+import { conBase, entrar, montoDeTexto, hoyEnCaracas } from './apoyo';
 
 test.describe.configure({ mode: 'serial' });
 

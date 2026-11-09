@@ -179,6 +179,87 @@ export async function plantillasDeExamen() {
 }
 
 /**
+ * El resumen de las plantillas, para la pantalla que las lista: cuántos
+ * analitos tiene cada examen y cuántos siguen sin rango de referencia.
+ *
+ * La cifra de los que faltan va a la vista a propósito. Son los que el
+ * archivo del cliente no traía, y mientras estén vacíos el informe sale
+ * con el resultado y sin con qué compararlo.
+ */
+export async function resumenDePlantillas() {
+  const filas = await bd
+    .select({
+      examen: esquema.plantillaExamen.examen,
+      analitos: count(),
+      conRango: sql<number>`count(*) filter (where btrim(${esquema.plantillaExamen.referencia}) <> '')`,
+      conUnidad: sql<number>`count(*) filter (where btrim(${esquema.plantillaExamen.unidad}) <> '')`,
+    })
+    .from(esquema.plantillaExamen)
+    .groupBy(esquema.plantillaExamen.examen)
+    .orderBy(asc(esquema.plantillaExamen.examen));
+
+  return filas.map((f) => ({
+    examen: f.examen,
+    analitos: Number(f.analitos),
+    conRango: Number(f.conRango),
+    conUnidad: Number(f.conUnidad),
+    sinRango: Number(f.analitos) - Number(f.conRango),
+  }));
+}
+
+/** Los renglones de un examen, en su orden. */
+export async function plantillaDe(examen: string) {
+  return bd
+    .select({
+      orden: esquema.plantillaExamen.orden,
+      analito: esquema.plantillaExamen.analito,
+      unidad: esquema.plantillaExamen.unidad,
+      referencia: esquema.plantillaExamen.referencia,
+    })
+    .from(esquema.plantillaExamen)
+    .where(eq(esquema.plantillaExamen.examen, examen))
+    .orderBy(asc(esquema.plantillaExamen.orden));
+}
+
+/**
+ * Guarda los renglones de un examen tal como quedaron en la pantalla.
+ *
+ * Se borra y se vuelve a escribir en una transacción, en vez de hacer un
+ * update por renglón: el orden puede cambiar, pueden haberse quitado
+ * líneas y la clave primaria es (examen, orden). Intentar adivinar qué
+ * renglón es cuál después de que alguien borró el tercero y agregó dos es
+ * la clase de cuenta que sale mal una vez y deja un rango pegado al
+ * analito equivocado.
+ *
+ * Un renglón sin nombre se descarta: es una línea en blanco que quedó de
+ * apretar «agregar» de más. Uno con nombre y sin rango se guarda igual
+ * —que es el estado de la mitad del archivo— y la pantalla lo cuenta.
+ */
+export async function guardarPlantilla(
+  examen: string,
+  filas: readonly { analito: string; unidad: string; referencia: string }[],
+) {
+  const limpias = filas
+    .map((f) => ({
+      analito: f.analito.trim(),
+      unidad: f.unidad.trim(),
+      referencia: f.referencia.trim(),
+    }))
+    .filter((f) => f.analito);
+
+  await bd.transaction(async (tx) => {
+    await tx.delete(esquema.plantillaExamen).where(eq(esquema.plantillaExamen.examen, examen));
+    if (limpias.length) {
+      await tx.insert(esquema.plantillaExamen).values(
+        limpias.map((f, i) => ({ examen, orden: i + 1, ...f })),
+      );
+    }
+  });
+
+  return limpias.length;
+}
+
+/**
  * Los nombres de HOJA del archivo del laboratorio. Cada hoja con más de un
  * analito es un perfil.
  */
