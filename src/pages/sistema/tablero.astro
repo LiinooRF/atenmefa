@@ -16,6 +16,7 @@ import { exigir } from '../../sistema/lib/guardia';
 import { metricas } from '../../sistema/lib/metricas';
 import { rangoDesdeUrl, nombreDelRango, hoyEnCaracas } from '../../sistema/lib/fechas';
 import Rango from '../../components/sistema/Rango.astro';
+import { comoSeLee } from '../../sistema/cie10';
 import { estadoDelRespaldo, haceCuanto, tamanio } from '../../sistema/lib/respaldos';
 
 export const prerender = false;
@@ -215,7 +216,11 @@ const respaldo = await estadoDelRespaldo();
             {m.diagnosticos.map((d) => (
               <li>
                 <div class="barras__fila">
-                  <span class="barras__nombre">{d.idx}</span>
+                  {/* En minúscula de oración y recortado: el catálogo
+                      guarda los nombres en mayúscula sostenida y hay
+                      rúbricas de la CIE-10 de más de cien caracteres, que
+                      reventaban el panel. El completo queda en el título. */}
+                  <span class="barras__nombre" title={comoSeLee(d.idx)}>{comoSeLee(d.idx)}</span>
                   <span class="barras__valor cifra">{d.veces}</span>
                 </div>
                 <div class="barras__carril">
@@ -425,7 +430,18 @@ const respaldo = await estadoDelRespaldo();
   .barras { list-style: none; margin: 0; padding: 0; display: grid; gap: 14px; }
   .barras--finas { gap: 10px; }
   .barras__fila { display: flex; align-items: baseline; justify-content: space-between; gap: 12px; margin-bottom: 5px; }
-  .barras__nombre { font-size: var(--u-sm); color: var(--tinta); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  /* `min-width: 0` es lo que hace que el recorte funcione: sin eso un hijo
+     de flex no se achica por debajo de su contenido y, en vez de salir con
+     puntos suspensivos, empuja al número fuera de la tarjeta. */
+  .barras__nombre {
+    flex: 1;
+    min-width: 0;
+    font-size: var(--u-sm);
+    color: var(--tinta);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
   .barras__valor { font-size: var(--u-sm); font-weight: 700; color: var(--azul); flex: none; }
   .barras__carril { height: 8px; background: var(--panel); border-radius: 999px; overflow: hidden; }
   .barras__barra { height: 100%; background: var(--azul-medio); border-radius: 999px; min-width: 3px; }
@@ -438,7 +454,16 @@ const respaldo = await estadoDelRespaldo();
     padding: 9px 0; border-top: 1px solid var(--linea-tenue);
   }
   .lista li:first-child { border-top: 0; padding-top: 0; }
-  .lista span { display: flex; flex-direction: column; font-size: var(--u-sm); min-width: 0; }
+  .lista span {
+    display: flex;
+    flex-direction: column;
+    font-size: var(--u-sm);
+    min-width: 0;
+    /* Un nombre de examen largo tampoco puede empujar la cifra fuera de la
+       tarjeta: se recorta igual que los diagnósticos. */
+    overflow: hidden;
+  }
+  .lista span > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .lista small { font-size: var(--u-xs); color: var(--tinta-tenue); }
   .lista strong { font-weight: 700; color: var(--azul); flex: none; }
 </style>

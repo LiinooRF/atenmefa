@@ -53,12 +53,18 @@
 .sis__barra { position: sticky; top: 0; z-index: 50; background: var(--azul-profundo); color: #fff; }
 
 .sis__barra-int {
-  max-width: 1320px;
+  /* Más ancha que el contenido de las pantallas, que sigue en 1320. La
+     barra es chapa: con siete destinos, el buscador y quién entró, el tope
+     del contenido dejaba el último destino cortado en monitores donde
+     sobraba espacio a los lados. */
+  max-width: 1560px;
   margin-inline: auto;
   padding: 0 20px;
   display: flex;
   align-items: center;
-  gap: 22px;
+  /* 16 y no 22: con el buscador y siete destinos, cada separación de más
+     es un destino menos que entra. */
+  gap: 16px;
   min-height: 58px;
 }
 
@@ -75,7 +81,7 @@
   display: flex;
   align-items: center;
   gap: 7px;
-  flex: 0 1 230px;
+  flex: 0 1 170px;
   min-width: 0;
   padding: 0 11px;
   border: 1px solid rgba(255, 255, 255, 0.18);
@@ -99,7 +105,10 @@
 .sis__buscar input:focus { outline: none; }
 /* En el teléfono no entra: la barra ya va apretada y el buscador tiene su
    propia pantalla. */
-@media (max-width: 1100px) { .sis__buscar { display: none; } }
+/* El buscador cede antes que el menú: es un atajo y el menú es la única
+   forma de llegar. Con el panel de administración, que tiene siete
+   destinos, por debajo de 1240 px no entran las dos cosas. */
+@media (max-width: 1240px) { .sis__buscar { display: none; } }
 .sis__marca small { font-size: var(--u-xs); font-weight: 400; color: rgba(255, 255, 255, 0.56); letter-spacing: 0; }
 
 /* El menú envuelve en vez de desplazarse de lado. Antes desplazaba, porque
@@ -132,7 +141,7 @@
   align-items: center;
   gap: 8px;
   min-height: 44px;
-  padding: 0 14px;
+  padding: 0 11px;
   color: rgba(255, 255, 255, 0.68);
   text-decoration: none;
   font-size: var(--u-sm);
@@ -224,7 +233,17 @@
   max-width: calc(100vw - 20px);
 }
 
-.sis__quien { display: flex; align-items: center; gap: 10px; flex: none; }
+.sis__quien {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  /* Cede antes que el menú y nunca por debajo de lo que necesita el botón
+     de salir. Con `flex: none` y un nombre largo —«Administración», con el
+     rol debajo— el bloque se quedaba con el ancho que quería y empujaba el
+     menú fuera de la barra. */
+  flex: 0 1 auto;
+  min-width: 0;
+}
 .sis__quien .sis__yo {
   display: none;
   flex-direction: column;
@@ -234,13 +253,23 @@
   text-decoration: none;
   padding: 5px 9px;
   border-radius: 8px;
+  min-width: 0;
+  max-width: 170px;
   transition: background-color 160ms ease;
 }
 .sis__quien .sis__yo:hover { background: rgba(255, 255, 255, 0.1); }
+/* El nombre se recorta en vez de empujar: el menú es navegación y esto es
+   una etiqueta. El completo queda en el título del enlace. */
+.sis__quien strong,
+.sis__quien small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .sis__quien strong { font-size: var(--u-sm); font-weight: 600; }
 .sis__quien small { font-size: var(--u-xs); color: rgba(255, 255, 255, 0.56); }
-.sis__quien small { font-size: var(--u-xs); color: rgba(255, 255, 255, 0.56); }
-@media (min-width: 680px) { .sis__quien .sis__yo { display: flex; } }
+/* El nombre de quien entró aparece cuando sobra ancho de verdad. Entre
+   medio se va: el menú tiene siete destinos y el último —Administración—
+   quedaba cortado por mostrar un rótulo que no se usa para nada. Quien
+   quiera ver quién está dentro tiene el botón de Salir al lado y su
+   propia pantalla en Mi cuenta. */
+@media (min-width: 1360px) { .sis__quien .sis__yo { display: flex; } }
 
 .sis__salir {
   min-height: 38px;

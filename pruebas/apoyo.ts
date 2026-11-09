@@ -242,7 +242,7 @@ export async function llenar(page: Page, campos: Record<string, string>) {
 }
 
 /** Lleva el formulario al paso donde vive ese campo, si hay pasos. */
-async function irAlPasoDe(page: Page, campo: Locator) {
+export async function irAlPasoDe(page: Page, campo: Locator) {
   const indice = await campo.evaluate((e) => {
     const hoja = e.closest('[data-hoja]') as HTMLElement | null;
     if (!hoja) return -1;            // pantalla sin pasos

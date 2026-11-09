@@ -114,6 +114,31 @@ export async function cambiarRol(usuarioId: string, rol: Rol) {
   await bd.update(esquema.user).set({ rol }).where(eq(esquema.user.id, usuarioId));
 }
 
+/**
+ * Corregir el nombre y las matrículas de una cuenta.
+ *
+ * Faltaba, y se notaba: la colegiatura solo se podía poner al crear la
+ * cuenta, y es lo que sale impreso debajo de la firma en cada informe. Un
+ * dedazo en el nombre o una matrícula que llegó después obligaban a borrar
+ * la cuenta y crearla otra vez, perdiendo el hilo de quién firmó qué.
+ *
+ * El correo NO se toca acá: es la llave con la que se entra y cambiarlo
+ * desde otra pantalla deja a alguien afuera sin que se entienda por qué.
+ */
+export async function corregirUsuario(
+  usuarioId: string,
+  datos: { nombre: string; colegiatura: string; msds: string },
+) {
+  await bd
+    .update(esquema.user)
+    .set({
+      name: datos.nombre,
+      colegiatura: datos.colegiatura || null,
+      msds: datos.msds || null,
+    })
+    .where(eq(esquema.user.id, usuarioId));
+}
+
 export async function usuarioPorId(id: string) {
   const [u] = await bd.select().from(esquema.user).where(eq(esquema.user.id, id)).limit(1);
   return u ?? null;

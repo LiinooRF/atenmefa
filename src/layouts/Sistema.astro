@@ -241,7 +241,10 @@ const menu = MENU
           </script>
 
           <div class="sis__quien">
-            <a class="sis__yo" href="/sistema/mi-clave" title="Cambiar mi clave">
+            {/* El título lleva el nombre completo: en la barra se recorta
+                para no empujar el menú. */}
+            <a class="sis__yo" href="/sistema/mi-clave"
+               title={`${usuario.name} · ${nombreDelRol(usuario.rol as string)} · Mi cuenta`}>
               <strong>{usuario.name}</strong>
               <small>{nombreDelRol(usuario.rol as string)}</small>
             </a>

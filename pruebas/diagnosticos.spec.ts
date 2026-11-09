@@ -18,7 +18,7 @@
 import { test, expect } from '@playwright/test';
 import {
   conBase, entrar, cedulaDePrueba, idDeLaFicha, FICHA, historiaMinima,
-  irAlUltimoPaso, llenar,
+  irAlUltimoPaso, llenar, irAlPasoDe,
 } from './apoyo';
 
 test.describe.configure({ mode: 'serial' });
@@ -152,7 +152,11 @@ test('elegir del catálogo guarda el nombre y el código', async ({ page }) => {
      el campo siguiente, y cambiar de paso cierra la lista de resultados —lo
      mismo que pasa cuando el médico toca otra cosa—. */
   await llenar(page, historiaMinima);
-  await llenar(page, { idx: 'infeccion urinaria' });
+  /* La búsqueda tiene su propio campo, al lado de la lista: el de abajo
+     —#c-idx— es el que se guarda, y se puede escribir a mano. Antes eran
+     el mismo y la lista caía flotando encima del formulario. */
+  await irAlPasoDe(page, page.locator('#c-idx'));
+  await page.locator('#c-idx-buscar').fill('infeccion urinaria');
   const opcion = page.locator('#c-idx-lista li', { hasText: 'N39.0' }).first();
   await expect(opcion).toBeVisible();
   await opcion.click();
@@ -186,7 +190,8 @@ test('si el texto se edita a mano, el código se va', async ({ page }) => {
   await entrar(page, 'medico');
   await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}&tipo=general`);
 
-  await llenar(page, { idx: 'i10' });
+  await irAlPasoDe(page, page.locator('#c-idx'));
+  await page.locator('#c-idx-buscar').fill('i10');
   await page.locator('#c-idx-lista li').first().click();
   await expect(page.locator('#c-idx-codigo')).toHaveValue('I10');
 
@@ -199,7 +204,8 @@ test('el botón de quitar suelta el código y deja el texto', async ({ page }) =
   await entrar(page, 'medico');
   await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA)}&tipo=general`);
 
-  await llenar(page, { idx: 'i10' });
+  await irAlPasoDe(page, page.locator('#c-idx'));
+  await page.locator('#c-idx-buscar').fill('i10');
   await page.locator('#c-idx-lista li').first().click();
   await page.locator('#c-idx-quitar').click();
 
@@ -337,7 +343,8 @@ test('sin ninguno marcado no hay botones, y el campo sigue sirviendo', async ({ 
   await conBase((sql) => sql`UPDATE diagnostico SET frecuente = false, orden = NULL WHERE frecuente`);
   await entrar(page, 'medico');
   await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_RAPIDO)}&tipo=general`);
-  await llenar(page, { idx: 'resfriado' });
+  await irAlPasoDe(page, page.locator('#c-idx'));
   await expect(page.locator('.dx__rapidos')).toHaveCount(0);
+  await page.locator('#c-idx-buscar').fill('resfriado');
   await expect(page.locator('#c-idx-lista li').first()).toContainText('J00');
 });

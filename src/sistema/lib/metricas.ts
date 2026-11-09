@@ -116,10 +116,14 @@ export async function metricas(desde: string, hasta: string): Promise<Metricas> 
      LIMIT 8
   `);
 
+  /* Solo las consultas. En una orden de laboratorio el `medico_id` es
+     quien la REGISTRÓ —casi siempre recepción— y el panel terminaba
+     diciendo que recepción atendió dos pacientes. */
   const porMedico = await bd.execute<{ medico: string; casos: number }>(sql`
     SELECT u.name AS medico, count(*)::int AS casos
       FROM atencion a JOIN "user" u ON u.id = a.medico_id
      WHERE a.estado = 'cerrada'
+       AND a.tipo = 'general'
        AND a.fecha BETWEEN ${desde}::date AND ${hasta}::date
      GROUP BY u.name ORDER BY casos DESC
   `);
