@@ -126,6 +126,16 @@ const menu = MENU
             <span>{marca.nombre}<small>Sistema interno</small></span>
           </a>
 
+          {/* Una sola caja para todo: cédula, nombre o número de atención.
+              Antes había que saber en qué pantalla estaba lo que uno
+              buscaba, y quien atiende en el mesón no piensa en pantallas:
+              tiene una cédula escrita en un papel. */}
+          <form class="sis__buscar" method="get" action="/sistema/buscar" role="search">
+            <Icono nombre="latido" tam={16} />
+            <input type="search" name="q" placeholder="Cédula, nombre o N°"
+                   aria-label="Buscar en el sistema" autocomplete="off" />
+          </form>
+
           <nav class="sis__nav" aria-label="Sistema">
             {menu.map((b) => b.sola ? (
               <a

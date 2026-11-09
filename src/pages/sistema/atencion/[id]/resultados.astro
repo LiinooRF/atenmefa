@@ -242,7 +242,8 @@ const fechaLarga = (f: string) =>
       {/* Las cuentas del archivo del laboratorio. Viajan acá para que el
           campo se llene mientras se teclea, sin ir y volver al servidor. */}
       <div class="tablon" data-calculos={JSON.stringify(CALCULOS_EN_LLAVES)}
-           data-suman-cien={JSON.stringify(SUMAN_CIEN)}>
+           data-suman-cien={JSON.stringify(SUMAN_CIEN)}
+           data-sexo={registro.sexo ?? ''}>
         <table class="res">
           <thead>
             <tr>
@@ -493,6 +494,103 @@ const fechaLarga = (f: string) =>
       }
 
       revisarDiferencial(filas, dame, llaves);
+      marcarFueraDeRango(filas, dame);
+    };
+
+    /* ---------- fuera de rango ---------- */
+
+    /* La misma lógica de sistema/rangos.ts, repetida acá porque este script
+       no importa módulos del servidor. Si una cambia, cambia la otra: hay
+       una prueba que compara las dos sobre los mismos casos. */
+    const sexoDelPaciente = tablon?.dataset.sexo ?? '';
+
+    const numeroDeTexto = (texto: string): number | null => {
+      const limpio = String(texto ?? '').trim().replace(/\s+/g, '');
+      if (!limpio || !/^[+-]?[\d.,]+$/.test(limpio)) return null;
+      let t = limpio;
+      if (t.includes(',')) t = t.replace(/\./g, '').replace(',', '.');
+      else if (/^\d{1,3}(\.\d{3})+$/.test(t)) t = t.replace(/\./g, '');
+      const n = Number(t);
+      return Number.isFinite(n) ? n : null;
+    };
+
+    type Limites = { min: number | null; max: number | null };
+
+    const limitesDeTexto = (trozo: string): Limites | null => {
+      const t = trozo.normalize('NFD').replace(/[\u0300-\u036f]/g, '')
+        .toLowerCase().replace(/[\u2013\u2014]/g, '-');
+      const sinRotulo = t.replace(/^[^0-9<>+-]*:/, ' ');
+
+      const tope = sinRotulo.match(/(?:hasta|menor\s*(?:que|a|de)?|inferior\s*a?|<=?)\s*([+-]?\d[\d.,]*)/);
+      if (tope) { const n = numeroDeTexto(tope[1]); if (n !== null) return { min: null, max: n }; }
+      const piso = sinRotulo.match(/(?:mayor\s*(?:que|a|de)?|superior\s*a?|>=?)\s*([+-]?\d[\d.,]*)/);
+      if (piso) { const n = numeroDeTexto(piso[1]); if (n !== null) return { min: n, max: null }; }
+      const rango = sinRotulo.match(/([+-]?\d[\d.,]*)\s*-\s*([+-]?\d[\d.,]*)/);
+      if (rango) {
+        const a = numeroDeTexto(rango[1]);
+        const b = numeroDeTexto(rango[2]);
+        if (a !== null && b !== null && b >= a) return { min: a, max: b };
+      }
+      return null;
+    };
+
+    const limitesPara = (texto: string): Limites | null => {
+      const partes = texto.split('/').map((p) => p.trim()).filter(Boolean);
+      const conRotulo = partes.filter((p) => /hombre|mujer|masculino|femenino|varon|adulto|ni[ñn]o/i.test(p));
+      if (partes.length > 1 && conRotulo.length > 0) {
+        const s = sexoDelPaciente.trim();
+        const esMujer = /^f/i.test(s) || /^mu/i.test(s);
+        const esHombre = /^m/i.test(s) && !esMujer;
+        const suyo = partes.find((p) => {
+          const x = p.toLowerCase();
+          if (esHombre) return /hombre|masculino|varon/.test(x);
+          if (esMujer) return /mujer|femenino/.test(x);
+          return false;
+        });
+        if (suyo) { const l = limitesDeTexto(suyo); if (l) return l; }
+
+        const tramos = conRotulo.map(limitesDeTexto).filter((x): x is Limites => x !== null);
+        if (tramos.length > 1) {
+          return {
+            min: tramos.every((m) => m.min !== null) ? Math.min(...tramos.map((m) => m.min as number)) : null,
+            max: tramos.every((m) => m.max !== null) ? Math.max(...tramos.map((m) => m.max as number)) : null,
+          };
+        }
+        if (tramos.length === 1) return tramos[0];
+      }
+      return limitesDeTexto(texto);
+    };
+
+    const fueraDeRango = (valor: string, referencia: string): string => {
+      const v = numeroDeTexto(valor);
+      if (v === null) return '';
+      const texto = String(referencia ?? '').trim();
+      if (!texto) return '';
+      const lim = limitesPara(texto);
+      if (!lim) return '';
+      if (lim.max !== null && v > lim.max) return 'alto';
+      if (lim.min !== null && v < lim.min) return 'bajo';
+      return '';
+    };
+
+    const marcarFueraDeRango = (
+      filas: HTMLTableRowElement[],
+      dame: (f: HTMLTableRowElement, n: string) => HTMLInputElement | null,
+    ) => {
+      for (const f of filas) {
+        const campo = dame(f, 'valor');
+        if (!campo) continue;
+        const estado = fueraDeRango(campo.value, dame(f, 'referencia')?.value ?? '');
+        if (estado) {
+          f.dataset.fuera = estado;
+          campo.title = estado === 'alto'
+            ? 'Por encima del valor de referencia'
+            : 'Por debajo del valor de referencia';
+        } else {
+          delete f.dataset.fuera;
+          if (campo.dataset.calculado === undefined) campo.removeAttribute('title');
+        }
+      }
     };
 
     /* El diferencial tiene que sumar cien. En su hoja hay una celda aparte
@@ -646,6 +744,22 @@ const fechaLarga = (f: string) =>
 </script>
 
 <style>
+  /* Fuera de rango. El borde a la izquierda y no el fondo entero: con
+     doce renglones, tres fondos rojos convierten la tabla en una alarma y
+     se deja de mirar lo que importa. */
+  #res-cuerpo tr[data-fuera] input[name='valor'] {
+    border-color: var(--rojo);
+    color: var(--rojo);
+    font-weight: 700;
+  }
+  #res-cuerpo tr[data-fuera] td[data-rotulo='Resultado']::after {
+    content: '▲';
+    margin-left: 4px;
+    font-size: 0.72em;
+    color: var(--rojo);
+  }
+  #res-cuerpo tr[data-fuera='bajo'] td[data-rotulo='Resultado']::after { content: '▼'; }
+
   .suma {
     margin-top: 12px;
     padding: 10px 13px;

@@ -66,6 +66,19 @@ export interface Documento {
   anulada: boolean;
   /** Lo que haya: informe siempre, récipe solo si lo lleva. */
   hojas: string[];
+  /**
+   * Los resultados del laboratorio, para que el paciente los VEA y no
+   * solo compruebe que el papel es auténtico.
+   *
+   * Va protegido por lo mismo que ya protegía la verificación: hace falta
+   * la cédula Y el PIN, hay cuenta de intentos fallidos y bloqueo. Nada
+   * de la historia clínica entra acá —ni el diagnóstico, ni el motivo de
+   * consulta— porque esta página es pública: son los valores que el
+   * paciente ya tiene impresos en su hoja.
+   */
+  resultados: { examen: string; valor: string; unidad: string; referencia: string }[];
+  /** Para poder marcar lo que está fuera de rango con el tramo que le toca. */
+  sexo: string | null;
 }
 
 const minutosQueFaltan = (hasta: Date) =>
@@ -90,6 +103,7 @@ export async function verificar(
       tipo: esquema.atencion.tipo,
       datos: esquema.atencion.datos,
       resultadosPor: esquema.atencion.resultadosPor,
+      resultados: esquema.atencion.resultados,
       pin: esquema.atencion.pin,
       intentos: esquema.atencion.intentosFallidos,
       bloqueadaHasta: esquema.atencion.bloqueadaHasta,
@@ -155,6 +169,13 @@ export async function verificar(
   const hojas = esLab ? ['Informe de laboratorio'] : ['Informe de atención médica'];
   if (!esLab && (d.recipe || d.indicaciones)) hojas.push('Récipe');
 
+  /* Solo de laboratorio y solo lo que tiene valor. Una atención médica no
+     muestra nada acá: su contenido es historia clínica. */
+  const resultados = esLab && caso.estado !== 'anulada'
+    ? ((caso.resultados ?? []) as { examen: string; valor: string; unidad: string; referencia: string }[])
+        .filter((r) => r.valor?.trim())
+    : [];
+
   /* Quien firma un informe de laboratorio es el bioanalista y no quien
      registró la orden, que casi siempre es recepción. La aseguradora que
      verifica necesita ver el nombre que está impreso en el papel: si acá
@@ -182,6 +203,8 @@ export async function verificar(
       firmaDe: esLab ? 'bioanalista' : 'medico',
       anulada: caso.estado === 'anulada',
       hojas,
+      resultados,
+      sexo: (d.sexo as string | undefined) ?? null,
     },
   };
 }

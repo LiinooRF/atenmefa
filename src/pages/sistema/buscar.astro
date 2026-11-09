@@ -1,0 +1,220 @@
+---
+/**
+ * El buscador de arriba: una sola caja para todo.
+ *
+ * Antes había que saber en qué pantalla estaba lo que uno buscaba. La
+ * cédula, en Pacientes; el número de orden, en Laboratorio; un apellido,
+ * en Pacientes otra vez pero con otro filtro. Quien atiende en el mesón no
+ * piensa en pantallas: tiene una cédula escrita en un papel.
+ *
+ * Si lo escrito lleva a UN solo sitio, se va directo sin mostrar una lista
+ * de un elemento: escribir el número de orden y aterrizar en la orden es
+ * la mitad del valor de esto.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import Icono from '../../components/Icono.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { bd, esquema } from '../../sistema/lib/base';
+import { and, desc, eq, or, sql } from 'drizzle-orm';
+import { puede } from '../../sistema/lib/permisos';
+
+export const prerender = false;
+
+/* Entra cualquiera que tenga el panel: lo que se puede ABRIR lo sigue
+   decidiendo la pantalla de destino, que es donde está el permiso. Un
+   buscador que esconde resultados según el rol termina haciendo creer que
+   el paciente no existe. */
+const corte = exigir(Astro, 'ver_casos');
+if (corte) return corte;
+
+const usuario = Astro.locals.usuario!;
+const q = (Astro.url.searchParams.get('q') ?? '').trim();
+const digitos = q.replace(/\D/g, '');
+
+const normalizar = (t: string) =>
+  t.normalize('NFD').replace(/[̀-ͯ]/g, '').toLowerCase().replace(/\s+/g, ' ').trim();
+
+type Hallazgo =
+  | { que: 'paciente'; id: string; titulo: string; detalle: string }
+  | { que: 'atencion'; id: string; titulo: string; detalle: string; tipo: string };
+
+let pacientes: Hallazgo[] = [];
+let atenciones: Hallazgo[] = [];
+
+if (q.length >= 2) {
+  /* Un número a secas se busca PRIMERO como número de atención. Es lo que
+     la gente tiene a mano: el papel dice «Orden N° 43». */
+  if (/^\d{1,9}$/.test(q)) {
+    const porNumero = await bd
+      .select({
+        id: esquema.atencion.id,
+        numero: esquema.atencion.numero,
+        tipo: esquema.atencion.tipo,
+        estado: esquema.atencion.estado,
+        fecha: esquema.atencion.fecha,
+        paciente: esquema.paciente.nombre,
+      })
+      .from(esquema.atencion)
+      .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+      .where(eq(esquema.atencion.numero, Number(q)))
+      .limit(5);
+
+    atenciones = porNumero.map((a) => ({
+      que: 'atencion' as const,
+      id: a.id,
+      tipo: a.tipo,
+      titulo: `${a.tipo === 'laboratorio' ? 'Orden' : 'Atención'} N° ${a.numero} · ${a.paciente}`,
+      detalle: `${a.fecha} · ${a.estado === 'cerrada' ? 'cerrada' : a.estado === 'anulada' ? 'anulada' : 'borrador'}`,
+    }));
+  }
+
+  const comoLike = (t: string) => `%${t.replace(/[%_]/g, '\\$&')}%`;
+  const condiciones = [sql`p.nombre_busca LIKE ${comoLike(normalizar(q))}`];
+  if (digitos) condiciones.push(sql`p.cedula_busca LIKE ${comoLike(digitos)}`);
+
+  const filas = await bd.execute(sql`
+    SELECT p.id, p.nombre, p.cedula, p.telefono,
+           (SELECT MAX(a.fecha) FROM atencion a WHERE a.paciente_id = p.id) AS ultima
+      FROM paciente p
+     WHERE ${sql.join(condiciones, sql` OR `)}
+     ORDER BY p.nombre_busca
+     LIMIT 25`);
+
+  pacientes = (filas as unknown as Record<string, string>[]).map((f) => ({
+    que: 'paciente' as const,
+    id: String(f.id),
+    titulo: String(f.nombre),
+    detalle: `${f.cedula}${f.ultima ? ` · última atención ${f.ultima}` : ' · sin atenciones'}`,
+  }));
+}
+
+/* Un solo resultado: se entra. Dos pantallas menos para quien tiene la
+   cédula en la mano y el paciente esperando. */
+const total = pacientes.length + atenciones.length;
+if (total === 1) {
+  const uno = atenciones[0] ?? pacientes[0];
+  return Astro.redirect(
+    uno.que === 'atencion' ? `/sistema/atencion/${uno.id}` : `/sistema/pacientes/${uno.id}`,
+  );
+}
+---
+
+<Sistema titulo={q ? `Buscar: ${q}` : 'Buscar'}>
+  <header class="cab">
+    <h1>{q ? <>Resultados para «{q}»</> : 'Buscar'}</h1>
+    <p class="cab__nota">
+      Sirve el nombre, la cédula o el número de la atención. Si hay uno
+      solo, se entra directo.
+    </p>
+  </header>
+
+  <form class="caja" method="get" action="/sistema/buscar">
+    <Icono nombre="latido" tam={18} />
+    <input type="search" name="q" value={q} autofocus
+           placeholder="Nombre, cédula o N° de atención" aria-label="Qué buscar" />
+    <button type="submit" class="sis-boton sis-boton--azul">Buscar</button>
+  </form>
+
+  {q.length >= 2 && total === 0 && (
+    <div class="sis-tarjeta vacio">
+      <h2>No hay nada con eso</h2>
+      <p>
+        Probá con el apellido, con la cédula sin puntos, o con el número que
+        aparece arriba del informe.
+      </p>
+    </div>
+  )}
+
+  {atenciones.length > 0 && (
+    <section class="grupo">
+      <h2>Atenciones</h2>
+      <ul class="lista">
+        {atenciones.map((a) => (
+          <li>
+            <a href={`/sistema/atencion/${a.id}`}>
+              <Icono nombre={a.tipo === 'laboratorio' ? 'laboratorio' : 'estetoscopio'} tam={18} />
+              <span><strong>{a.titulo}</strong><small>{a.detalle}</small></span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+
+  {pacientes.length > 0 && (
+    <section class="grupo">
+      <h2>Pacientes</h2>
+      <ul class="lista">
+        {pacientes.map((p) => (
+          <li>
+            <a href={`/sistema/pacientes/${p.id}`}>
+              <Icono nombre="latido" tam={18} />
+              <span><strong>{p.titulo}</strong><small>{p.detalle}</small></span>
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
+</Sistema>
+
+<style>
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .caja {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin: 18px 0 24px;
+    padding: 0 14px;
+    border: 1px solid var(--linea);
+    border-radius: 10px;
+    background: var(--papel);
+    max-width: 640px;
+  }
+  .caja input {
+    flex: 1;
+    min-width: 0;
+    /* 44 px: la regla de la casa para todo lo que se toca. */
+    min-height: 46px;
+    border: 0;
+    background: transparent;
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+  }
+  .caja input:focus { outline: none; }
+  .caja:focus-within { border-color: var(--azul-medio); }
+
+  .grupo + .grupo { margin-top: 22px; }
+  .grupo h2 {
+    font-size: var(--u-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: var(--tinta-tenue);
+    margin-bottom: 8px;
+  }
+
+  .lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .lista a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 52px;
+    padding: 0 14px;
+    border: 1px solid var(--linea);
+    border-radius: 9px;
+    background: var(--papel);
+    color: var(--tinta);
+    text-decoration: none;
+  }
+  .lista a:hover { border-color: var(--azul-medio); background: var(--bruma); }
+  .lista span { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+  .lista strong { font-size: var(--u-sm); font-weight: 600; }
+  .lista small { font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  .vacio { text-align: center; padding-block: 40px; }
+  .vacio h2 { font-size: var(--u-lg); }
+  .vacio p { margin-top: 8px; color: var(--tinta-tenue); font-size: var(--u-sm); max-width: 50ch; margin-inline: auto; }
+</style>

@@ -26,6 +26,14 @@ export interface Metricas {
   diagnosticos: { idx: string; veces: number }[];
   porMedico: { medico: string; casos: number }[];
   serviciosMasCargados: { descripcion: string; veces: number; total: number }[];
+  /** Lo que más pide el laboratorio, que no es lo mismo que lo que más se cobra. */
+  examenesMasPedidos: { examen: string; veces: number }[];
+  /**
+   * Cuánto tarda una orden desde que se toma la muestra hasta que se
+   * firman los resultados. Es el número que un paciente pregunta en el
+   * mesón y que nadie sabía responder con un dato.
+   */
+  entrega: { ordenes: number; horasPromedio: number | null; horasMediana: number | null };
 }
 
 /**
@@ -124,6 +132,40 @@ export async function metricas(desde: string, hasta: string): Promise<Metricas> 
      GROUP BY r.descripcion ORDER BY total DESC LIMIT 8
   `);
 
+  /* Lo que más se pide en el laboratorio. Sale de los resultados
+     guardados y no de los renglones de cobro: un perfil se cobra como
+     cinco renglones pero se pide como uno, y lo que el laboratorio
+     necesita saber es qué analito corre más veces por el equipo. */
+  const examenesMasPedidos = (await bd.execute(sql`
+    SELECT r->>'examen' AS examen, COUNT(*)::int AS veces
+      FROM atencion a, jsonb_array_elements(a.resultados) r
+     WHERE a.tipo = 'laboratorio'
+       AND a.fecha BETWEEN ${desde} AND ${hasta}
+       AND COALESCE(btrim(r->>'valor'), '') <> ''
+     GROUP BY 1
+     ORDER BY veces DESC
+     LIMIT 8`)) as unknown as { examen: string; veces: number }[];
+
+  /* Cuánto tarda un resultado. La mediana además del promedio: una sola
+     orden que quedó tres semanas abierta corre el promedio y hace creer
+     que el laboratorio es lento cuando no lo es. */
+  const [tiempos] = (await bd.execute(sql`
+    SELECT COUNT(*)::int AS ordenes,
+           ROUND(AVG(EXTRACT(EPOCH FROM (a.resultados_en - a.creada)) / 3600)::numeric, 1) AS promedio,
+           ROUND((PERCENTILE_CONT(0.5) WITHIN GROUP (
+             ORDER BY EXTRACT(EPOCH FROM (a.resultados_en - a.creada)) / 3600))::numeric, 1) AS mediana
+      FROM atencion a
+     WHERE a.tipo = 'laboratorio'
+       AND a.resultados_en IS NOT NULL
+       AND a.fecha BETWEEN ${desde} AND ${hasta}`)) as unknown as
+    { ordenes: number; promedio: string | null; mediana: string | null }[];
+
+  const entrega = {
+    ordenes: Number(tiempos?.ordenes ?? 0),
+    horasPromedio: tiempos?.promedio != null ? Number(tiempos.promedio) : null,
+    horasMediana: tiempos?.mediana != null ? Number(tiempos.mediana) : null,
+  };
+
   return {
     desde, hasta, dias,
     casos: resumen?.casos ?? 0,
@@ -142,5 +184,9 @@ export async function metricas(desde: string, hasta: string): Promise<Metricas> 
     serviciosMasCargados: servicios.map((f) => ({
       descripcion: f.descripcion, veces: f.veces, total: Number(f.total),
     })),
+    examenesMasPedidos: examenesMasPedidos.map((f) => ({
+      examen: f.examen, veces: Number(f.veces),
+    })),
+    entrega,
   };
 }

@@ -14,6 +14,12 @@ export const user = pgTable("user", {
     .notNull(),
   rol: text("rol").default("medico").notNull(),
   colegiatura: text("colegiatura"),
+  /**
+   * La firma escaneada, como data URI. Va en la base y no en el disco: la
+   * regla del proyecto es que en la VPS no queda ningún archivo, y una
+   * firma es una imagen chica que además tiene que viajar con el respaldo.
+   */
+  firma: text("firma"),
   msds: text("msds"),
   activo: boolean("activo").default(true),
 });

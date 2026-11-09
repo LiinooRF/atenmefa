@@ -8,6 +8,7 @@
  */
 import QR from 'qrcode';
 import { marca } from '../../../../data/marca';
+import { fueraDeRango, comoSeDice } from '../../../../sistema/rangos';
 import { historia } from '../../../../sistema/historia';
 import { laboratorio, type Resultado } from '../../../../sistema/laboratorio';
 import { examenesPedidos } from '../../../../sistema/lib/laboratorio';
@@ -49,6 +50,7 @@ const [caso] = await bd
     medico: esquema.user.name,
     colegiatura: esquema.user.colegiatura,
     msds: esquema.user.msds,
+    firmaMedico: esquema.user.firma,
   })
   .from(esquema.atencion)
   .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
@@ -115,7 +117,11 @@ const examenesPedidosTexto = esLab
    blanco para firmar a mano: es lo honesto. */
 const [firmante] = caso.resultadosPor
   ? await bd
-      .select({ nombre: esquema.user.name, colegiatura: esquema.user.colegiatura })
+      .select({
+        nombre: esquema.user.name,
+        colegiatura: esquema.user.colegiatura,
+        firma: esquema.user.firma,
+      })
       .from(esquema.user)
       .where(eq(esquema.user.id, caso.resultadosPor))
       .limit(1)
@@ -355,7 +361,24 @@ const vitales = [
                       ) : (
                         <tr>
                           <td>{r.examen}</td>
-                          <td class="valores__dato cifra">{r.valor}</td>
+                          {/* El valor que se sale de su rango va marcado.
+                              El sistema tenía el dato y el rango y no los
+                              comparaba: lo hacía el bioanalista de memoria,
+                              renglón por renglón. */}
+                          <td class="valores__dato cifra"
+                              data-fuera={fueraDeRango(r.valor, r.referencia, d.sexo) ?? undefined}>
+                            {r.valor}
+                            {fueraDeRango(r.valor, r.referencia, d.sexo) && (
+                              <span class="valores__flecha" aria-hidden="true">
+                                {fueraDeRango(r.valor, r.referencia, d.sexo) === 'alto' ? '▲' : '▼'}
+                              </span>
+                            )}
+                            {fueraDeRango(r.valor, r.referencia, d.sexo) && (
+                              <span class="oculto">
+                                {' '}{comoSeDice(fueraDeRango(r.valor, r.referencia, d.sexo))}
+                              </span>
+                            )}
+                          </td>
                           <td>{r.unidad}</td>
                           <td>{r.referencia}</td>
                         </tr>
@@ -395,6 +418,11 @@ const vitales = [
 
             <footer class="firma firma--una">
               <div class="firma__linea">
+                {/* Si cargó su firma escaneada, sale impresa. Si no, la
+                    línea queda para firmarla a mano como siempre. */}
+                {firmante?.firma && (
+                  <img class="firma__imagen" src={firmante.firma} alt="" />
+                )}
                 <span>{firmante?.nombre ?? '\u00a0'}</span>
                 <small>{firmante?.colegiatura ?? '\u00a0'}</small>
                 <em>Bioanalista · sello y firma</em>
@@ -517,6 +545,7 @@ const vitales = [
 
       <footer class="firma">
         <div class="firma__linea">
+          {caso.firmaMedico && <img class="firma__imagen" src={caso.firmaMedico} alt="" />}
           <span>{caso.medico}</span>
           <small>
             {caso.colegiatura && `C.M. ${caso.colegiatura}`}
@@ -613,6 +642,7 @@ const vitales = [
 
         <footer class="firma firma--una">
           <div class="firma__linea">
+            {caso.firmaMedico && <img class="firma__imagen" src={caso.firmaMedico} alt="" />}
             <span>{caso.medico}</span>
             <small>
               {caso.colegiatura && `C.M. ${caso.colegiatura}`}
@@ -680,6 +710,28 @@ const vitales = [
       .valores th:nth-child(3), .valores td:nth-child(3) { width: 20mm; }
       .valores th:nth-child(4), .valores td:nth-child(4) { width: 46mm; }
       .valores__dato { font-weight: 700; color: var(--azul); }
+
+      /* Fuera de rango: en el papel no hay color garantizado —muchas se
+         imprimen en blanco y negro—, así que además del tono va una
+         flecha. Lo que se imprime tiene que leerse en una fotocopia. */
+      .valores__dato[data-fuera] { color: var(--rojo); }
+      .valores__flecha { font-size: 7.5pt; margin-left: 3px; }
+
+      /* La firma va ENCIMA de la línea, no en lugar de ella: el renglón
+         sigue estando por si alguien quiere firmar al lado. */
+      .firma__imagen {
+        display: block;
+        max-width: 46mm;
+        max-height: 16mm;
+        margin: 0 auto -2mm;
+        object-fit: contain;
+      }
+      /* Solo para quien lee con un lector de pantalla: la flecha sola no
+         dice si el valor está alto o bajo. */
+      .oculto {
+        position: absolute; width: 1px; height: 1px;
+        overflow: hidden; clip-path: inset(50%); white-space: nowrap;
+      }
 
       /* El subtítulo de bloque, como en las hojas del laboratorio: pegado a
          la izquierda, sin rango al lado y sin la línea que separa los

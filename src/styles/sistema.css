@@ -68,6 +68,38 @@
 /* Sin partirse: con un nombre más largo que «Atenmefa», el «Sistema
    interno» se iba a dos renglones y la barra crecía de alto. */
 .sis__marca span, .sis__marca small { white-space: nowrap; }
+
+/* El buscador de la barra. Se achica antes que el menú porque el menú es
+   navegación y esto es un atajo: si no cabe, se llega igual por Pacientes. */
+.sis__buscar {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex: 0 1 230px;
+  min-width: 0;
+  padding: 0 11px;
+  border: 1px solid rgba(255, 255, 255, 0.18);
+  border-radius: 8px;
+  background: rgba(255, 255, 255, 0.08);
+  color: rgba(255, 255, 255, 0.72);
+}
+.sis__buscar:focus-within { border-color: rgba(255, 255, 255, 0.45); background: rgba(255, 255, 255, 0.14); }
+.sis__buscar input {
+  flex: 1;
+  min-width: 0;
+  min-height: 36px;
+  border: 0;
+  background: transparent;
+  color: #fff;
+  font: inherit;
+  font-family: var(--ui);
+  font-size: var(--u-xs);
+}
+.sis__buscar input::placeholder { color: rgba(255, 255, 255, 0.5); }
+.sis__buscar input:focus { outline: none; }
+/* En el teléfono no entra: la barra ya va apretada y el buscador tiene su
+   propia pantalla. */
+@media (max-width: 1100px) { .sis__buscar { display: none; } }
 .sis__marca small { font-size: var(--u-xs); font-weight: 400; color: rgba(255, 255, 255, 0.56); letter-spacing: 0; }
 
 /* El menú envuelve en vez de desplazarse de lado. Antes desplazaba, porque
@@ -387,3 +419,14 @@
 /* Anular es destructivo aunque no borre: el control se distingue sin gritar. */
 .sis-boton.anular { color: var(--rojo); border-color: #f0c4c7; }
 .sis-boton.anular:hover { background: #fdeced; border-color: var(--rojo); }
+
+/* Solo para lectores de pantalla: una flecha de color no dice si el valor
+   está por encima o por debajo de su referencia. */
+.oculto {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  white-space: nowrap;
+}

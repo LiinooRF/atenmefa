@@ -12,6 +12,7 @@ import {
   puede, puedeBorrarBorrador, puedeCargarResultados, puedeEditarAtencion, puedeEditarOrden,
 } from '../../../sistema/lib/permisos';
 import { examenesPedidos, ordenesDe } from '../../../sistema/lib/laboratorio';
+import { fueraDeRango, comoSeDice } from '../../../sistema/rangos';
 import { comoSeLee } from '../../../sistema/lib/documento';
 
 export const prerender = false;
@@ -360,25 +361,70 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
         </p>
       </section>
 
-      {/* El hilo con el laboratorio, de los dos lados. */}
+      {/* El hilo con el laboratorio, de los dos lados.
+
+          Los resultados se muestran ACÁ y no solo enlazados: el médico
+          pedía los exámenes desde su consulta y después tenía que irse al
+          laboratorio a buscarlos, con el paciente delante. El circuito se
+          cierra donde empezó. */}
       {!esLab && ordenes.length > 0 && (
         <section class="ficha">
           <h2>Laboratorio</h2>
-          <ul class="previas">
-            {ordenes.map((o) => (
-              <li>
-                <a href={`/sistema/atencion/${o.id}`}>
+          {ordenes.map((o) => {
+            const cargados = (o.resultados ?? []).filter((r) => r.valor?.trim());
+            const afuera = cargados.filter(
+              (r) => fueraDeRango(r.valor, r.referencia, datos.sexo) !== null,
+            ).length;
+            return (
+              <details class="orden" open={cargados.length > 0 && ordenes.length === 1}>
+                <summary>
                   <strong class="cifra">Orden N° {o.numero}</strong>
-                  <span>
-                    {o.estado === 'cerrada'
-                      ? `${(o.resultados ?? []).filter((r) => r.valor).length} resultados`
-                      : o.estado === 'anulada' ? 'Anulada' : 'Esperando resultados'}
+                  <span class="orden__estado">
+                    {o.estado === 'anulada' ? 'Anulada'
+                      : cargados.length ? `${cargados.length} resultados`
+                      : 'Esperando resultados'}
                   </span>
+                  {afuera > 0 && (
+                    <span class="orden__ojo">
+                      {afuera} fuera de rango
+                    </span>
+                  )}
                   <em>{fechaLarga(o.fecha)}</em>
-                </a>
-              </li>
-            ))}
-          </ul>
+                </summary>
+
+                {cargados.length > 0 ? (
+                  <table class="res">
+                    <thead>
+                      <tr><th>Examen</th><th>Resultado</th><th>Unidad</th><th>Referencia</th></tr>
+                    </thead>
+                    <tbody>
+                      {cargados.map((r) => (
+                        <tr data-fuera={fueraDeRango(r.valor, r.referencia, datos.sexo) ?? undefined}>
+                          <td>{r.examen}</td>
+                          <td class="res__dato cifra">
+                            {r.valor}
+                            <span class="oculto">
+                              {' '}{comoSeDice(fueraDeRango(r.valor, r.referencia, datos.sexo))}
+                            </span>
+                          </td>
+                          <td>{r.unidad}</td>
+                          <td>{r.referencia}</td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                ) : (
+                  <p class="orden__nada">
+                    Todavía no hay resultados cargados en esta orden.
+                  </p>
+                )}
+
+                <p class="orden__pie">
+                  <a href={`/sistema/atencion/${o.id}`}>Abrir la orden completa</a>
+                </p>
+              </details>
+            );
+          })}
         </section>
       )}
 
@@ -418,6 +464,61 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
 </Sistema>
 
 <style>
+  /* Los resultados dentro de la consulta. Plegados cuando hay varias
+     órdenes y abiertos cuando hay una sola: con una, esconderla detrás de
+     un clic es un clic de más. */
+  .orden {
+    border: 1px solid var(--linea);
+    border-radius: 10px;
+    background: var(--papel);
+    margin-bottom: 8px;
+  }
+  .orden summary {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 10px;
+    min-height: 48px;
+    padding: 0 14px;
+    cursor: pointer;
+    font-size: var(--u-sm);
+  }
+  .orden summary::-webkit-details-marker { display: none; }
+  .orden__estado { color: var(--tinta-tenue); font-size: var(--u-xs); }
+  .orden__ojo {
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: #fdecec;
+    color: var(--rojo);
+    font-size: var(--u-xs);
+    font-weight: 700;
+  }
+  .orden summary em { margin-left: auto; font-style: normal; font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  .res { width: 100%; border-collapse: collapse; font-size: var(--u-sm); }
+  .res th {
+    text-align: left;
+    padding: 7px 14px;
+    border-block: 1px solid var(--linea-tenue);
+    font-size: var(--u-xs);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    color: var(--tinta-tenue);
+    background: var(--panel);
+  }
+  .res td { padding: 7px 14px; border-bottom: 1px solid var(--linea-tenue); }
+  .res tbody tr:last-child td { border-bottom: 0; }
+  .res__dato { font-weight: 700; }
+  /* Fuera de rango: color y flecha. En una captura en blanco y negro el
+     color solo no dice nada. */
+  .res tr[data-fuera] .res__dato { color: var(--rojo); }
+  .res tr[data-fuera] .res__dato::after { content: ' ▲'; font-size: 0.75em; }
+  .res tr[data-fuera='bajo'] .res__dato::after { content: ' ▼'; }
+
+  .orden__nada { margin: 0; padding: 12px 14px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .orden__pie { margin: 0; padding: 10px 14px; border-top: 1px solid var(--linea-tenue); font-size: var(--u-xs); }
+  .orden__pie a { color: var(--azul); font-weight: 600; }
+
   .codigo {
     margin-left: 7px;
     padding: 2px 8px;

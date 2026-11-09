@@ -10,15 +10,60 @@ import Icono from '../../components/Icono.astro';
 import { auth } from '../../sistema/lib/auth';
 import { cambiarClave, claveFloja } from '../../sistema/lib/usuarios';
 import { anotar } from '../../sistema/lib/atenciones';
+import { bd, esquema } from '../../sistema/lib/base';
+import { eq } from 'drizzle-orm';
 
 export const prerender = false;
 
 const yo = Astro.locals.usuario!;
 let error = '';
 let listo = false;
+let avisoFirma = '';
+let errorFirma = '';
+
+/* El tope. Una firma escaneada decente pesa menos de 30 KB; 120 deja
+   margen de sobra y evita que alguien suba una foto de 4 MB que después
+   viaja en cada respaldo de la base. El data URI pesa un tercio más que
+   el archivo, así que se mide ya codificado. */
+const TOPE_FIRMA = 120 * 1024;
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
+  const accion = String(form.get('accion') ?? 'clave');
+
+  if (accion === 'firma') {
+    const archivo = form.get('firma');
+    if (form.get('quitar') === 'si') {
+      await bd.update(esquema.user).set({ firma: null }).where(eq(esquema.user.id, yo.id));
+      await anotar(yo.id, 'cambio_firma', undefined, { accion: 'quitada' });
+      avisoFirma = 'Se quitó la firma. El informe vuelve a salir con la línea para firmar a mano.';
+    } else if (archivo instanceof File && archivo.size > 0) {
+      const tipo = archivo.type;
+      if (tipo !== 'image/png' && tipo !== 'image/jpeg') {
+        errorFirma = 'La firma tiene que ser una imagen PNG o JPG.';
+      } else {
+        const bytes = Buffer.from(await archivo.arrayBuffer());
+        /* Concatenado y no con plantilla: un literal `data:${tipo};base64,…`
+           acá adentro rompe la compilación con un «Unexpected export» que
+           apunta a una línea que no tiene nada que ver. Costó un rato
+           encontrarlo; no vale la pena volver a probarlo. */
+        const uri = 'data:' + tipo + ';base64,' + bytes.toString('base64');
+        if (uri.length > TOPE_FIRMA) {
+          const pesa = Math.round(uri.length / 1024);
+          const tope = Math.round(TOPE_FIRMA / 1024);
+          errorFirma = 'Esa imagen pesa ' + pesa + ' KB y el tope son ' + tope
+            + '. Recórtela a la firma sola, sin la hoja alrededor.';
+        } else {
+          await bd.update(esquema.user).set({ firma: uri }).where(eq(esquema.user.id, yo.id));
+          await anotar(yo.id, 'cambio_firma', undefined, { accion: 'cargada', bytes: uri.length });
+          avisoFirma = 'Firma guardada. Desde ahora sale impresa en lo que usted firme.';
+        }
+      }
+    } else {
+      errorFirma = 'Elija una imagen.';
+    }
+  } else {
+
   const actual = String(form.get('actual') ?? '');
   const nueva = String(form.get('nueva') ?? '');
   const repetida = String(form.get('repetida') ?? '');
@@ -53,12 +98,19 @@ if (Astro.request.method === 'POST') {
       listo = true;
     }
   }
+  }
 }
+
+const [miFicha] = await bd
+  .select({ firma: esquema.user.firma, colegiatura: esquema.user.colegiatura })
+  .from(esquema.user)
+  .where(eq(esquema.user.id, yo.id))
+  .limit(1);
 ---
 
-<Sistema titulo="Mi clave">
+<Sistema titulo="Mi cuenta">
   <div class="caja">
-    <h1>Cambiar mi clave</h1>
+    <h1>Mi cuenta</h1>
 
     {listo ? (
       <section class="sis-tarjeta hecho">
@@ -93,7 +145,56 @@ if (Astro.request.method === 'POST') {
             <label for="repetida">Repita la clave nueva</label>
             <input id="repetida" name="repetida" type="password" minlength="10" required autocomplete="new-password" />
           </div>
+          <input type="hidden" name="accion" value="clave" />
           <button type="submit" class="sis-boton sis-boton--primario">Cambiar mi clave</button>
+        </form>
+
+        {/* La firma.
+
+            El informe salía con el nombre y la matrícula sobre una línea
+            vacía y había que firmarlo a mano uno por uno. En un
+            laboratorio que entrega veinte al día, eso es media hora de
+            firmar papeles. */}
+        <h2 class="caja__titulo">Mi firma</h2>
+        <p class="caja__nota">
+          Si carga su firma escaneada, sale impresa en los informes que
+          usted firme. Si no, el papel sigue saliendo con la línea para
+          firmarlo a mano.
+        </p>
+
+        {errorFirma && <p class="sis-error"><Icono nombre="escudo" tam={18} />{errorFirma}</p>}
+        {avisoFirma && <p class="msj--bien"><Icono nombre="escudo" tam={18} />{avisoFirma}</p>}
+
+        <form method="post" class="sis-tarjeta formulario" enctype="multipart/form-data">
+          <input type="hidden" name="accion" value="firma" />
+
+          {miFicha?.firma ? (
+            <div class="muestra">
+              <img src={miFicha.firma} alt="Su firma, como va a salir impresa" />
+              <small>Así sale en el papel.</small>
+            </div>
+          ) : (
+            <p class="caja__nota">Todavía no cargó ninguna.</p>
+          )}
+
+          <div class="sis-campo">
+            <label for="firma">Imagen de la firma</label>
+            <input id="firma" name="firma" type="file" accept="image/png,image/jpeg" />
+            <span class="pista">
+              PNG o JPG, hasta 120 KB. Conviene firmar en una hoja blanca,
+              fotografiarla y recortar solo la firma: el fondo blanco se
+              imprime igual que el papel.
+            </span>
+          </div>
+
+          <div class="par">
+            <button type="submit" class="sis-boton sis-boton--primario">Guardar la firma</button>
+            {miFicha?.firma && (
+              <button type="submit" name="quitar" value="si" class="sis-boton sis-boton--suave">
+                Quitarla
+              </button>
+            )}
+          </div>
         </form>
       </>
     )}
@@ -111,4 +212,25 @@ if (Astro.request.method === 'POST') {
   .hecho h2 { font-size: var(--u-lg); }
   .hecho p { color: var(--tinta-suave); font-size: var(--u-sm); }
   .hecho .sis-boton { margin-top: 5px; }
+
+  .caja__titulo { margin-top: 10px; font-size: var(--u-lg); }
+  .par { display: flex; flex-wrap: wrap; gap: 8px; }
+  .msj--bien {
+    display: flex; gap: 9px; align-items: center;
+    padding: 11px 13px; border: 1px solid #2f8f5b; border-radius: 9px;
+    background: #eaf6ef; color: #1f6b43; font-size: var(--u-sm);
+  }
+  /* El fondo a cuadros deja ver si la imagen trae fondo blanco o es
+     transparente: en el papel se ve igual, pero sobre la pantalla no. */
+  .muestra { display: grid; gap: 6px; justify-items: start; }
+  .muestra img {
+    max-width: 260px;
+    max-height: 110px;
+    padding: 8px 12px;
+    border: 1px solid var(--linea);
+    border-radius: 8px;
+    background:
+      repeating-conic-gradient(#f4f6fb 0% 25%, #ffffff 0% 50%) 0 0 / 14px 14px;
+  }
+  .muestra small { font-size: var(--u-xs); color: var(--tinta-tenue); }
 </style>

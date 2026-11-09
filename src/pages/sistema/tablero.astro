@@ -28,6 +28,16 @@ const { desde, hasta } = rangoDesdeUrl(Astro.url);
 const m = await metricas(desde, hasta);
 
 const numero = (v: number) => new Intl.NumberFormat('es-VE').format(v);
+
+/* Horas, pero dichas como las dice una persona: «4 horas», «1 día y
+   medio». «38,4 h» obliga a hacer la cuenta mentalmente. */
+const enHoras = (h: number) => {
+  if (h < 1) return `${Math.round(h * 60)} minutos`;
+  if (h < 24) return `${h % 1 === 0 ? h : h.toFixed(1).replace('.', ',')} horas`;
+  const dias = h / 24;
+  if (dias < 2) return 'poco más de un día';
+  return `${dias.toFixed(1).replace('.', ',')} días`;
+};
 const dinero = (v: number) =>
   new Intl.NumberFormat('es-VE', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(v);
 
@@ -226,6 +236,49 @@ const respaldo = await estadoDelRespaldo();
         </ul>
       </section>
 
+      {/* Lo que más corre por el laboratorio. No es lo mismo que lo que
+          más se cobra: un perfil se cobra como cinco renglones y se pide
+          como uno, y lo que hace falta saber para comprar reactivos es
+          cuántas veces pasa cada analito por el equipo. */}
+      <section class="sis-tarjeta panel">
+        <h2>Exámenes que más se piden</h2>
+        {m.examenesMasPedidos.length === 0 ? (
+          <p class="panel__vacio">Todavía no hay resultados cargados en este período.</p>
+        ) : (
+          <ul class="lista">
+            {m.examenesMasPedidos.map((e) => (
+              <li>
+                <span>{e.examen}</span>
+                <strong class="cifra">{numero(e.veces)}</strong>
+              </li>
+            ))}
+          </ul>
+        )}
+      </section>
+
+      {/* Cuánto tarda un resultado: es lo que el paciente pregunta en el
+          mesón y lo que nadie sabía responder con un dato. */}
+      <section class="sis-tarjeta panel">
+        <h2>Cuánto tarda un resultado</h2>
+        {m.entrega.ordenes === 0 || m.entrega.horasMediana === null ? (
+          <p class="panel__vacio">Ninguna orden entregada en este período.</p>
+        ) : (
+          <div class="entrega">
+            <p class="entrega__grande">
+              <strong class="cifra">{enHoras(m.entrega.horasMediana)}</strong>
+              <small>la mitad de las órdenes sale en esto o menos</small>
+            </p>
+            <p class="entrega__chico">
+              Promedio {enHoras(m.entrega.horasPromedio ?? 0)} sobre
+              {' '}{numero(m.entrega.ordenes)} {m.entrega.ordenes === 1 ? 'orden entregada' : 'órdenes entregadas'}.
+              {m.entrega.horasPromedio !== null && m.entrega.horasMediana !== null
+                && m.entrega.horasPromedio > m.entrega.horasMediana * 1.6
+                && ' El promedio va muy por encima de la mitad: hay órdenes que quedaron abiertas mucho tiempo y la están corriendo.'}
+            </p>
+          </div>
+        )}
+      </section>
+
       <section class="sis-tarjeta panel">
         <h2>Servicios que más se cargaron</h2>
         {m.serviciosMasCargados.length === 0 ? (
@@ -315,6 +368,12 @@ const respaldo = await estadoDelRespaldo();
   .panel h2 { font-size: var(--u-md); margin-bottom: 14px; }
   .panel__pie { margin-top: 13px; padding-top: 11px; border-top: 1px solid var(--linea-tenue); font-size: var(--u-xs); color: var(--tinta-tenue); }
   .panel__pie a { color: var(--azul); font-weight: 600; }
+  .entrega { padding-top: 4px; }
+  .entrega__grande { display: flex; flex-direction: column; gap: 2px; margin: 0; }
+  .entrega__grande strong { font-size: var(--u-2xl); line-height: 1.05; color: var(--azul); }
+  .entrega__grande small { font-size: var(--u-xs); color: var(--tinta-tenue); }
+  .entrega__chico { margin: 12px 0 0; font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.55; }
+
   .panel__vacio { font-size: var(--u-sm); color: var(--tinta-tenue); }
   .panel__aclara {
     margin: -6px 0 13px;
