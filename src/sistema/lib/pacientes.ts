@@ -629,7 +629,14 @@ export async function crearPaciente(
 function revisarContacto(bruto: { telefono?: unknown; whatsapp?: unknown; correo?: unknown }) {
   const numero = (texto: string, cual: string) => {
     const digitos = soloDigitos(texto);
-    if (texto && (digitos.length < 7 || digitos.length > 15)) {
+
+    /* Sin ningún dígito es un campo que alguien está vaciando: un guion,
+       un paréntesis o un «+» que quedó de borrar el número. Se guarda como
+       vacío en vez de rebotar con «tiene 0 dígitos», que era un error que
+       no se entendía y no dejaba guardar el resto de la ficha. */
+    if (!digitos) return null;
+
+    if (digitos.length < 7 || digitos.length > 15) {
       /* Dice cuántos contó. El mensaje de antes mostraba un ejemplo
          correcto al lado de lo que la persona había escrito y no se
          entendía qué estaba mal: un guion de más o un dígito de menos se
@@ -639,7 +646,7 @@ function revisarContacto(bruto: { telefono?: unknown; whatsapp?: unknown; correo
         'tiene que tener entre 7 y 15. Un celular va así: 0414-8939176.',
       );
     }
-    if (texto && !/^[+\d\s().-]+$/.test(texto)) {
+    if (!/^[+\d\s().-]+$/.test(texto)) {
       throw new Error(`El ${cual} lleva solo números, espacios y los signos + ( ) - y punto.`);
     }
     return texto || null;

@@ -126,12 +126,50 @@ const nombresPedidos = [
 ];
 
 const porNombre = new Map(cargados.map((r) => [r.examen, r]));
+
+/* La unidad y el rango de cada analito, por nombre.
+   
+   Es el cruce que faltaba. Los renglones que vienen de una orden salen de
+   los EXÁMENES PEDIDOS —el catálogo de cobro—, que solo guardan el nombre;
+   la unidad y el rango viven en las plantillas. Resultado: una orden de
+   hematología abría con los doce analitos y las tres columnas de la
+   derecha en blanco, como si el laboratorio no tuviera rangos cargados.
+   
+   El catálogo se armó de las mismas plantillas, así que los nombres calzan
+   uno a uno. El que no calce queda en blanco, como antes.
+   
+   Un analito que está en dos plantillas —la albúmina, el ácido úrico— gana
+   el primero que traiga rango: son los mismos valores en las dos hojas del
+   archivo, y si algún día dejan de serlo, el bioanalista lo corrige en la
+   línea, que es editable. */
+const deLaPlantilla = new Map<string, { unidad: string; referencia: string }>();
+for (const p of plantillas) {
+  for (const a of p.analitos) {
+    if (a.tipo === 'titulo') continue;
+    const antes = deLaPlantilla.get(a.analito);
+    if (antes && antes.referencia.trim()) continue;
+    deLaPlantilla.set(a.analito, { unidad: a.unidad, referencia: a.referencia });
+  }
+}
+
+/* Lo ya guardado manda sobre la plantilla: si el bioanalista corrigió un
+   rango para ESTE paciente, no se lo pisa. Solo se rellena lo vacío. */
+const conPlantilla = (r: Resultado): Resultado => {
+  const d = deLaPlantilla.get(r.examen);
+  if (!d) return r;
+  return {
+    ...r,
+    unidad: r.unidad.trim() ? r.unidad : d.unidad,
+    referencia: r.referencia.trim() ? r.referencia : d.referencia,
+  };
+};
+
 const lineas: Resultado[] = [
   ...nombresPedidos.map((nombre) =>
-    porNombre.get(nombre) ?? { examen: nombre, valor: '', unidad: '', referencia: '' },
+    conPlantilla(porNombre.get(nombre) ?? { examen: nombre, valor: '', unidad: '', referencia: '' }),
   ),
   // Lo cargado que no calza con ningún examen pedido: líneas agregadas a mano.
-  ...cargados.filter((r) => !nombresPedidos.includes(r.examen)),
+  ...cargados.filter((r) => !nombresPedidos.includes(r.examen)).map(conPlantilla),
 ];
 if (lineas.length === 0) lineas.push({ examen: '', valor: '', unidad: '', referencia: '' });
 

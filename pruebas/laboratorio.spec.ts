@@ -1007,6 +1007,45 @@ test('el informe impreso separa los bloques de la hoja', async ({ page }) => {
    archivo del cliente dejó 51 analitos sin rango.
    ------------------------------------------------------------------ */
 
+/* Dos pruebas y no una: entrar dos veces en la misma prueba cuelga
+   cuarenta y cinco segundos, porque /sistema/entrar redirige cuando ya hay
+   sesión y el formulario de correo nunca aparece. Una sesión por prueba. */
+const EXAMEN_PLANTILLA = 'HEMOGLOBINA';
+
+test('recepción registra una orden con un examen que está en una plantilla', async ({ page }) => {
+  await sembrarExamen(EXAMEN_PLANTILLA, '0.00');
+
+  await entrar(page, 'recepcionista');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_RANGO)}&tipo=laboratorio`);
+  await page.locator('#c-nombre').fill('Rango de Prueba Goitia');
+  await page.locator('#c-edad').fill('51');
+  await page.locator('#c-sexo').selectOption('Masculino');
+  await page.locator('[data-ir="1"]').click();
+
+  const casilla = page.locator('.ex__lista input[name="examen"]').first();
+  await casilla.check();
+  await page.getByRole('button', { name: 'Guardar la orden' }).click();
+  await expect(page).toHaveURL(FICHA);
+});
+
+test('esa orden abre con la unidad y el rango ya puestos', async ({ page }) => {
+  /* Los renglones de una orden salen de los exámenes PEDIDOS, que solo
+     guardan el nombre; la unidad y el rango viven en las plantillas. Sin
+     el cruce, una orden de hematología abría con sus analitos y las tres
+     columnas de la derecha en blanco, y parecía que el laboratorio no
+     tenía ningún rango cargado. */
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_RANGO)}/resultados`);
+
+  const nombres = await renglonesDe(page);
+  expect(nombres.length, 'la orden tiene que traer su examen').toBeGreaterThan(0);
+
+  const fila = page.locator('#res-cuerpo tr').nth(0);
+  // Acá no se tecleó nada: la unidad y el rango vienen de la plantilla.
+  await expect(fila.locator('input[name="unidad"]')).not.toHaveValue('');
+  await expect(fila.locator('input[name="referencia"]')).not.toHaveValue('');
+});
+
 test('el bioanalista ve la lista de exámenes y cuántos rangos faltan', async ({ page }) => {
   await entrar(page, 'bioanalista');
   await page.goto('/sistema/plantillas');
@@ -1066,13 +1105,6 @@ test('escribir un rango lo deja puesto para las órdenes que vienen', async ({ p
   /* Y lo que importa: el bioanalista abre una orden NUEVA —la de arriba
      ya quedó entregada y una entregada no se vuelve a cargar—, pone esa
      plantilla, y el rango ya viene escrito. */
-  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_RANGO)}`);
-  await page.locator('#c-nombre').fill('Rango de Prueba Goitia');
-  await page.locator('#c-edad').fill('51');
-  await page.locator('#c-sexo').selectOption('Masculino');
-  await page.getByRole('button', { name: 'Guardar la orden' }).click();
-  await expect(page).toHaveURL(FICHA);
-
   await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_RANGO)}/resultados`);
   await page.locator('#res-plantilla').selectOption('COAG.');
   await page.getByRole('button', { name: 'Poner' }).click();

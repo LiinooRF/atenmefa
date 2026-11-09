@@ -95,6 +95,7 @@ export const GET: APIRoute = async (ctx) => {
   };
 
   titulo(`${clinica.nombre} · Informe de laboratorio`);
+  hoja.addRow([`${clinica.razonSocial} · RIF ${clinica.rif}`]);
   hoja.addRow([`${clinica.direccion.calle} · ${clinica.direccion.ciudad}`]);
   hoja.addRow([]);
 

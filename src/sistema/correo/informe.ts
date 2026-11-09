@@ -38,7 +38,9 @@ export interface DatosDelInforme {
   /** Quien firma: el médico o el bioanalista. */
   firma: { nombre: string; colegiatura?: string | null; rol: string };
   verificacion: { url: string; pin: string | null; dominioCorto: string };
-  centro: { nombre: string; direccion: string; telefono: string };
+  /* `razon` y `rif` son los del registro mercantil: el informe se entrega
+     a un seguro o a una empresa y sin RIF no sirve para facturar. */
+  centro: { nombre: string; direccion: string; telefono: string; razon: string; rif: string };
 }
 
 const AZUL = '#111663';
@@ -145,6 +147,7 @@ export function htmlDelInforme(d: DatosDelInforme): string {
               <tr>
                 <td style="font-family:Arial,Helvetica,sans-serif">
                   <strong style="font-size:19px;color:${AZUL}">${escapar(d.centro.nombre)}</strong><br />
+                  <span style="font-size:12px;color:${GRIS}">${escapar(d.centro.razon)} · RIF ${escapar(d.centro.rif)}</span><br />
                   <span style="font-size:12px;color:${GRIS}">${escapar(d.centro.direccion)}</span><br />
                   <span style="font-size:12px;color:${GRIS}">${escapar(d.centro.telefono)}</span>
                 </td>
@@ -206,6 +209,7 @@ export function textoDelInforme(d: DatosDelInforme): string {
   const esLab = d.tipo === 'laboratorio';
   const lineas: string[] = [
     d.centro.nombre,
+    `${d.centro.razon} · RIF ${d.centro.rif}`,
     esLab ? `Informe de laboratorio N° ${d.numero}` : `Informe de atención N° ${d.numero}`,
     fechaLarga(d.fecha),
     '',

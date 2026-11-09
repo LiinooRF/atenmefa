@@ -199,6 +199,8 @@ if (Astro.request.method === 'POST') {
         verificacion: { url: urlVerificacion, pin: caso.pin, dominioCorto },
         centro: {
           nombre: clinica.nombre,
+          razon: clinica.razonSocial,
+          rif: clinica.rif,
           direccion: `${clinica.direccion.calle} · ${clinica.direccion.ciudad}`,
           telefono: clinica.contacto.whatsapp.visible,
         },

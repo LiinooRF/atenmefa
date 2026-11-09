@@ -301,6 +301,10 @@ const vitales = [
               <div class="enc__marca">
                 <strong>Atenmefa</strong>
                 <span>Laboratorio clínico</span>
+                {/* La razón social y el RIF en todo lo que se imprime: el
+                    informe va a un seguro o a una empresa y sin RIF no
+                    sirve para facturar. Es lo primero que devuelven. */}
+                <small>{clinica.razonSocial} · RIF {clinica.rif}</small>
                 <small>{clinica.direccion.calle} · {clinica.direccion.ciudad}, estado {clinica.direccion.estado}</small>
                 <small>{clinica.contacto.whatsapp.visible}{clinica.contacto.segundo && ` · ${clinica.contacto.segundo.visible}`}</small>
               </div>
@@ -445,6 +449,7 @@ const vitales = [
         <div class="enc__marca">
           <strong>Atenmefa</strong>
           <span>Atención médica familiar</span>
+          <small>{clinica.razonSocial} · RIF {clinica.rif}</small>
           <small>{clinica.direccion.calle} · {clinica.direccion.ciudad}, estado {clinica.direccion.estado}</small>
           <small>{clinica.contacto.whatsapp.visible}{clinica.contacto.segundo && ` · ${clinica.contacto.segundo.visible}`}</small>
         </div>
@@ -574,6 +579,7 @@ const vitales = [
           <div class="enc__marca">
             <strong>Atenmefa</strong>
             <span>Atención médica familiar</span>
+            <small>{clinica.razonSocial} · RIF {clinica.rif}</small>
             <small>{clinica.direccion.calle} · {clinica.direccion.ciudad}</small>
           </div>
           <div class="enc__titulo">
