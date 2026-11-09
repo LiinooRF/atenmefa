@@ -10,6 +10,8 @@
  * un listado con la mitad de las entradas muertas es peor que uno corto.
  */
 import Base from '../../layouts/Base.astro';
+import { marca } from '../../data/marca';
+import Tapa from '../../components/Tapa.astro';
 import Icono from '../../components/Icono.astro';
 import Cierre from '../../components/Cierre.astro';
 import { catalogoDePreguntas, servicios, clinica } from '../../data/clinica';
@@ -22,6 +24,8 @@ const porServicio = servicios
   .map((s) => ({ servicio: s, suyas: catalogoDePreguntas.filter((p) => p.servicio?.slug === s.slug) }))
   .filter((g) => g.suyas.length > 0);
 ---
+
+{marca.demo ? <Tapa /> : (
 
 <Base
   titulo="Preguntas frecuentes sobre Atenmefa | Ciudad Bolívar"
@@ -128,3 +132,4 @@ const porServicio = servicios
     overflow: hidden;
   }
 </style>
+)}
