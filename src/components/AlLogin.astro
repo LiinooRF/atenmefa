@@ -1,0 +1,31 @@
+---
+/**
+ * En la demostración no hay sitio público: la raíz entra al sistema.
+ *
+ * Había una tapa con el logo y un botón, y sobraba: quien abre el enlace
+ * viene a ver la plataforma, no una portada. Un paso de más antes de la
+ * clave es un paso que alguien tiene que explicar en una demostración.
+ *
+ * El salto es inmediato y por dos caminos. El `refresh` con cero segundos
+ * funciona aunque el navegador no corra scripts; el `location.replace` es
+ * el que de verdad se usa, y va con replace y no con href para no dejar
+ * esta página en el historial: con href, el botón de atrás del navegador
+ * volvía acá y rebotaba al login otra vez, y no se podía salir.
+ */
+const destino = '/sistema/entrar';
+---
+
+<html lang="es">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="robots" content="noindex, nofollow" />
+    <meta http-equiv="refresh" content={`0; url=${destino}`} />
+    <title>Entrar</title>
+    <script is:inline define:vars={{ destino }}>
+      location.replace(destino);
+    </script>
+  </head>
+  <body>
+    <a href={destino}>Entrar al sistema</a>
+  </body>
+</html>

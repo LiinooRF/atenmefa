@@ -11,7 +11,7 @@
  */
 import Base from '../../layouts/Base.astro';
 import { marca } from '../../data/marca';
-import Tapa from '../../components/Tapa.astro';
+import AlLogin from '../../components/AlLogin.astro';
 import Icono from '../../components/Icono.astro';
 import Cierre from '../../components/Cierre.astro';
 import { catalogoDePreguntas, servicios, clinica } from '../../data/clinica';
@@ -25,7 +25,7 @@ const porServicio = servicios
   .filter((g) => g.suyas.length > 0);
 ---
 
-{marca.demo ? <Tapa /> : (
+{marca.demo ? <AlLogin /> : (
 
 <Base
   titulo="Preguntas frecuentes sobre Atenmefa | Ciudad Bolívar"
