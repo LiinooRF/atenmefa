@@ -164,14 +164,17 @@ export async function plantillasDeExamen() {
       analito: esquema.plantillaExamen.analito,
       unidad: esquema.plantillaExamen.unidad,
       referencia: esquema.plantillaExamen.referencia,
+      tipo: esquema.plantillaExamen.tipo,
     })
     .from(esquema.plantillaExamen)
     .orderBy(asc(esquema.plantillaExamen.examen), asc(esquema.plantillaExamen.orden));
 
-  const porExamen = new Map<string, { analito: string; unidad: string; referencia: string }[]>();
+  const porExamen = new Map<
+    string, { analito: string; unidad: string; referencia: string; tipo: string }[]
+  >();
   for (const f of filas) {
     const lista = porExamen.get(f.examen) ?? [];
-    lista.push({ analito: f.analito, unidad: f.unidad, referencia: f.referencia });
+    lista.push({ analito: f.analito, unidad: f.unidad, referencia: f.referencia, tipo: f.tipo });
     porExamen.set(f.examen, lista);
   }
 
@@ -191,8 +194,10 @@ export async function resumenDePlantillas() {
     .select({
       examen: esquema.plantillaExamen.examen,
       analitos: count(),
-      conRango: sql<number>`count(*) filter (where btrim(${esquema.plantillaExamen.referencia}) <> '')`,
-      conUnidad: sql<number>`count(*) filter (where btrim(${esquema.plantillaExamen.unidad}) <> '')`,
+      /* Los encabezados de bloque no cuentan: nunca van a tener rango y
+         los sumaba a la cifra de lo que el laboratorio tiene que escribir. */
+      analitosDeVerdad: sql<number>`count(*) filter (where ${esquema.plantillaExamen.tipo} = 'analito')`,
+      conRango: sql<number>`count(*) filter (where ${esquema.plantillaExamen.tipo} = 'analito' and btrim(${esquema.plantillaExamen.referencia}) <> '')`,
     })
     .from(esquema.plantillaExamen)
     .groupBy(esquema.plantillaExamen.examen)
@@ -200,10 +205,10 @@ export async function resumenDePlantillas() {
 
   return filas.map((f) => ({
     examen: f.examen,
-    analitos: Number(f.analitos),
+    renglones: Number(f.analitos),
+    analitos: Number(f.analitosDeVerdad),
     conRango: Number(f.conRango),
-    conUnidad: Number(f.conUnidad),
-    sinRango: Number(f.analitos) - Number(f.conRango),
+    sinRango: Number(f.analitosDeVerdad) - Number(f.conRango),
   }));
 }
 
@@ -215,6 +220,7 @@ export async function plantillaDe(examen: string) {
       analito: esquema.plantillaExamen.analito,
       unidad: esquema.plantillaExamen.unidad,
       referencia: esquema.plantillaExamen.referencia,
+      tipo: esquema.plantillaExamen.tipo,
     })
     .from(esquema.plantillaExamen)
     .where(eq(esquema.plantillaExamen.examen, examen))
@@ -237,15 +243,20 @@ export async function plantillaDe(examen: string) {
  */
 export async function guardarPlantilla(
   examen: string,
-  filas: readonly { analito: string; unidad: string; referencia: string }[],
+  filas: readonly { analito: string; unidad: string; referencia: string; tipo?: string }[],
 ) {
   const limpias = filas
     .map((f) => ({
       analito: f.analito.trim(),
       unidad: f.unidad.trim(),
       referencia: f.referencia.trim(),
+      /* Un encabezado de bloque no lleva unidad ni rango aunque alguien
+         los haya tecleado antes de marcarlo: si los guardara, el informe
+         lo imprimiría como un analito vacío. */
+      tipo: f.tipo === 'titulo' ? 'titulo' : 'analito',
     }))
-    .filter((f) => f.analito);
+    .filter((f) => f.analito)
+    .map((f) => (f.tipo === 'titulo' ? { ...f, unidad: '', referencia: '' } : f));
 
   await bd.transaction(async (tx) => {
     await tx.delete(esquema.plantillaExamen).where(eq(esquema.plantillaExamen.examen, examen));

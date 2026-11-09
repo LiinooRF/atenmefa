@@ -509,6 +509,33 @@ test('las plantillas entraron, y los rangos que entraron son los de su hoja', as
      hojas sin fila de cabecera, como la de coagulación. */
   expect(n.con_rango).toBe(134);
 
+  /* Y de los que quedan sin rango, los que de verdad le faltan al
+     laboratorio son 30: los otros son encabezados de bloque, que no
+     llevan rango nunca. Antes se adivinaban por descarte y la pantalla
+     contaba 51. Ver 016-titulos.sql. */
+  const [t] = await conBase((sql) => sql`
+    SELECT COUNT(*) FILTER (WHERE tipo = 'titulo')::int AS titulos,
+           COUNT(*) FILTER (WHERE tipo = 'analito' AND btrim(referencia) = '')::int AS faltan
+      FROM plantilla_examen`);
+  expect(t.titulos).toBe(21);
+  expect(t.faltan).toBe(30);
+
+  /* El tipiaje y el VDRL tampoco tienen rango —se informan con una
+     palabra— y son analitos igual: la regla por descarte los daba por
+     encabezados y desaparecían de la cuenta. */
+  const cualitativos = await conBase((sql) => sql`
+    SELECT analito, tipo FROM plantilla_examen
+     WHERE analito IN ('TIPIAJE', 'VDRL', 'GRUPO SANGUINEO', 'CULTIVO', 'INR')
+     ORDER BY analito`);
+  expect(cualitativos.every((c) => c.tipo === 'analito')).toBe(true);
+
+  /* La hoja de heces entró con unidades de la columna de al lado: un
+     color no se mide en mg/dl. */
+  const heces = await conBase((sql) => sql`
+    SELECT unidad FROM plantilla_examen
+     WHERE examen = 'H. ESP' AND analito IN ('COLOR', 'ASPECTO', 'CONSISTENCIA')`);
+  expect(heces.every((h) => h.unidad === '')).toBe(true);
+
   /* Cinco que se verificaron a mano contra el archivo. Si una carga futura
      los mueve, esta prueba lo dice antes de que salga impreso. */
   const filas = await conBase((sql) => sql`
@@ -985,7 +1012,8 @@ test('el bioanalista ve la lista de exámenes y cuántos rangos faltan', async (
   await page.goto('/sistema/plantillas');
 
   await expect(page.locator('.lista li')).toHaveCount(35);
-  await expect(page.locator('.aviso')).toContainText('sin rango');
+  // La cifra es la de los analitos de verdad, sin los encabezados.
+  await expect(page.locator('.aviso')).toContainText('30 analitos sin rango');
 
   // Los que tienen algo que arreglar van primero.
   const primero = page.locator('.lista li').first();
@@ -1101,6 +1129,38 @@ test('un renglón sin nombre no se guarda, y se puede quitar uno que sobra', asy
 
   await conBase((sql) => sql`
     DELETE FROM plantilla_examen WHERE examen = ${PLANTILLA_PRUEBA}`);
+});
+
+test('marcar un renglón como subtítulo le quita la unidad y el rango', async ({ page }) => {
+  const EXAMEN = 'ZZ PRUEBA DE SUBTITULOS';
+  await conBase((sql) => sql`
+    INSERT INTO plantilla_examen (examen, orden, analito, unidad, referencia) VALUES
+      (${EXAMEN}, 1, 'UN BLOQUE', 'mg/dl', '1 - 2'),
+      (${EXAMEN}, 2, 'UN ANALITO', 'mg/dl', '3 - 4')
+    ON CONFLICT (examen, orden) DO NOTHING`);
+
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/plantillas/${encodeURIComponent(EXAMEN)}`);
+
+  const bloque = page.locator('#pl-cuerpo tr').first();
+  await bloque.locator('input[name="titulo"]').check();
+  // Los campos se apagan en el acto: se ve que deja de ser un analito.
+  await expect(bloque).toHaveAttribute('data-titulo', '');
+  await expect(bloque.locator('input[name="unidad"]')).toHaveValue('');
+
+  await page.getByRole('button', { name: 'Guardar' }).click();
+  await expect(page.locator('.msj--bien')).toBeVisible();
+
+  const filas = await conBase((sql) => sql`
+    SELECT analito, tipo, unidad, referencia FROM plantilla_examen
+     WHERE examen = ${EXAMEN} ORDER BY orden`);
+  expect(filas[0]).toMatchObject({ analito: 'UN BLOQUE', tipo: 'titulo', unidad: '', referencia: '' });
+  expect(filas[1]).toMatchObject({ analito: 'UN ANALITO', tipo: 'analito', unidad: 'mg/dl' });
+
+  // Y el encabezado no cuenta entre los que faltan.
+  await expect(page.locator('.cab__nota')).toContainText('1 analito y 1 subtítulo');
+
+  await conBase((sql) => sql`DELETE FROM plantilla_examen WHERE examen = ${EXAMEN}`);
 });
 
 test('cambiar un rango queda en bitácora', async ({ page }) => {

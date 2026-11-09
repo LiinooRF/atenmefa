@@ -118,6 +118,15 @@ export const plantillaExamen = pgTable('plantilla_examen', {
   unidad: text('unidad').notNull().default(''),
   /** Vacío significa que su hoja no lo decía en una columna rotulada. */
   referencia: text('referencia').notNull().default(''),
+  /**
+   * 'analito' o 'titulo'. Las hojas del laboratorio tienen renglones que
+   * son puro encabezado de bloque —«ANALISIS QUIMICO:»— y antes se
+   * adivinaban por descarte: sin unidad y sin rango, entonces es título.
+   * Eso contaba 16 encabezados entre los analitos a los que les falta el
+   * rango, y al revés dejaba al tipiaje y al VDRL —que se informan con una
+   * palabra— clasificados como encabezados.
+   */
+  tipo: text('tipo').notNull().default('analito'),
 }, (t) => [primaryKey({ columns: [t.examen, t.orden] })]);
 
 export const servicio = pgTable('servicio', {

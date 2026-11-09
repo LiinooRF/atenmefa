@@ -6,7 +6,9 @@
  * se escribían solos al elegir el examen y se podían corregir en ESA
  * orden, para ese paciente. No había forma de verlos todos ni de arreglar
  * uno de una vez para todas las órdenes siguientes, y el archivo del
- * cliente dejó 51 analitos sin rango porque su hoja no lo traía.
+ * cliente dejó decenas de analitos sin rango porque su hoja no los traía.
+ * La cifra sale del dato y no se escribe acá: ya pasó que una pantalla
+ * dijera «92 de 188» cuando el número había cambiado.
  *
  * Esta pantalla es para eso: ver qué examen está completo, cuál no, y
  * escribirlo. No la maneja administración sino el laboratorio —y también
@@ -27,6 +29,7 @@ const examenes = await resumenDePlantillas();
 
 const analitos = examenes.reduce((t, e) => t + e.analitos, 0);
 const faltan = examenes.reduce((t, e) => t + e.sinRango, 0);
+const subtitulos = examenes.reduce((t, e) => t + (e.renglones - e.analitos), 0);
 const completos = examenes.filter((e) => e.sinRango === 0).length;
 
 /* Primero los que tienen algo que arreglar: la pantalla se abre para
@@ -44,7 +47,8 @@ const ordenados = [...examenes].sort(
     <p class="cab__nota">
       Lo que se escribe acá es lo que sale impreso al lado de cada resultado
       y lo que se carga solo cuando el bioanalista elige el examen.
-      {examenes.length} exámenes, {analitos} analitos.
+      {examenes.length} exámenes, {analitos} analitos
+      {subtitulos > 0 && ` y ${subtitulos} subtítulos de bloque`}.
     </p>
   </header>
 
@@ -56,7 +60,8 @@ const ordenados = [...examenes].sort(
         {' '}Salen del archivo del laboratorio, que no los traía en ninguna
         columna de su fila. Deducirlos habría puesto el rango de un examen
         al lado del resultado de otro, así que quedaron en blanco: los
-        escribe el laboratorio.
+        escribe el laboratorio. Los encabezados de bloque no están contados
+        acá: esos nunca llevan rango.
       </span>
     </p>
   ) : (

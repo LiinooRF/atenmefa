@@ -107,7 +107,8 @@ const plantillas = await plantillasDeExamen();
 /* Cuántos renglones vienen sin rango. Se cuenta del dato y no se escribe a
    mano: ya pasó que la pantalla dijera «92 de 188» cuando la cifra había
    cambiado, y una cifra vieja en una advertencia la vuelve mentira. */
-const renglones = plantillas.flatMap((p) => p.analitos);
+/* Los encabezados de bloque no se cuentan: nunca van a tener rango. */
+const renglones = plantillas.flatMap((p) => p.analitos).filter((a) => a.tipo !== 'titulo');
 const sinRango = renglones.filter((a) => !a.referencia.trim()).length;
 
 /**
