@@ -72,40 +72,38 @@ const ATENMEFA: Marca = {
 /**
  * La demostración.
  *
- * Los colores son los de la Red de Salud UC CHRISTUS, leídos de su propio
- * sitio: el azul #2A7DE1 y el morado #872899. Es a propósito: la demo se
- * le muestra a centros que conocen esa estética y ayuda a que vean el
- * sistema con su propia ropa puesta, no con la del centro de al lado.
+ * Petróleo y coral. Se probó primero con los colores de UC CHRISTUS —azul
+ * y morado— y no funcionó: en una pantalla con barra oscura y un botón de
+ * acción grande, dos tonos saturados peleando se ven baratos. El petróleo
+ * da fondo serio y el coral deja un solo punto cálido, que es el botón que
+ * hay que apretar.
  *
  * Sin razón social ni RIF: inventarle un registro mercantil a una empresa
  * que no existe es la clase de detalle que aparece en una captura de
  * pantalla y no se puede explicar.
  */
-const VIVO_SALUD: Marca = {
+const VIVA_SALUD: Marca = {
   id: 'vivosalud',
-  nombre: entorno('MARCA_NOMBRE') || 'Vivo Salud',
+  nombre: entorno('MARCA_NOMBRE') || 'Viva Salud',
   bajada: entorno('MARCA_BAJADA') || 'Red de salud',
   razonSocial: entorno('MARCA_RAZON') || '',
   rif: entorno('MARCA_RIF') || '',
   logo: '/logo-vivosalud.svg',
   paleta: {
-    /* El azul de la barra se levanta hasta el tono de ellos: con el
-       original la cabecera quedaba casi igual de oscura que la del otro
-       centro y de lejos parecían el mismo producto. */
-    profundo: '#16467f',
-    base: '#1b5bb0',
-    medio: '#2a7de1',
-    tenue: '#e7f0fc',
-    acento: '#872899',
-    acentoHondo: '#671e75',
-    sombra: '22 70 127',
+    profundo: '#0b3b45',
+    base: '#0f5563',
+    medio: '#14788c',
+    tenue: '#e6f2f4',
+    acento: '#c2453d',
+    acentoHondo: '#9a332c',
+    sombra: '11 59 69',
   },
   demo: true,
 };
 
 const TODAS: Record<string, Marca> = {
   atenmefa: ATENMEFA,
-  vivosalud: VIVO_SALUD,
+  vivosalud: VIVA_SALUD,
 };
 
 export const marca: Marca = TODAS[entorno('MARCA') ?? 'atenmefa'] ?? ATENMEFA;
