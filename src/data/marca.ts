@@ -84,8 +84,11 @@ const VIVO_SALUD: Marca = {
   rif: entorno('MARCA_RIF') || '',
   logo: '/logo-vivosalud.svg',
   paleta: {
-    profundo: '#102a4c',
-    base: '#1b4f93',
+    /* El azul de la barra se levanta hasta el tono de ellos: con el
+       original la cabecera quedaba casi igual de oscura que la del otro
+       centro y de lejos parecían el mismo producto. */
+    profundo: '#16467f',
+    base: '#1b5bb0',
     medio: '#2a7de1',
     tenue: '#e7f0fc',
     acento: '#872899',
