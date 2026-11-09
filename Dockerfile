@@ -20,6 +20,13 @@ COPY . .
 # datos estructurados se escriben en el HTML y no se pueden cambiar después.
 ARG SITIO=https://atenmefa.site
 ENV SITIO=$SITIO
+
+# De quién es este sistema. Se decide acá y no al arrancar porque la marca
+# cambia lo que se GENERA: con la demostración no se arman las páginas del
+# sitio público y el robots bloquea todo. Ver src/data/marca.ts.
+ARG MARCA=atenmefa
+ENV MARCA=$MARCA
+
 RUN pnpm build
 
 # ---------------------------------------------------------------
