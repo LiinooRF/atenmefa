@@ -591,7 +591,7 @@ export const preguntas = [
     slug: 'examenes-del-laboratorio',
     pregunta: '¿Qué exámenes hace el laboratorio de Atenmefa?',
     respuesta:
-      'Hematología completa, química sanguínea —glicemia, urea, creatinina y perfil lipídico—, examen de orina y examen de heces. Se procesan en el local del C.C. Santa Catalina.',
+      'El laboratorio está dentro del centro y cubre hematología, bioquímica —glicemia, urea, creatinina, perfil lipídico—, uroanálisis y coproanálisis, bacteriología, serología, inmunología, dosificación de hormonas, antígeno prostático, citologías y biopsias, perfil COVID-19 e hisopado. Lo atienden licenciados en Bioanálisis egresados de la Universidad de Oriente, y también hacen toma de muestra a domicilio.',
   },
   {
     slug: 'alquiler-de-equipos-medicos',
