@@ -5,6 +5,7 @@
  * pie y con una tablet en la mano.
  */
 import '../styles/fuentes.css';
+import { marca, variablesDeLaMarca } from '../data/marca';
 import '@fontsource/noto-sans/latin-400.css';
 import '@fontsource/noto-sans/latin-600.css';
 import '../styles/global.css';
@@ -109,10 +110,11 @@ const menu = MENU
   <head>
     <meta charset="utf-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>{titulo} · Atenmefa</title>
+    <title>{titulo} · {marca.nombre}</title>
     <meta name="robots" content="noindex, nofollow" />
     <meta name="theme-color" content="#0b0f45" />
     <link rel="icon" href="/favicon.png" type="image/png" sizes="64x64" />
+    {marca.id !== 'atenmefa' && <style set:html={`:root{${variablesDeLaMarca()}}`} />}
   </head>
 
   <body class:list={['sis', desnuda && 'sis--desnuda']}>
@@ -120,8 +122,8 @@ const menu = MENU
       <header class="sis__barra">
         <div class="sis__barra-int">
           <a class="sis__marca" href="/sistema">
-            <img src="/logo.png" width="34" height="34" alt="" />
-            <span>Atenmefa<small>Sistema interno</small></span>
+            <img src={marca.logo} width="34" height="34" alt="" />
+            <span>{marca.nombre}<small>Sistema interno</small></span>
           </a>
 
           <nav class="sis__nav" aria-label="Sistema">

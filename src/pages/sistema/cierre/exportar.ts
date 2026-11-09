@@ -14,6 +14,7 @@ import type { APIRoute } from 'astro';
 import ExcelJS from 'exceljs';
 import { anotar } from '../../../sistema/lib/atenciones';
 import { exigirEnApi } from '../../../sistema/lib/guardia';
+import { clinica } from '../../../data/clinica';
 import {
   consolidadoDelMes, formatoPara, lineasDe, mesPedido, ordenarMonedas,
   type ColumnaExcel, type LineaDeCobro,
@@ -82,7 +83,7 @@ export const GET: APIRoute = async (ctx) => {
   }
 
   const libro = new ExcelJS.Workbook();
-  libro.creator = 'Atenmefa';
+  libro.creator = clinica.nombre;
   libro.created = new Date();
 
   const hoja = libro.addWorksheet(nombreDeHoja(`${grupo?.nombre ?? 'Cierre'} ${mes}`), {

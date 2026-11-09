@@ -1,5 +1,6 @@
 ---
 import { clinica, servicios } from '../data/clinica';
+import { marca } from '../data/marca';
 import { ruta } from '../lib/rutas';
 import Icono from './Icono.astro';
 
@@ -12,9 +13,9 @@ const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
 
   <div class="contenedor pie__rejilla">
     <div class="pie__marca">
-      <img src={ruta('/logo.png')} width="50" height="50" alt="" />
+      <img src={ruta(marca.logo)} width="50" height="50" alt="" />
       <div>
-        <strong>Atenmefa</strong>
+        <strong>{marca.nombre}</strong>
         <span>Atención médica familiar</span>
       </div>
       <p class="pie__dir">

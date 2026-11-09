@@ -1,5 +1,6 @@
 ---
 import Sistema from '../../layouts/Sistema.astro';
+import { marca } from '../../data/marca';
 import { dondeEmpieza } from '../../sistema/lib/permisos';
 import { bd, esquema } from '../../sistema/lib/base';
 import { eq } from 'drizzle-orm';
@@ -59,9 +60,9 @@ if (Astro.request.method === 'POST') {
   <div class="entrar">
     <div class="entrar__caja">
       <div class="entrar__marca">
-        <img src="/logo.png" width="52" height="52" alt="" />
+        <img src={marca.logo} width="52" height="52" alt="" />
         <span>
-          <strong>Atenmefa</strong>
+          <strong>{marca.nombre}</strong>
           <small>Sistema interno</small>
         </span>
       </div>

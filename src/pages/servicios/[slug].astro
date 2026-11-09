@@ -1,5 +1,6 @@
 ---
 import Base from '../../layouts/Base.astro';
+import { marca } from '../../data/marca';
 import Icono from '../../components/Icono.astro';
 import Falta from '../../components/Falta.astro';
 import Cierre from '../../components/Cierre.astro';
@@ -12,6 +13,10 @@ import { ruta } from '../../lib/rutas';
 import { enRevision } from '../../lib/revision';
 
 export function getStaticPaths() {
+  /* La demostración no publica el sitio del centro: lo que se muestra es
+     la plataforma, y el folleto es de otra empresa. Sin rutas no hay
+     páginas que generar. */
+  if (marca.demo) return [];
   return servicios.map((s) => ({ params: { slug: s.slug }, props: { servicio: s } }));
 }
 

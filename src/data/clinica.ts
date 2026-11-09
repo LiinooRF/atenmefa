@@ -11,14 +11,19 @@
  * y lo que Google castiga en sitios de salud.
  */
 
+import { marca } from './marca';
+import { entorno } from '../sistema/lib/entorno';
+
 export type Pendiente<T> = T | null;
 
 export const clinica = {
-  nombre: 'Atenmefa',
+  /* La identidad sale de la marca activa: el mismo código corre para el
+     centro real y para la demostración. Ver data/marca.ts. */
+  nombre: marca.nombre,
   /** La razón social, como va en la papelería y en el informe de laboratorio. */
-  razonSocial: 'ATENMEFA JT, C.A.',
-  rif: 'J-50864866-8',
-  nombreLargo: 'Atenmefa — Atención Médica Familiar',
+  razonSocial: marca.razonSocial,
+  rif: marca.rif,
+  nombreLargo: `${marca.nombre} — ${marca.bajada}`,
   descripcionCorta:
     'Centro médico con laboratorio clínico propio, consultas especializadas, ecosonografías, atención a domicilio y traslados en ambulancia en Ciudad Bolívar.',
   /**

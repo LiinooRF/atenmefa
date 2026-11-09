@@ -3,6 +3,7 @@ import { auth } from './sistema/lib/auth';
 import { entorno } from './sistema/lib/entorno';
 import { medirPaginaPublica } from './sistema/lib/visitas';
 import { dondeEmpieza } from './sistema/lib/permisos';
+import { marca } from './data/marca';
 
 /* Los orígenes desde los que se aceptan formularios.
 
@@ -65,6 +66,25 @@ function vieneDeAfuera(pedido: Request) {
  * sitio es estático y no toca la base.
  */
 export const onRequest = defineMiddleware(async (ctx, siguiente) => {
+  /* En la demostración no hay sitio público: lo que se muestra es la
+     plataforma. Publicar un folleto con la dirección y los teléfonos de un
+     centro que no existe es inventar datos, y además no es lo que se está
+     vendiendo.
+
+     Va acá y no en la portada: si la portada decidiera, dejaría de ser
+     estática para las dos marcas y se caería del sitemap del centro real,
+     que es su página más importante. */
+  if (marca.demo && !ctx.url.pathname.startsWith('/sistema')) {
+    /* La raíz NO entra acá: ahí se dibuja la tapa, que es lo que se
+       comparte por enlace. Redirigirla también la convertía en un archivo
+       con «refresh» de dos segundos, que se ve roto. */
+    const afuera = ['/', '/verificar', '/api', '/robots.txt', '/favicon', '/logo', '/_astro', '/apple-touch'];
+    const esRaiz = ctx.url.pathname === '/';
+    if (!esRaiz && !afuera.some((r) => r !== '/' && ctx.url.pathname.startsWith(r))) {
+      return ctx.redirect('/sistema/entrar', 302);
+    }
+  }
+
   if (vieneDeAfuera(ctx.request)) {
     return new Response('Origen no permitido', { status: 403 });
   }

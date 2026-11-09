@@ -12,6 +12,7 @@
  * peor que no existir, porque Google la indexa igual.
  */
 import Base from '../../layouts/Base.astro';
+import { marca } from '../../data/marca';
 import Icono from '../../components/Icono.astro';
 import Cierre from '../../components/Cierre.astro';
 import {
@@ -20,6 +21,10 @@ import {
 import { ruta } from '../../lib/rutas';
 
 export function getStaticPaths() {
+  /* La demostración no publica el sitio del centro: lo que se muestra es
+     la plataforma, y el folleto es de otra empresa. Sin rutas no hay
+     páginas que generar. */
+  if (marca.demo) return [];
   return catalogoDePreguntas.map((p) => ({ params: { slug: p.slug }, props: { p } }));
 }
 

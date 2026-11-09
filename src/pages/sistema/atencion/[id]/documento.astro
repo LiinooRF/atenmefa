@@ -7,6 +7,7 @@
  * papel, y no hay plantilla aparte que se desincronice del formulario.
  */
 import QR from 'qrcode';
+import { marca } from '../../../../data/marca';
 import { historia } from '../../../../sistema/historia';
 import { laboratorio, type Resultado } from '../../../../sistema/laboratorio';
 import { examenesPedidos } from '../../../../sistema/lib/laboratorio';
@@ -277,7 +278,7 @@ const vitales = [
           <tr>
             <td>
               <div class="pie">
-                <span><strong>Atenmefa</strong> · Informe de laboratorio N.° {caso.numero}</span>
+                <span><strong>{marca.nombre}</strong> · Informe de laboratorio N.° {caso.numero}</span>
                 <span>{caso.paciente} · {caso.cedula} · {fechaLarga(caso.fecha)}</span>
               </div>
               {qr && (
@@ -297,9 +298,9 @@ const vitales = [
          <tr>
           <td>
             <header class="enc">
-              <img src="/logo.png" width="62" height="62" alt="" />
+              <img src={marca.logo} width="62" height="62" alt="" />
               <div class="enc__marca">
-                <strong>Atenmefa</strong>
+                <strong>{marca.nombre}</strong>
                 <span>Laboratorio clínico</span>
                 {/* La razón social y el RIF en todo lo que se imprime: el
                     informe va a un seguro o a una empresa y sin RIF no
@@ -419,7 +420,7 @@ const vitales = [
         <tr>
           <td>
             <div class="pie">
-              <span><strong>Atenmefa</strong> · Informe de atención N.° {caso.numero}</span>
+              <span><strong>{marca.nombre}</strong> · Informe de atención N.° {caso.numero}</span>
               <span>{caso.paciente} · {caso.cedula} · {fechaLarga(caso.fecha)}</span>
             </div>
             {qr && (
@@ -445,9 +446,9 @@ const vitales = [
        <tr>
         <td>
       <header class="enc">
-        <img src="/logo.png" width="62" height="62" alt="" />
+        <img src={marca.logo} width="62" height="62" alt="" />
         <div class="enc__marca">
-          <strong>Atenmefa</strong>
+          <strong>{marca.nombre}</strong>
           <span>Atención médica familiar</span>
           <small>{clinica.razonSocial} · RIF {clinica.rif}</small>
           <small>{clinica.direccion.calle} · {clinica.direccion.ciudad}, estado {clinica.direccion.estado}</small>
@@ -549,7 +550,7 @@ const vitales = [
         <tr>
           <td>
             <div class="pie">
-              <span><strong>Atenmefa</strong> · Récipe N.° {caso.numero}</span>
+              <span><strong>{marca.nombre}</strong> · Récipe N.° {caso.numero}</span>
               <span>{caso.paciente} · {caso.cedula} · {fechaLarga(caso.fecha)}</span>
             </div>
             {qr && (
@@ -575,9 +576,9 @@ const vitales = [
          <tr>
           <td>
         <header class="enc">
-          <img src="/logo.png" width="62" height="62" alt="" />
+          <img src={marca.logo} width="62" height="62" alt="" />
           <div class="enc__marca">
-            <strong>Atenmefa</strong>
+            <strong>{marca.nombre}</strong>
             <span>Atención médica familiar</span>
             <small>{clinica.razonSocial} · RIF {clinica.rif}</small>
             <small>{clinica.direccion.calle} · {clinica.direccion.ciudad}</small>

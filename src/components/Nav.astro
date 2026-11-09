@@ -1,5 +1,6 @@
 ---
 import { clinica, equipo } from '../data/clinica';
+import { marca } from '../data/marca';
 import { ruta } from '../lib/rutas';
 import { enRevision } from '../lib/revision';
 import Icono from './Icono.astro';
@@ -28,9 +29,9 @@ const tel = clinica.contacto.fijo ?? clinica.contacto.whatsapp;
   <div class="cabecera__barra">
     <div class="contenedor cabecera__fila">
       <a class="marca" href={ruta('/')}>
-        <img src={ruta('/logo.png')} width="42" height="42" alt="" />
+        <img src={ruta(marca.logo)} width="42" height="42" alt="" />
         <span class="marca__texto">
-          <strong>Atenmefa</strong>
+          <strong>{marca.nombre}</strong>
           <small>Atención médica familiar</small>
         </span>
       </a>

@@ -4,7 +4,12 @@ import type { APIRoute } from 'astro';
  * En la vista previa se bloquea todo: no queremos una copia del sitio
  * compitiendo en Google con el dominio real.
  */
-const previa = process.env.PREVIA === '1';
+import { marca } from '../data/marca';
+
+/* La vista previa y la demostración se bloquean enteras: ninguna copia
+   compite en Google con el sitio real, y una demo indexada con el nombre
+   de otro centro es peor todavía. */
+const previa = process.env.PREVIA === '1' || marca.demo;
 
 export const GET: APIRoute = ({ site }) => {
   const cuerpo = previa

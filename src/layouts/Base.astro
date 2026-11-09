@@ -5,6 +5,7 @@ import '@fontsource/noto-sans/latin-600.css';
 import '../styles/global.css';
 import Nav from '../components/Nav.astro';
 import Pie from '../components/Pie.astro';
+import { marca, variablesDeLaMarca } from '../data/marca';
 import BarraFija from '../components/BarraFija.astro';
 import Medir from '../components/Medir.astro';
 import {
@@ -78,7 +79,7 @@ const fichaClinica: Record<string, unknown> = {
   taxID: clinica.rif,
   description: clinica.descripcionCorta,
   url: base,
-  logo: new URL('logo.png', base).href,
+  logo: new URL(marca.logo.replace(/^\//, ''), base).href,
   image: ogImagen,
   telephone: telefonos,
   email: clinica.contacto.correo,
@@ -286,6 +287,10 @@ const jsonLd = JSON.stringify({ '@context': 'https://schema.org', '@graph': graf
     <link rel="apple-touch-icon" href={ruta("/apple-touch-icon.png")} />
 
     <script type="application/ld+json" set:html={jsonLd} />
+    {/* Los colores de la marca activa. Van acá y no en global.css para
+        que el mismo build sirva para el centro real y para la demo: lo
+        único que cambia es la variable MARCA del entorno. */}
+    {marca.id !== 'atenmefa' && <style set:html={`:root{${variablesDeLaMarca()}}`} />}
   </head>
 
   <body>
