@@ -27,7 +27,12 @@ export interface Paleta {
   tenue: string;
   acento: string;
   acentoHondo: string;
-  /** El rgb del color profundo, para las sombras. */
+  /**
+   * El color profundo en componentes separados por ESPACIO, no por coma:
+   * `rgb(11 15 69 / 0.45)` es válido y `rgb(11, 15, 69 / 0.45)` no lo es.
+   * Mezclar las dos sintaxis invalida la regla entera y la sombra
+   * desaparece sin avisar.
+   */
   sombra: string;
 }
 
@@ -59,7 +64,7 @@ const ATENMEFA: Marca = {
     tenue: '#e9ebf7',
     acento: '#d31c24',
     acentoHondo: '#9d1119',
-    sombra: '11, 15, 69',
+    sombra: '11 15 69',
   },
   demo: false,
 };
@@ -93,7 +98,7 @@ const VIVO_SALUD: Marca = {
     tenue: '#e7f0fc',
     acento: '#872899',
     acentoHondo: '#671e75',
-    sombra: '16, 42, 76',
+    sombra: '22 70 127',
   },
   demo: true,
 };
