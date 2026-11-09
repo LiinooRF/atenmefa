@@ -1,0 +1,91 @@
+---
+/**
+ * Lámina de marca: la placa de color que acompaña al título de un servicio.
+ *
+ * NO es una foto ni una imagen generada. Es una composición hecha con los
+ * colores y el motivo a cuadros del logo del centro, dibujada en CSS.
+ *
+ * POR QUÉ ASÍ Y NO CON UNA FOTO DE BANCO
+ *
+ * Se buscó foto de licencia libre y lo que hay sirve poco: el banco de
+ * dominio público devolvió un aula con estudiantes identificables y una
+ * ambulancia con la marca de otra empresa. Una foto de archivo de otra
+ * clínica puesta donde debería ir la de ellos es, además de pobre, una
+ * forma de mentir: Google Business compara las fotos del sitio con las de
+ * la ficha, y un paciente que llega y no reconoce el lugar ya empezó mal.
+ *
+ * Esto se ve deliberado, nunca se ve falso, y el día que el centro mande
+ * sus fotos se cambia por <Image> sin mover el resto: la lámina ya reserva
+ * la relación de aspecto.
+ */
+import Icono from './Icono.astro';
+
+interface Props {
+  /** El del juego de íconos del sitio. */
+  icono: string;
+  /** Qué se ve, para quien no ve la pantalla. */
+  rotulo: string;
+  /** Relación de aspecto, como en el hueco de imagen. */
+  ancho?: number;
+  alto?: number;
+}
+const { icono, rotulo, ancho = 4, alto = 3 } = Astro.props;
+---
+
+<div class="lamina" style={`aspect-ratio: ${ancho} / ${alto};`} role="img" aria-label={rotulo}>
+  <span class="lamina__motivo" aria-hidden="true"></span>
+  <span class="lamina__icono"><Icono nombre={icono} tam={64} /></span>
+</div>
+
+<style>
+  .lamina {
+    position: relative;
+    width: 100%;
+    border-radius: 16px;
+    overflow: hidden;
+    background:
+      radial-gradient(120% 90% at 12% 8%, #1b237a 0%, transparent 62%),
+      var(--azul-profundo, #10164f);
+    display: grid;
+    place-items: center;
+    isolation: isolate;
+  }
+
+  /* El motivo a cuadros del logo, en diagonal y muy bajo de intensidad:
+     se reconoce la marca sin que compita con el título de al lado. */
+  .lamina__motivo {
+    position: absolute;
+    inset: -20%;
+    background-image:
+      repeating-linear-gradient(
+        135deg,
+        rgb(255 255 255 / 0.07) 0 18px,
+        transparent 18px 36px
+      ),
+      repeating-linear-gradient(
+        135deg,
+        rgb(214 32 48 / 0.22) 0 9px,
+        transparent 9px 54px
+      );
+    /* El rojo de la marca entra solo por una banda, abajo a la derecha:
+       repartido por toda la lámina la volvía un mantel. */
+    mask-image: linear-gradient(145deg, transparent 38%, #000 100%);
+  }
+
+  .lamina__icono {
+    position: relative;
+    display: grid;
+    place-items: center;
+    width: clamp(92px, 16vw, 128px);
+    height: clamp(92px, 16vw, 128px);
+    border-radius: 50%;
+    background: rgb(255 255 255 / 0.08);
+    border: 1px solid rgb(255 255 255 / 0.16);
+    color: #fff;
+  }
+
+  /* Quien pidió menos movimiento no pierde nada: la lámina es estática. */
+  @media (prefers-reduced-motion: no-preference) {
+    .lamina { transition: none; }
+  }
+</style>

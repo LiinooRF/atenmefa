@@ -7,17 +7,7 @@
 import { servicios } from '../data/clinica';
 import { ruta } from '../lib/rutas';
 import Icono from './Icono.astro';
-
-const iconos: Record<string, string> = {
-  'traslados-en-ambulancia': 'ambulancia',
-  emergencias: 'latido',
-  'consulta-medica': 'estetoscopio',
-  'laboratorio-clinico': 'laboratorio',
-  electrocardiograma: 'latido',
-  nebulizacion: 'pulmon',
-  'cirugia-menor': 'bisturi',
-  'alquiler-de-equipos': 'silla',
-};
+import { iconoDe } from '../lib/iconos';
 ---
 
 <section class="seccion" id="servicios">
@@ -34,7 +24,7 @@ const iconos: Record<string, string> = {
       {servicios.map((s) => (
         <li>
           <a href={ruta(`/servicios/${s.slug}/`)}>
-            <span class="indice__icono"><Icono nombre={iconos[s.slug] ?? 'latido'} tam={24} /></span>
+            <span class="indice__icono"><Icono nombre={iconoDe(s.slug) ?? 'latido'} tam={24} /></span>
             <span class="indice__cuerpo">
               <span class="indice__nombre">{s.nombre}</span>
               <span class="indice__resumen">{s.resumen}</span>

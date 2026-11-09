@@ -6,6 +6,8 @@ import Cierre from '../../components/Cierre.astro';
 import {
   servicios, preguntasDe, catalogoDePreguntas, clinica, wa, type Servicio,
 } from '../../data/clinica';
+import Lamina from '../../components/Lamina.astro';
+import { iconoDe } from '../../lib/iconos';
 import { ruta } from '../../lib/rutas';
 import { enRevision } from '../../lib/revision';
 
@@ -33,6 +35,8 @@ const fichas = [
   { rotulo: 'Preparación', valor: s.preparacion, falta: 'si hace falta preparación' },
   { rotulo: 'Entrega', valor: s.entrega, falta: 'cuándo se entrega' },
 ];
+
+const icono = iconoDe(s.slug);
 ---
 
 <Base
@@ -53,7 +57,7 @@ const fichas = [
 
   <article>
     <header class="encabezado">
-      <div class="contenedor">
+      <div class="contenedor encabezado__rejilla">
         <div class="encabezado__caja">
         <h1>{s.titulo}</h1>
         <p class="encabezado__entrada">{s.entrada}</p>
@@ -68,6 +72,11 @@ const fichas = [
           </a>
         </div>
         </div>
+
+        {/* La placa de color del servicio. Ocupaba media pantalla en
+            blanco: el título quedaba solo a la izquierda y el lado
+            derecho vacío parecía una imagen que no cargó. */}
+        <Lamina icono={icono} rotulo={`Lámina de ${s.nombre}`} ancho={5} alto={4} />
       </div>
     </header>
 
@@ -183,6 +192,16 @@ const fichas = [
 
   .encabezado { padding-block: clamp(38px, 6vw, 68px) clamp(30px, 4vw, 48px); }
   .encabezado__caja { max-width: min(68ch, 100%); }
+
+  /* La lámina al lado del título solo cuando hay ancho de verdad. Abajo
+     de 980 px se va: en el teléfono, lo primero tiene que ser el nombre
+     del servicio y el botón de llamar, no una placa decorativa. */
+  .encabezado__rejilla { display: grid; gap: clamp(26px, 4vw, 44px); align-items: center; }
+  .encabezado__rejilla > :global(.lamina) { display: none; }
+  @media (min-width: 980px) {
+    .encabezado__rejilla { grid-template-columns: 1.15fr 0.85fr; }
+    .encabezado__rejilla > :global(.lamina) { display: grid; }
+  }
   .encabezado__entrada {
     margin-top: 20px;
     font-size: var(--t-md);
