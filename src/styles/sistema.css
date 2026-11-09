@@ -62,9 +62,12 @@
   min-height: 58px;
 }
 
-.sis__marca { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #fff; }
+.sis__marca { display: flex; align-items: center; gap: 10px; text-decoration: none; color: #fff; flex: none; }
 .sis__marca img { border-radius: 50%; }
 .sis__marca span { display: flex; flex-direction: column; line-height: 1.15; font-weight: 700; letter-spacing: -0.015em; }
+/* Sin partirse: con un nombre más largo que «Atenmefa», el «Sistema
+   interno» se iba a dos renglones y la barra crecía de alto. */
+.sis__marca span, .sis__marca small { white-space: nowrap; }
 .sis__marca small { font-size: var(--u-xs); font-weight: 400; color: rgba(255, 255, 255, 0.56); letter-spacing: 0; }
 
 /* El menú envuelve en vez de desplazarse de lado. Antes desplazaba, porque

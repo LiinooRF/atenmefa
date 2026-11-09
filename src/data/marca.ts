@@ -70,13 +70,20 @@ const ATENMEFA: Marca = {
 };
 
 /**
- * La demostración.
+ * La demostración, con los colores de la Red de Salud UC CHRISTUS: el azul
+ * #2A7DE1 y el morado #872899, leídos de su propio sitio.
  *
- * Petróleo y coral. Se probó primero con los colores de UC CHRISTUS —azul
- * y morado— y no funcionó: en una pantalla con barra oscura y un botón de
- * acción grande, dos tonos saturados peleando se ven baratos. El petróleo
- * da fondo serio y el coral deja un solo punto cálido, que es el botón que
- * hay que apretar.
+ * EL PRIMER INTENTO SE VEÍA BARATO, Y POR QUÉ
+ *
+ * Porque estaban los dos saturados y del mismo tamaño: un azul brillante
+ * de fondo peleando contra un morado brillante en el botón. Dos colores
+ * fuertes compitiendo no se leen como marca, se leen como plantilla.
+ *
+ * Acá el azul manda y se OSCURECE para la barra y el fondo; el #2A7DE1 de
+ * ellos queda para lo que se toca —títulos, foco, enlaces—, que es donde
+ * un color brillante sirve; y el morado aparece en un solo lugar, el botón
+ * de la acción principal. Un acento que aparece una vez es un acento; uno
+ * que aparece en todos lados es ruido.
  *
  * Sin razón social ni RIF: inventarle un registro mercantil a una empresa
  * que no existe es la clase de detalle que aparece en una captura de
@@ -92,13 +99,13 @@ const VIVA_SALUD: Marca = {
   rif: entorno('MARCA_RIF') || '',
   logo: '/logo-vivosalud.svg',
   paleta: {
-    profundo: '#0b3b45',
-    base: '#0f5563',
-    medio: '#14788c',
-    tenue: '#e6f2f4',
-    acento: '#c2453d',
-    acentoHondo: '#9a332c',
-    sombra: '11 59 69',
+    profundo: '#0d2a4f',
+    base: '#174c86',
+    medio: '#2a7de1',
+    tenue: '#e8f1fc',
+    acento: '#7d2b8c',
+    acentoHondo: '#5f1f6b',
+    sombra: '13 42 79',
   },
   demo: true,
 };
