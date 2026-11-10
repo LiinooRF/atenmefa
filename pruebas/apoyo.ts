@@ -187,6 +187,24 @@ export async function sembrarExamen(nombre: string, precio = '12.00') {
   });
 }
 
+/**
+ * La casilla de un examen en el selector de la orden, por su nombre.
+ *
+ * Por el nombre y no por su posición. El catálogo trae el baremo del
+ * laboratorio —un centenar de exámenes con precio— así que `first()` y
+ * `nth(1)` dejaron de ser «los dos que sembró la prueba» y pasaron a ser los
+ * dos primeros en orden alfabético: la prueba de los totales empezó a sumar
+ * el precio de otros dos exámenes.
+ *
+ * Se apoya en `data-busca`, que ExamenesLab le pone a cada <li> con el
+ * nombre en minúscula. Es comparación exacta: con `hasText`, pedir
+ * «GLICEMIA» también calzaría con «GLICEMIA POSPRANDIAL».
+ */
+export const casillaDelExamen = (page: Page, nombre: string) =>
+  page.locator(
+    `.ex__lista li[data-busca="${nombre.toLocaleLowerCase('es')}"] input[name="examen"]`,
+  );
+
 export const borrarExamen = (...nombres: string[]) =>
   conBase(async (sql) => {
     await sql`DELETE FROM renglon WHERE servicio_id IN (

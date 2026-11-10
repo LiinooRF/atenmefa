@@ -23,7 +23,7 @@
 import { test, expect } from '@playwright/test';
 import {
   conBase, entrar, cedulaDePrueba, sembrarExamen, borrarExamen, idDeLaFicha, FICHA, llenar,
-  hoyEnCaracas,
+  hoyEnCaracas, casillaDelExamen,
 } from './apoyo';
 
 test.describe.configure({ mode: 'serial' });
@@ -146,11 +146,11 @@ test('los exámenes se marcan de una lista y dicen cuánto es en las dos monedas
 
   await expect(page.locator('#ex-nada')).toBeVisible();
 
-  await page.locator(`input[name="examen"]`).first().check();
+  await casillaDelExamen(page, EXAMEN_A).check();
   await expect(page.locator('#ex-total')).toBeVisible();
 
   // Los dos marcados: 15,00 + 5,50 = 20,50 USD, y a 40 Bs/$ son 820,00.
-  await page.locator('input[name="examen"]').nth(1).check();
+  await casillaDelExamen(page, EXAMEN_B).check();
   await expect(page.locator('#ex-cuantos')).toHaveText('2 exámenes');
   await expect(page.locator('#ex-usd')).toHaveText('20,50');
   await expect(page.locator('#ex-ves')).toHaveText('820,00');
@@ -169,8 +169,8 @@ test('marcar un examen lo carga a la cuenta, y una sola vez', async ({ page }) =
      "Guardar la orden" enseguida enviaba el formulario con el id todavía
      vacío: el servidor creaba una SEGUNDA atención del mismo paciente. */
   await page.locator('[data-ir="1"]').click();
-  await page.locator('input[name="examen"]').first().check();
-  await page.locator('input[name="examen"]').nth(1).check();
+  await casillaDelExamen(page, EXAMEN_A).check();
+  await casillaDelExamen(page, EXAMEN_B).check();
   await page.getByRole('button', { name: 'Guardar la orden' }).click();
   await expect(page).toHaveURL(FICHA);
 
@@ -210,7 +210,7 @@ test('destildar un examen lo quita de la cuenta', async ({ page }) => {
      WHERE p.cedula_busca = ${CEDULA.replace(/\D/g, '')} AND a.tipo = 'laboratorio'`);
 
   await page.goto(`/sistema/atencion/${orden.id}/editar?paso=1`);
-  await page.locator('input[name="examen"]').first().uncheck();
+  await casillaDelExamen(page, EXAMEN_A).uncheck();
   await page.getByRole('button', { name: 'Guardar la orden' }).click();
   await expect(page).toHaveURL(FICHA);
 
@@ -412,7 +412,7 @@ test('los exámenes pedidos en una consulta quedan colgados de ella', async ({ p
   await expect(page.locator('input[name="origen"]')).toHaveValue(consulta);
 
   await page.locator('[data-ir="1"]').click();
-  await page.locator('input[name="examen"]').first().check();
+  await casillaDelExamen(page, EXAMEN_A).check();
   await page.getByRole('button', { name: 'Guardar la orden' }).click();
   await expect(page).toHaveURL(FICHA);
 
@@ -1022,8 +1022,7 @@ test('recepción registra una orden con un examen que está en una plantilla', a
   await page.locator('#c-sexo').selectOption('Masculino');
   await page.locator('[data-ir="1"]').click();
 
-  const casilla = page.locator('.ex__lista input[name="examen"]').first();
-  await casilla.check();
+  await casillaDelExamen(page, EXAMEN_PLANTILLA).check();
   await page.getByRole('button', { name: 'Guardar la orden' }).click();
   await expect(page).toHaveURL(FICHA);
 });
