@@ -65,6 +65,8 @@ export const atencion = pgTable('atencion', {
   poliza: text('poliza'),
   casoNumero: text('caso_numero'),
   datos: jsonb('datos').$type<Record<string, unknown>>().notNull().default({}),
+  /** Quién admitió el caso en el mesón. Nulo = lo abrió el propio médico. */
+  abiertaPor: text('abierta_por').references(() => user.id),
   anuladaPor: text('anulada_por').references(() => user.id),
   anuladaMotivo: text('anulada_motivo'),
   creada: timestamp('creada', { withTimezone: true }).notNull().defaultNow(),

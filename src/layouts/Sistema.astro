@@ -47,10 +47,18 @@ const MENU: Bloque[] = [
   ] },
   { texto: 'Nueva atención', icono: 'mas', entradas: [
     { href: '/sistema/atencion/nueva', texto: 'Nueva atención', permiso: 'escribir_historia' },
+    /* Recepción no escribe historias: admite el caso con lo que preguntó en
+       el mesón y el médico lo encuentra empezado. Las dos entradas viven en
+       el mismo grupo porque ningún rol tiene los dos permisos: cada uno ve
+       una sola y le queda el enlace suelto de siempre, sin sumar un casillero
+       a una barra que ya se corta en la tablet. */
+    { href: '/sistema/atencion/abrir', texto: 'Admitir un caso', permiso: 'abrir_consulta' },
   ] },
   { texto: 'Borradores', icono: 'reloj', entradas: [
-    /* El médico porque los escribe; administración porque los borra. */
-    { href: '/sistema/borradores', texto: 'Borradores', permiso: ['escribir_historia', 'anular_atencion'] },
+    /* El médico porque los escribe, administración porque los borra y
+       recepción porque es donde ve si ya pasaron a los que admitió. */
+    { href: '/sistema/borradores', texto: 'Borradores',
+      permiso: ['escribir_historia', 'anular_atencion', 'abrir_consulta'] },
   ] },
   { texto: 'Laboratorio', icono: 'laboratorio', entradas: [
     { href: '/sistema/laboratorio', texto: 'Laboratorio', permiso: 'cola_laboratorio' },

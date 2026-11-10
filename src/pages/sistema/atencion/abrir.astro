@@ -1,0 +1,509 @@
+---
+/**
+ * Admitir un caso: lo que se llena en el mesón.
+ *
+ * Quien recibe al paciente ya le preguntó su nombre, su cédula, su edad,
+ * quién le cubre y qué le pasa. Que el médico vuelva a preguntar todo eso
+ * con el paciente sentado al frente es el mismo trabajo hecho dos veces, y
+ * es lo que pidió el cliente que dejara de pasar: recepción abre el caso y
+ * el médico lo encuentra empezado.
+ *
+ * Lo que NO hay acá es nada clínico. El examen físico, el diagnóstico, el
+ * tratamiento y el récipe no se dibujan en esta pantalla y no se guardan
+ * desde ella: la lista de campos sale de `admision` en historia.ts, que es
+ * un recorte escrito a mano campo por campo. Recepción sigue sin tener
+ * 'escribir_historia' y por eso tampoco puede cerrar lo que abrió.
+ *
+ * El médico hay que elegirlo: la atención no puede nacer sin uno y el
+ * borrador lo termina el médico al que está puesto. Si a la hora de atender
+ * pasa otro, ese otro lo toma desde el caso mismo —ver puedeTomarCaso— sin
+ * tener que volver al mesón.
+ */
+import Sistema from '../../../layouts/Sistema.astro';
+import Seccion from '../../../components/sistema/Seccion.astro';
+import Icono from '../../../components/Icono.astro';
+import { admision, clavesDeAdmision } from '../../../sistema/historia';
+import { exigir } from '../../../sistema/lib/guardia';
+import { bd, esquema } from '../../../sistema/lib/base';
+import {
+  limpiarDatos, pacienteDe, anotar, hoyEnVenezuela, ahoraEnVenezuela,
+} from '../../../sistema/lib/atenciones';
+import {
+  ROTULO, TIPOS, alcanza, comoSeLee, esTipo, formatearInterno,
+  llaveDe, numeroInterno, type TipoDocumento,
+} from '../../../sistema/lib/documento';
+import { and, asc, desc, eq, ne, sql, isNotNull } from 'drizzle-orm';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'abrir_consulta');
+if (corte) return corte;
+const usuario = Astro.locals.usuario!;
+
+let error = '';
+
+/* ----------------------------------------------------------------
+   A quién se admite.
+   ---------------------------------------------------------------- */
+const crudoTipo = Astro.url.searchParams.get('doc');
+const tipoDoc: TipoDocumento = esTipo(crudoTipo) ? crudoTipo : 'cedula';
+const cedulaPedida = (Astro.url.searchParams.get('cedula') ?? '').trim();
+
+/* Igual que en una atención nueva: al que no trae documento el sistema le
+   pone uno de una secuencia de la base, y se redirige con él puesto en la
+   dirección para que recargar no queme un número nuevo cada vez. */
+if (tipoDoc === 'interno' && !numeroInterno(cedulaPedida)) {
+  const [fila] = await bd.execute<{ n: string }>(
+    sql`SELECT nextval('paciente_interno_seq') AS n`,
+  );
+  const destino = new URL(Astro.url);
+  destino.searchParams.set('cedula', formatearInterno(Number(fila.n)));
+  return Astro.redirect(destino.pathname + destino.search);
+}
+
+const hayPaciente = alcanza(tipoDoc, cedulaPedida);
+const llave = llaveDe(tipoDoc, cedulaPedida);
+
+let conocido: {
+  nombre: string; cedula: string; tipoDoc: TipoDocumento; telefono: string;
+  whatsapp: string; correo: string; sexo: string; edad: string;
+  direccion: string; ciudad: string; referencia: string;
+  ultima: { numero: number; fecha: string; idx: string } | null;
+} | null = null;
+
+if (hayPaciente) {
+  const [paciente] = await bd
+    .select()
+    .from(esquema.paciente)
+    .where(eq(esquema.paciente.cedulaBusca, llave))
+    .limit(1);
+
+  if (paciente) {
+    const [ultima] = await bd
+      .select({
+        numero: esquema.atencion.numero,
+        fecha: esquema.atencion.fecha,
+        datos: esquema.atencion.datos,
+      })
+      .from(esquema.atencion)
+      .where(and(
+        eq(esquema.atencion.pacienteId, paciente.id),
+        ne(esquema.atencion.estado, 'anulada'),
+      ))
+      .orderBy(desc(esquema.atencion.fecha), desc(esquema.atencion.numero))
+      .limit(1);
+
+    const d = (ultima?.datos ?? {}) as Record<string, string>;
+
+    /* La edad se recalcula si pasó más de un año desde la última vez.
+       Copiarla tal cual deja niños de 8 que ya tienen 11. */
+    let edad = d.edad ?? '';
+    if (edad && ultima?.fecha) {
+      const anios = Math.floor(
+        (Date.now() - new Date(`${ultima.fecha}T12:00:00`).getTime()) / 31_557_600_000,
+      );
+      if (anios >= 1) edad = String(Number(edad) + anios);
+    }
+
+    conocido = {
+      nombre: paciente.nombre,
+      cedula: paciente.cedula,
+      tipoDoc: paciente.tipoDoc,
+      telefono: paciente.telefono ?? '',
+      whatsapp: paciente.whatsapp ?? '',
+      correo: paciente.correo ?? '',
+      sexo: paciente.sexo ?? '',
+      edad,
+      direccion: d.direccion ?? '',
+      ciudad: d.ciudad ?? '',
+      referencia: d.referencia ?? '',
+      ultima: ultima ? { numero: ultima.numero, fecha: ultima.fecha, idx: d.idx ?? '' } : null,
+    };
+  }
+}
+
+/* ----------------------------------------------------------------
+   A qué médico se le deja.
+   ---------------------------------------------------------------- */
+const medicos = hayPaciente
+  ? await bd
+      .select({
+        id: esquema.user.id,
+        nombre: esquema.user.name,
+        colegiatura: esquema.user.colegiatura,
+      })
+      .from(esquema.user)
+      .where(and(eq(esquema.user.rol, 'medico'), ne(esquema.user.activo, false)))
+      .orderBy(asc(esquema.user.name))
+  : [];
+
+/* Cuántas hay esperando. Se muestra para que en el mesón se vea la cola que
+   se le está armando al médico y no se admitan ocho a nombre del mismo. */
+const esperando = hayPaciente
+  ? Number(
+      (await bd
+        .select({ n: sql<number>`count(*)::int` })
+        .from(esquema.atencion)
+        .where(and(
+          eq(esquema.atencion.estado, 'borrador'),
+          eq(esquema.atencion.tipo, 'general'),
+          isNotNull(esquema.atencion.abiertaPor),
+        )))[0]?.n ?? 0,
+    )
+  : 0;
+
+/* ----------------------------------------------------------------
+   Guardar.
+   ---------------------------------------------------------------- */
+let datos: Record<string, string> = {
+  fecha: hoyEnVenezuela(),
+  hora_inicio: ahoraEnVenezuela(),
+  lugar: 'En el local',
+  ...(cedulaPedida ? { cedula: conocido?.cedula ?? cedulaPedida } : {}),
+  tipo_doc: conocido?.tipoDoc ?? tipoDoc,
+  ...(conocido
+    ? {
+        nombre: conocido.nombre,
+        telefono: conocido.telefono,
+        whatsapp: conocido.whatsapp,
+        correo: conocido.correo,
+        sexo: conocido.sexo,
+        edad: conocido.edad,
+        direccion: conocido.direccion,
+        ciudad: conocido.ciudad,
+        referencia: conocido.referencia,
+      }
+    : {}),
+};
+
+let medicoElegido = '';
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  medicoElegido = String(form.get('medico_id') ?? '').trim();
+
+  /* Solo las claves de la admisión. limpiarDatos ya descarta lo que no está
+     en el modelo, pero no sabe de roles: si alguien manda un diagnóstico en
+     el cuerpo del formulario, lo dejaría pasar. Acá se filtra por rol. */
+  const delMeson: Record<string, string> = {};
+  for (const [k, v] of Object.entries(limpiarDatos(form))) {
+    if (clavesDeAdmision.has(k)) delMeson[k] = v;
+  }
+  datos = { ...datos, ...delMeson };
+
+  const elegido = medicos.find((m) => m.id === medicoElegido);
+
+  if (!datos.cedula || !datos.nombre) {
+    error = 'Para admitir el caso hace falta al menos el nombre y la cédula.';
+  } else if (!datos.motivo) {
+    error = 'Escriba por qué viene el paciente. Es lo que el médico va a leer primero.';
+  } else if (!elegido) {
+    error = 'Elija al médico que va a atender.';
+  } else {
+    try {
+      /* El nombre del médico queda en los datos: es el campo «Médico que
+         atiende» del formulario y del documento impreso. Si el caso lo toma
+         otro, se reescribe ahí mismo. */
+      datos.medico = elegido.nombre;
+
+      const paciente = await pacienteDe(datos);
+      const [creada] = await bd
+        .insert(esquema.atencion)
+        .values({
+          pacienteId: paciente.id,
+          medicoId: elegido.id,
+          abiertaPor: usuario.id,
+          estado: 'borrador',
+          tipo: 'general',
+          fecha: datos.fecha,
+          aseguradora: datos.aseguradora ?? null,
+          poliza: datos.poliza ?? null,
+          casoNumero: datos.caso_numero ?? null,
+          datos,
+        })
+        .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
+
+      await anotar(usuario.id, 'admitio', creada.id, {
+        numero: creada.numero,
+        medico: elegido.nombre,
+      });
+      return Astro.redirect(`/sistema/atencion/abrir?admitida=${creada.numero}`);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'No se pudo admitir el caso.';
+    }
+  }
+}
+
+const reciente = Astro.url.searchParams.get('admitida');
+
+const fechaLarga = (f: string) =>
+  new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
+---
+
+<Sistema titulo="Admitir un caso">
+  {!hayPaciente ? (
+    <div class="quien">
+      <h1>¿A quién va a admitir?</h1>
+      <p class="quien__nota">
+        Empiece por la cédula. Si ya lo atendimos antes, no hace falta volver
+        a escribir sus datos.
+      </p>
+
+      {reciente && (
+        <p class="msj--bien">
+          <Icono nombre="escudo" tam={18} />
+          Caso N° {reciente} admitido. Ya le aparece al médico en
+          <a href="/sistema/borradores">las atenciones sin cerrar</a>.
+        </p>
+      )}
+
+      <form method="get" class="sis-tarjeta quien__form">
+        <div class="sis-campo">
+          <label for="cedula">Cédula del paciente</label>
+          <input
+            id="cedula" name="cedula" required autofocus autocomplete="off"
+            inputmode="numeric" placeholder="V-12.345.678"
+            pattern="[VvEeJjGg]?[-.\s0-9]{6,}"
+          />
+          <span class="pista">Con o sin puntos, con o sin letra. Da igual cómo se escriba.</span>
+        </div>
+        <button type="submit" class="sis-boton sis-boton--primario">
+          Continuar
+          <Icono nombre="flecha" tam={18} />
+        </button>
+      </form>
+
+      <details class="otro">
+        <summary>El paciente no tiene cédula</summary>
+        <div class="otro__cuerpo">
+          <form method="get" class="otro__forma">
+            <div class="sis-campo">
+              <label for="doc">¿Qué documento trae?</label>
+              <select id="doc" name="doc">
+                {TIPOS.filter((x) => x !== 'cedula' && x !== 'interno').map((x) => (
+                  <option value={x}>{ROTULO[x]}</option>
+                ))}
+              </select>
+            </div>
+            <div class="sis-campo">
+              <label for="otro-numero">Número</label>
+              <input id="otro-numero" name="cedula" required autocomplete="off" placeholder="A1234567" />
+              <span class="pista">Como viene impreso, con sus letras y números.</span>
+            </div>
+            <button type="submit" class="sis-boton">Continuar</button>
+          </form>
+
+          <form method="get" class="otro__nada">
+            <input type="hidden" name="doc" value="interno" />
+            <p>
+              <strong>No trae ningún documento.</strong>
+              El sistema le asigna un número propio para poder admitirlo ahora
+              y reconocerlo si vuelve.
+            </p>
+            <button type="submit" class="sis-boton">Admitir sin documento</button>
+          </form>
+        </div>
+      </details>
+    </div>
+  ) : (
+    <form method="post" class="form">
+      <input type="hidden" name="tipo_doc" value={conocido?.tipoDoc ?? tipoDoc} />
+
+      <header class="form__cab">
+        <div>
+          <h1>Admitir un caso</h1>
+          {conocido ? (
+            <p class="form__nota">
+              <strong>{conocido.nombre}</strong> · {comoSeLee(conocido.tipoDoc, conocido.cedula)}
+              {conocido.ultima && (
+                <> · última atención N° {conocido.ultima.numero} del {fechaLarga(conocido.ultima.fecha)}</>
+              )}
+            </p>
+          ) : (
+            <p class="form__nota">
+              Paciente nuevo, {comoSeLee(tipoDoc, cedulaPedida)}. Se registra con
+              esta admisión.
+            </p>
+          )}
+        </div>
+        <a class="sis-boton sis-boton--suave" href="/sistema/atencion/abrir">No es este paciente</a>
+      </header>
+
+      {error && (
+        <p class="sis-error form__error">
+          <Icono nombre="escudo" tam={18} />
+          {error}
+        </p>
+      )}
+
+      <p class="aclara">
+        Esto es la admisión: lo que usted ya le preguntó al paciente. El motivo,
+        el examen, el diagnóstico y el récipe los escribe el médico cuando lo
+        pase a la consulta.
+      </p>
+
+      <div class="bloques">
+        {admision.map((s) => <Seccion seccion={s} datos={datos} />)}
+
+        <section class="bloque">
+          <div class="bloque__cab">
+            <span class="bloque__titulo">¿Quién lo va a atender?</span>
+            {esperando > 0 && (
+              <span class="bloque__marca">
+                {esperando} {esperando === 1 ? 'caso' : 'casos'} esperando al médico
+              </span>
+            )}
+          </div>
+
+          {medicos.length === 0 ? (
+            <p class="sin-medicos">
+              No hay ningún médico activo en el sistema, y la atención tiene que
+              quedar a nombre de alguien. Pídale a administración que cree la
+              cuenta del médico en <strong>Cuentas</strong>.
+            </p>
+          ) : (
+            <div class="medicos">
+              {medicos.map((m) => (
+                <label class="medico">
+                  <input type="radio" name="medico_id" value={m.id}
+                         required checked={medicoElegido === m.id} />
+                  <span>
+                    <strong>{m.nombre}</strong>
+                    {m.colegiatura && <small>{m.colegiatura}</small>}
+                  </span>
+                </label>
+              ))}
+            </div>
+          )}
+        </section>
+      </div>
+
+      <div class="form__pie">
+        <button type="submit" class="sis-boton sis-boton--primario"
+                disabled={medicos.length === 0}>
+          <Icono nombre="mas" tam={18} />
+          Admitir el caso
+        </button>
+        <a class="sis-boton sis-boton--suave" href="/sistema/laboratorio">Cancelar</a>
+      </div>
+    </form>
+  )}
+</Sistema>
+
+<style>
+  /* ---------- a quién se admite ---------- */
+  .quien { max-width: 520px; margin-inline: auto; padding-top: clamp(16px, 5vw, 48px); }
+  .quien h1 { font-size: var(--u-2xl); }
+  .quien__nota { margin-top: 8px; color: var(--tinta-suave); font-size: var(--u-sm); }
+  .quien__form { margin-top: 20px; display: grid; gap: 16px; }
+  .quien__form input { font-size: var(--u-lg); min-height: 54px; letter-spacing: 0.01em; }
+  .quien__form .sis-boton { min-height: 48px; justify-self: start; }
+
+  .msj--bien {
+    display: flex;
+    align-items: flex-start;
+    gap: 9px;
+    margin-top: 16px;
+    padding: 11px 14px;
+    border-radius: 8px;
+    background: #e4f2ea;
+    border: 1px solid #a9d5bd;
+    color: #105433;
+    font-size: var(--u-sm);
+  }
+  .msj--bien :global(svg) { flex: none; margin-top: 1px; }
+  .msj--bien a { color: inherit; }
+
+  .otro { margin-top: 16px; }
+  .otro > summary {
+    display: flex; align-items: center; min-height: 44px;
+    list-style: none; cursor: pointer;
+    font-size: var(--u-sm); font-weight: 600; color: var(--azul);
+  }
+  .otro > summary::-webkit-details-marker { display: none; }
+  .otro > summary::before { content: '+'; display: inline-flex; justify-content: center; width: 1.2em; font-weight: 700; }
+  .otro[open] > summary::before { content: '−'; }
+  .otro > summary:hover { text-decoration: underline; }
+  .otro__cuerpo {
+    display: grid; gap: 14px; margin-top: 6px; padding: 16px;
+    border: 1px solid var(--linea); border-radius: 12px; background: var(--papel);
+  }
+  .otro__forma { display: grid; gap: 12px; }
+  .otro__forma select {
+    min-height: 44px; padding: 8px 11px; border: 1px solid var(--linea);
+    border-radius: 8px; background: var(--papel); font: inherit;
+    font-family: var(--ui); color: var(--tinta);
+  }
+  .otro__nada {
+    display: grid; gap: 10px; padding-top: 14px;
+    border-top: 1px solid var(--linea-tenue); justify-items: start;
+  }
+  .otro__nada p { margin: 0; font-size: var(--u-sm); color: var(--tinta-suave); }
+
+  /* ---------- formulario ---------- */
+  .form__cab {
+    display: flex; flex-wrap: wrap; gap: 14px;
+    align-items: flex-start; justify-content: space-between;
+  }
+  .form__cab h1 { font-size: var(--u-2xl); }
+  .form__nota { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 70ch; }
+  .form__nota strong { color: var(--azul); }
+  .form__error { margin-top: 18px; }
+
+  .aclara {
+    margin-top: 16px;
+    padding: 11px 14px;
+    border-left: 3px solid var(--azul-medio);
+    background: var(--bruma);
+    border-radius: 0 8px 8px 0;
+    font-size: var(--u-sm);
+    color: var(--tinta-suave);
+    max-width: 90ch;
+  }
+
+  .bloques { display: grid; gap: 14px; margin-top: 18px; }
+
+  /* Mismo marco que las secciones del formulario, sin el <details>: este
+     bloque no se plega porque es el que decide si se puede guardar. */
+  .bloque { background: var(--papel); border: 1px solid var(--linea); border-radius: 10px; }
+  .bloque__cab {
+    display: flex; align-items: center; gap: 12px;
+    padding: 15px 18px; border-bottom: 1px solid var(--linea-tenue);
+  }
+  .bloque__titulo {
+    font-size: var(--u-md); font-weight: 700; letter-spacing: -0.015em;
+    color: var(--azul); margin-right: auto;
+  }
+  .bloque__marca { font-size: var(--u-xs); font-weight: 600; color: var(--tinta-tenue); white-space: nowrap; }
+
+  .medicos {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(min(100%, 220px), 1fr));
+    gap: 10px;
+    padding: 18px;
+  }
+  .medico {
+    display: flex; align-items: center; gap: 11px;
+    min-height: 56px; padding: 0 14px;
+    border: 1px solid var(--linea); border-radius: 9px;
+    cursor: pointer;
+  }
+  .medico:hover { border-color: var(--azul-medio); background: var(--bruma); }
+  .medico:has(input:checked) {
+    border-color: var(--azul-medio);
+    background: var(--bruma);
+    box-shadow: inset 0 0 0 1px var(--azul-medio);
+  }
+  .medico input { width: 20px; height: 20px; flex: none; accent-color: var(--azul); }
+  .medico span { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; }
+  .medico strong { font-size: var(--u-sm); font-weight: 600; }
+  .medico small { font-size: var(--u-xs); color: var(--tinta-tenue); }
+
+  .sin-medicos { margin: 0; padding: 18px; font-size: var(--u-sm); color: var(--tinta-suave); }
+
+  .form__pie {
+    display: flex; flex-wrap: wrap; gap: 10px; align-items: center;
+    margin-top: 18px;
+  }
+  .form__pie .sis-boton--primario { min-height: 48px; }
+</style>

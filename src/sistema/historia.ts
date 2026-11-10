@@ -203,3 +203,69 @@ export const exigidos = historia.flatMap((s) =>
 
 /** Todas las claves, para armar la tabla y validar lo que llega. */
 export const claves = historia.flatMap((s) => s.campos.map((c) => c.clave));
+
+/* ------------------------------------------------------------------
+   La admisión: lo que llena recepción antes de que pase el médico.
+   ------------------------------------------------------------------
+
+   Es un recorte del modelo de arriba, no otro modelo. Son exactamente los
+   campos que en el mesón ya se preguntaron —quién es, cómo se le escribe,
+   quién le cubre y qué le pasa— y ni uno de los clínicos: el examen físico,
+   el diagnóstico, el récipe y el cierre no aparecen en la pantalla de
+   recepción y tampoco se guardan desde ahí.
+
+   La lista se escribe por clave y no «todo menos»: si mañana alguien agrega
+   un campo clínico a una de estas tres secciones, lo seguro es que NO le
+   aparezca a recepción hasta que alguien lo ponga acá a propósito. */
+const DEL_MESON: Record<string, readonly string[]> = {
+  paciente: [
+    'nombre', 'cedula', 'edad', 'sexo', 'telefono', 'whatsapp', 'correo',
+    'titular', 'lugar', 'direccion', 'ciudad', 'referencia',
+  ],
+  caso: ['fecha', 'hora_inicio', 'aseguradora', 'poliza', 'caso_numero', 'empresa'],
+  /* De la evaluación, solo el motivo: es lo que el paciente dice que le
+     pasa, y lo dice en el mesón. La enfermedad actual es otra cosa —es lo
+     que el médico interpreta de eso— y se queda del otro lado. */
+  evaluacion: ['motivo'],
+};
+
+/* «Evaluación» es el título que le corresponde cuando la llena el médico.
+   En recepción el bloque tiene un solo campo y es la pregunta del mesón. */
+const TITULO_EN_EL_MESON: Record<string, string> = {
+  evaluacion: 'Qué lo trae',
+};
+
+export const admision: readonly Seccion[] = historia
+  .filter((s) => DEL_MESON[s.clave])
+  .map((s) => ({
+    ...s,
+    titulo: TITULO_EN_EL_MESON[s.clave] ?? s.titulo,
+    /* Nada plegado: en el mesón se llena de arriba abajo una sola vez. */
+    plegable: false,
+    campos: s.campos.filter((c) => DEL_MESON[s.clave].includes(c.clave)),
+  }));
+
+/**
+ * Claves que puede escribir recepción.
+ *
+ * `medico` y `tipo_doc` entran aunque no se dibujen: el primero lo pone la
+ * admisión al elegir a quién se le asigna el caso, y el segundo viaja oculto
+ * con cada guardado. Sin ellos, una atención recién admitida se vería como
+ * una que el médico ya empezó a escribir.
+ */
+export const clavesDeAdmision: ReadonlySet<string> = new Set([
+  ...admision.flatMap((s) => s.campos.map((c) => c.clave)),
+  'medico',
+  'tipo_doc',
+]);
+
+/**
+ * ¿El médico ya escribió algo acá?
+ *
+ * Se mira por los campos y no por una marca aparte: la marca habría que
+ * acordarse de ponerla en los tres sitios que guardan una atención —el
+ * formulario, el autoguardado y el cierre— y el día que uno se olvide, la
+ * respuesta es que no la escribió nadie.
+ */
+export const yaLaEscribioElMedico = (datos: Record<string, unknown>) =>
+  claves.some((k) => !clavesDeAdmision.has(k) && Boolean(datos?.[k]));

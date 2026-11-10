@@ -2,9 +2,10 @@
 import Sistema from '../../layouts/Sistema.astro';
 import Icono from '../../components/Icono.astro';
 import { bd, esquema } from '../../sistema/lib/base';
-import { desc, eq, sql, and, ilike, or } from 'drizzle-orm';
+import { desc, eq, sql, and, ilike, or, isNotNull } from 'drizzle-orm';
 import { exigir } from '../../sistema/lib/guardia';
 import { puede } from '../../sistema/lib/permisos';
+import { yaLaEscribioElMedico } from '../../sistema/historia';
 
 export const prerender = false;
 
@@ -12,6 +13,52 @@ const corte = exigir(Astro, 'ver_casos');
 if (corte) return corte;
 
 const escribe = puede(Astro.locals.usuario?.rol as string, 'escribir_historia');
+
+/* La cola del consultorio: lo que recepción admitió y nadie escribió
+   todavía. El médico cae en esta pantalla al entrar y antes no tenía cómo
+   enterarse de que lo estaban esperando; «Casos atendidos» es, por
+   definición, lo que ya pasó.
+
+   Solo al que las puede escribir: a administración no le toca y le sumaría
+   un aviso más a una pantalla que ya tiene varios. */
+const esperando = escribe
+  ? await bd
+      .select({
+        id: esquema.atencion.id,
+        numero: esquema.atencion.numero,
+        paciente: esquema.paciente.nombre,
+        datos: esquema.atencion.datos,
+        mia: sql<boolean>`${esquema.atencion.medicoId} = ${Astro.locals.usuario!.id}`,
+      })
+      .from(esquema.atencion)
+      .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
+      .where(and(
+        eq(esquema.atencion.estado, 'borrador'),
+        eq(esquema.atencion.tipo, 'general'),
+        isNotNull(esquema.atencion.abiertaPor),
+      ))
+      .orderBy(desc(esquema.atencion.creada))
+      .limit(6)
+  : [];
+
+/* El cast va acá y no en el template: un genérico dentro del JSX de Astro
+   se parsea como etiqueta.
+
+   Las que ya tienen algo escrito salen de la cola: están a medio hacer y su
+   sitio son los borradores, no la sala de espera. */
+const cola = esperando
+  .map((a) => {
+    const campos = (a.datos ?? {}) as Record<string, string>;
+    return {
+      id: a.id,
+      numero: a.numero,
+      paciente: a.paciente,
+      mia: Boolean(a.mia),
+      motivo: campos.motivo ?? '',
+      escrita: yaLaEscribioElMedico(campos),
+    };
+  })
+  .filter((a) => !a.escrita);
 
 const busca = (Astro.url.searchParams.get('q') ?? '').trim();
 const mes = Astro.url.searchParams.get('mes') ?? '';
@@ -81,6 +128,37 @@ const fechaCorta = (f: string) =>
     </a>}
   </div>
 
+  {cola.length > 0 && (
+    <section class="espera" aria-labelledby="espera-t">
+      <h2 id="espera-t">
+        <Icono nombre="reloj" tam={18} />
+        {cola.length === 1
+          ? 'Hay un paciente esperando'
+          : `Hay ${cola.length} pacientes esperando`}
+      </h2>
+      <p class="espera__nota">
+        Recepción los admitió y ya traen sus datos. Falta la consulta.
+      </p>
+      <ul class="espera__lista">
+        {cola.map((a) => (
+          <li>
+            <a href={a.mia ? `/sistema/atencion/${a.id}/editar` : `/sistema/atencion/${a.id}`}>
+              <span class="espera__num cifra">{a.numero}</span>
+              <span class="espera__quien">
+                <strong>{a.paciente}</strong>
+                <small>{a.motivo || 'Sin motivo anotado'}</small>
+              </span>
+              {/* Puesta a otro médico: se puede tomar desde el caso. Se dice
+                  acá para que no parezca que el enlace no funciona. */}
+              {!a.mia && <span class="espera__ajena">de otro médico</span>}
+            </a>
+          </li>
+        ))}
+      </ul>
+      <a class="espera__todos" href="/sistema/borradores">Ver todo lo que falta cerrar</a>
+    </section>
+  )}
+
   <form class="filtros" method="get">
     <div class="filtros__busca">
       <Icono nombre="latido" tam={18} />
@@ -131,6 +209,71 @@ const fechaCorta = (f: string) =>
 </Sistema>
 
 <style>
+  /* La sala de espera. Va arriba de los filtros porque es lo único de esta
+     pantalla que pide algo AHORA; lo de abajo es historia. */
+  .espera {
+    margin-top: 18px;
+    padding: 16px 18px;
+    border: 1px solid var(--azul-medio);
+    border-left: 4px solid var(--azul);
+    border-radius: 10px;
+    background: var(--bruma);
+  }
+  .espera h2 {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: var(--u-md);
+    color: var(--azul);
+  }
+  .espera h2 :global(svg) { flex: none; }
+  .espera__nota { margin-top: 4px; font-size: var(--u-xs); color: var(--tinta-suave); }
+
+  .espera__lista { list-style: none; margin: 12px 0 0; padding: 0; display: grid; gap: 6px; }
+  .espera__lista a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 50px;
+    padding: 0 13px;
+    border: 1px solid var(--linea);
+    border-radius: 9px;
+    background: var(--papel);
+    color: var(--tinta);
+    text-decoration: none;
+  }
+  .espera__lista a:hover { border-color: var(--azul-medio); }
+  .espera__num {
+    flex: none;
+    min-width: 2.6em;
+    font-weight: 700;
+    font-size: var(--u-sm);
+    color: var(--tinta-tenue);
+  }
+  .espera__quien { display: flex; flex-direction: column; line-height: 1.3; min-width: 0; flex: 1; }
+  .espera__quien strong { font-size: var(--u-sm); font-weight: 600; }
+  .espera__quien small {
+    font-size: var(--u-xs);
+    color: var(--tinta-tenue);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+  .espera__ajena {
+    flex: none;
+    font-size: var(--u-xs);
+    font-weight: 600;
+    color: var(--tinta-tenue);
+    white-space: nowrap;
+  }
+  .espera__todos {
+    display: inline-block;
+    margin-top: 11px;
+    font-size: var(--u-xs);
+    font-weight: 600;
+    color: var(--azul);
+  }
+
   .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
   
   .cab__nota { margin-top: 5px; font-size: 0.88rem; color: var(--tinta-tenue); }

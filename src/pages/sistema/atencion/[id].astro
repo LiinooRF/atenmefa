@@ -10,12 +10,19 @@ import { eq, desc, and, ne } from 'drizzle-orm';
 import { exigir } from '../../../sistema/lib/guardia';
 import {
   puede, puedeBorrarBorrador, puedeCargarResultados, puedeEditarAtencion, puedeEditarOrden,
+  puedeTomarCaso,
 } from '../../../sistema/lib/permisos';
+import { yaLaEscribioElMedico } from '../../../sistema/historia';
+import { alias } from 'drizzle-orm/pg-core';
 import { examenesPedidos, ordenesDe } from '../../../sistema/lib/laboratorio';
 import { fueraDeRango, comoSeDice } from '../../../sistema/rangos';
 import { comoSeLee } from '../../../sistema/lib/documento';
 
 export const prerender = false;
+
+/* "user" entra dos veces: el médico al que está puesta la atención y quien
+   la admitió en el mesón. Sin alias, Postgres no sabe de cuál se habla. */
+const admisor = alias(esquema.user, 'admisor');
 
 /* La puerta se abre con 'ver_historia' o con 'ver_laboratorio', y después
    se comprueba contra lo que de verdad se abrió: así el bioanalista puede
@@ -55,10 +62,17 @@ const [caso] = await bd
     medicoId: esquema.atencion.medicoId,
     medico: esquema.user.name,
     colegiatura: esquema.user.colegiatura,
+    /* Quién la admitió en el mesón. Nulo = la abrió el propio médico, que es
+       como nacen las que él mismo empieza. Ver 019-admision.sql. */
+    abiertaPor: esquema.atencion.abiertaPor,
+    admitio: admisor.name,
   })
   .from(esquema.atencion)
   .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
   .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
+  /* Izquierdo: casi ninguna atención tiene quién la admitió, y con un join
+     interno la pantalla devolvía "este caso no está". */
+  .leftJoin(admisor, eq(admisor.id, esquema.atencion.abiertaPor))
   .where(eq(esquema.atencion.id, id))
   .limit(1);
 
@@ -67,6 +81,43 @@ if (!caso) return Astro.redirect('/sistema');
 const esLab = caso.tipo === 'laboratorio';
 const corte = exigir(Astro, esLab ? 'ver_laboratorio' : 'ver_historia');
 if (corte) return corte;
+
+/* Tomar un caso que admitió recepción y estaba puesto a nombre de otro.
+   Va por POST porque cambia a quién pertenece el borrador: un enlace lo
+   dispararía el primer bot que pase o el prefetch del navegador.
+
+   La condición se vuelve a comprobar acá y no se confía en que el botón
+   estuviera dibujado: el botón es una pista, el permiso es esto. */
+const escrita = yaLaEscribioElMedico((caso.datos ?? {}) as Record<string, string>);
+const tomable = puedeTomarCaso(usuario, { ...caso, escrita });
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  if (form.get('accion') === 'tomar' && tomable) {
+    const nuevos = { ...((caso.datos ?? {}) as Record<string, string>), medico: usuario.name };
+    const cambiadas = await bd
+      .update(esquema.atencion)
+      .set({ medicoId: usuario.id, datos: nuevos })
+      .where(and(
+        eq(esquema.atencion.id, caso.id),
+        /* Que siga siendo un borrador admitido y del mismo médico que
+           estaba: entre que se dibujó el botón y se tocó, el otro médico
+           pudo haber empezado a escribirla. */
+        eq(esquema.atencion.estado, 'borrador'),
+        eq(esquema.atencion.medicoId, caso.medicoId),
+      ))
+      .returning({ id: esquema.atencion.id });
+
+    if (cambiadas.length) {
+      await anotar(usuario.id, 'tomo', caso.id, {
+        numero: caso.numero,
+        antes: caso.medico,
+      });
+      return Astro.redirect(`/sistema/atencion/${caso.id}/editar`);
+    }
+  }
+  return Astro.redirect(`/sistema/atencion/${caso.id}`);
+}
 
 await anotar(usuario.id, 'vio', caso.id);
 
@@ -191,7 +242,8 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
         {comoSeLlama} <strong class="cifra">N° {caso.numero}</strong> ·
         {fechaLarga(caso.fecha)} ·
         {comoSeLee(caso.tipoDoc, caso.cedula)} ·
-        {esLab ? 'registró' : 'atendió'} {caso.medico}{caso.colegiatura && ` (${caso.colegiatura})`}
+        {esLab ? 'registró' : caso.estado === 'borrador' ? 'para' : 'atendió'} {caso.medico}{caso.colegiatura && ` (${caso.colegiatura})`}
+        {caso.admitio && <> · admitió {caso.admitio}</>}
       </p>
     </div>
     <div class="cab__acciones">
@@ -200,6 +252,17 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
           <Icono nombre="laboratorio" tam={18} />
           Cargar resultados
         </a>
+      )}
+      {/* Puesta a otro médico y todavía sin escribir: se la puede llevar
+          quien de verdad va a atender, sin pasar otra vez por el mesón. */}
+      {tomable && (
+        <form method="post" class="tomar">
+          <input type="hidden" name="accion" value="tomar" />
+          <button type="submit" class="sis-boton sis-boton--primario">
+            <Icono nombre="estetoscopio" tam={18} />
+            Tomar el caso
+          </button>
+        </form>
       )}
       {(esLab ? puedeEditarOrden(usuario, caso) : puedeEditarAtencion(usuario, caso)) && (
         <a class:list={['sis-boton', esLab ? 'sis-boton--suave' : 'sis-boton--primario']}
@@ -464,6 +527,10 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
 </Sistema>
 
 <style>
+  /* El de tomar el caso es un formulario y los demás son enlaces: sin esto
+     la fila de botones lo baja de línea él solo. */
+  .tomar { display: contents; }
+
   /* Los resultados dentro de la consulta. Plegados cuando hay varias
      órdenes y abiertos cuando hay una sola: con una, esconderla detrás de
      un clic es un clic de más. */

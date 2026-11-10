@@ -27,7 +27,15 @@
  *      y el cobro son de administración.
  *   3. ¿Quién anula una atención cerrada? Acá decimos que solo
  *      administración, y siempre con motivo escrito.
- *   4. ¿Recepción ve el cierre del mes? Él dudó en voz alta —«no sé si él
+ *   4. ¿Administración admite casos médicos? Acá decimos que no. Lo pidió
+ *      para recepción —«la recepcionista también debería poder crear casos
+ *      médicos»— y administración ya tiene las órdenes de laboratorio por el
+ *      mismo argumento del centro chico. La diferencia es que nada se
+ *      bloquea sin esto: una consulta la puede abrir el médico él mismo, que
+ *      es como venía funcionando. Si mañana dice que sí, es agregar
+ *      'abrir_consulta' a su lista y revisar que la barra del menú aguante
+ *      una entrada más, que es lo único que cuesta.
+ *   5. ¿Recepción ve el cierre del mes? Él dudó en voz alta —«no sé si él
  *      tenga que ver los precios»— y después dijo que recepción cobra. Acá
  *      cobra pero no ve el consolidado: cargar un renglón y ver cuánto
  *      facturó el centro en el mes son dos cosas distintas.
@@ -39,6 +47,7 @@ export type Permiso =
   | 'ver_casos'            // entrar al panel y ver la lista
   | 'ver_historia'         // leer los campos clínicos de un caso
   | 'escribir_historia'    // crear y editar atenciones
+  | 'abrir_consulta'       // admitir el caso en el mesón para que el médico lo escriba
   | 'cerrar_atencion'      // firmar y cerrar
   | 'anular_atencion'      // dejar sin efecto una cerrada, con motivo
   | 'imprimir_documento'   // el "2 en 1"
@@ -155,6 +164,12 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
   recepcionista: [
     'ver_casos',
     'ver_historia',
+    /* Admite el caso y se lo deja escrito al médico. NO escribe la historia:
+       son dos permisos distintos a propósito. Lo que llena acá es lo que ya
+       le preguntó al paciente en el mesón —quién es, quién le cubre y qué le
+       pasa—; el examen, el diagnóstico y el récipe siguen siendo del médico y
+       esta pantalla no los dibuja. */
+    'abrir_consulta',
     'ver_pacientes',
     'editar_paciente',
     'ver_laboratorio',
@@ -188,6 +203,11 @@ export function puede(rol: string | null | undefined, permiso: Permiso): boolean
  * historias, así que acá no hay excepción: si el médico que lo empezó no
  * está, la atención se cierra como quedó o se anula, pero nadie escribe
  * en nombre de otro.
+ *
+ * Las que admite recepción no son una excepción a eso: nacen con el médico
+ * que recepción eligió y es él quien las escribe. Lo que sí tienen es una
+ * puerta para cambiar de médico ANTES de que empiece a escribirse, y es
+ * puedeTomarCaso.
  */
 export function puedeEditarAtencion(
   usuario: { id: string; rol?: string | null } | null,
@@ -197,6 +217,36 @@ export function puedeEditarAtencion(
   if (!puede(usuario.rol, 'escribir_historia')) return false;
   if (atencion.estado !== 'borrador') return false;
   return atencion.medicoId === usuario.id;
+}
+
+/**
+ * Tomar un caso que admitió recepción y que estaba puesto a nombre de otro
+ * médico.
+ *
+ * Recepción tiene que elegir a alguien —la atención no puede nacer sin
+ * médico— y en el mesón se elige con la información del mesón: quien estaba
+ * de turno cuando llegó el paciente. Si a la hora de atender el que pasa a
+ * la consulta es otro, la alternativa a esto sería pedirle a recepción que
+ * corrija la asignación mientras el paciente espera.
+ *
+ * Solo las que admitió recepción, y solo mientras el médico no haya escrito
+ * nada: en cuanto hay algo escrito vuelve a mandar la regla de arriba y el
+ * borrador es de quien lo empezó. Un médico no se lleva a mitad de camino
+ * la historia que otro estaba escribiendo.
+ */
+export function puedeTomarCaso(
+  usuario: { id: string; rol?: string | null } | null,
+  atencion: {
+    tipo: string; estado: string; medicoId: string;
+    abiertaPor?: string | null; escrita?: boolean;
+  },
+): boolean {
+  if (!usuario) return false;
+  if (!puede(usuario.rol, 'escribir_historia')) return false;
+  if (atencion.tipo !== 'general' || atencion.estado !== 'borrador') return false;
+  if (!atencion.abiertaPor) return false;
+  if (atencion.escrita) return false;
+  return atencion.medicoId !== usuario.id;
 }
 
 const NOMBRES: Record<Rol, string> = {
@@ -277,6 +327,7 @@ export const porQueNo: Record<Permiso, string> = {
   ver_casos: 'Su usuario no tiene acceso al panel.',
   ver_historia: 'Su usuario no puede leer historias clínicas.',
   escribir_historia: 'Solo el personal médico escribe historias clínicas.',
+  abrir_consulta: 'Su usuario no puede admitir casos.',
   cerrar_atencion: 'Solo el personal médico cierra y firma una atención.',
   anular_atencion: 'Solo administración puede anular una atención cerrada.',
   imprimir_documento: 'Su usuario no puede imprimir el documento.',

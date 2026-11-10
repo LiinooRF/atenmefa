@@ -12,16 +12,22 @@ import {
   DIAS_DE_BORRADOR, borradoresAbiertos, limpiarBorradoresViejos,
 } from '../../sistema/lib/atenciones';
 import { exigir } from '../../sistema/lib/guardia';
-import { puede, puedeBorrarBorrador } from '../../sistema/lib/permisos';
+import { puede, puedeBorrarBorrador, puedeEditarAtencion } from '../../sistema/lib/permisos';
 
 export const prerender = false;
 
-/* Administración entra también, aunque no escriba historias: el cliente le
-   dio el borrado de borradores. */
+/* Tres puertas a la misma pantalla, y cada rol ve lo suyo:
+     · el médico, porque las escribe;
+     · administración, porque las borra;
+     · recepción, porque es donde queda lo que admitió y necesita ver si el
+       médico ya lo pasó o si el paciente sigue esperando.
+   Lo que se puede HACER en cada fila lo decide después cada botón. */
 const usuario = Astro.locals.usuario;
 if (!usuario) return Astro.redirect('/sistema/entrar');
 const escribe = puede(usuario.rol as string, 'escribir_historia');
-const corte = escribe ? null : exigir(Astro, 'anular_atencion');
+const corte = escribe || puede(usuario.rol as string, 'abrir_consulta')
+  ? null
+  : exigir(Astro, 'anular_atencion');
 if (corte) return corte;
 
 /* La limpieza de los veinte días corre acá, al abrir la lista. No hay cron
@@ -29,9 +35,15 @@ if (corte) return corte;
    molesta un borrador viejo. Ver limpiarBorradoresViejos. */
 const limpiados = await limpiarBorradoresViejos();
 
-const borradores = await borradoresAbiertos();
+/* Lo que admitió recepción y el médico todavía no tocó va primero: es la
+   cola del consultorio y es lo que el médico abre al llegar. El resto queda
+   abajo en el orden de siempre, el más reciente arriba. */
+const todos = await borradoresAbiertos();
+const esperando = todos.filter((b) => b.abiertaPor && !b.escrita);
+const borradores = [...esperando, ...todos.filter((b) => !(b.abiertaPor && !b.escrita))];
 const listos = borradores.filter((b) => b.faltan.length === 0).length;
 const puedeNuevas = escribe;
+const admite = puede(usuario.rol as string, 'abrir_consulta');
 
 const fechaCorta = (f: string) =>
   new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: 'short' });
@@ -55,11 +67,24 @@ const queFalta = (faltan: { rotulo: string }[]) => {
           : `${borradores.length} ${borradores.length === 1 ? 'borrador' : 'borradores'}`}
         {listos > 0 && ` · ${listos} ${listos === 1 ? 'listo para cerrar' : 'listos para cerrar'}`}
       </p>
+      {esperando.length > 0 && (
+        <p class="cab__espera">
+          <Icono nombre="reloj" tam={16} />
+          {esperando.length === 1
+            ? 'Hay 1 caso admitido en recepción esperando al médico.'
+            : `Hay ${esperando.length} casos admitidos en recepción esperando al médico.`}
+        </p>
+      )}
     </div>
-    {puedeNuevas && (
+    {puedeNuevas ? (
       <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">
         <Icono nombre="mas" tam={19} />
         Nueva atención
+      </a>
+    ) : admite && (
+      <a class="sis-boton sis-boton--primario" href="/sistema/atencion/abrir">
+        <Icono nombre="mas" tam={19} />
+        Admitir un caso
       </a>
     )}
   </div>
@@ -86,31 +111,53 @@ const queFalta = (faltan: { rotulo: string }[]) => {
         Las atenciones aparecen acá mientras estén a medio llenar. Al cerrarlas
         pasan a <a href="/sistema">la lista de casos</a>.
       </p>
-      {puedeNuevas && (
+      {puedeNuevas ? (
         <a class="sis-boton sis-boton--primario" href="/sistema/atencion/nueva">Registrar una atención</a>
+      ) : admite && (
+        <a class="sis-boton sis-boton--primario" href="/sistema/atencion/abrir">Admitir un caso</a>
       )}
     </div>
   ) : (
     <ul class="pend">
       {borradores.map((b) => (
         <li>
-          <a href={`/sistema/atencion/${b.id}/editar`}>
+          {/* A dónde lleva la fila depende de quién mira. El médico al que
+              está puesta entra a escribirla; recepción y el resto entran al
+              caso, que es lo que sí pueden abrir. Antes llevaba siempre a
+              «editar» y para recepción era un rebote a «no tiene permiso». */}
+          <a href={puedeEditarAtencion(usuario, b)
+                     ? `/sistema/atencion/${b.id}/editar`
+                     : `/sistema/atencion/${b.id}`}>
             <span class="pend__num cifra">{b.numero}</span>
 
             <span class="pend__cuerpo">
               <span class="pend__linea">
                 <strong>{b.paciente}</strong>
+                {b.abiertaPor && !b.escrita && (
+                  <span class="pend__chapa">Admitido en recepción</span>
+                )}
                 <em class="cifra">{fechaCorta(b.fecha)}</em>
               </span>
               <span class="pend__linea pend__linea--baja">
                 <small>{b.idx || b.motivo || 'Sin motivo anotado'}</small>
-                <span class="pend__quien">{b.cedula}</span>
+                <span class="pend__quien">
+                  {b.cedula}
+                  {b.abiertaPor && !b.escrita && <> · para {b.medico}</>}
+                </span>
               </span>
             </span>
 
             <span class="pend__falta">
               {b.faltan.length === 0 ? (
                 <strong class="pend__falta-ok">Listo para cerrar</strong>
+              ) : b.abiertaPor && !b.escrita ? (
+                /* «Faltan 14 campos» es verdad pero asusta y no dice nada:
+                   a una que acaba de admitirse le falta TODO lo clínico,
+                   porque todavía no pasó a la consulta. */
+                <>
+                  <strong>Sin escribir</strong>
+                  <small>El paciente está esperando</small>
+                </>
               ) : (
                 <>
                   <strong>
@@ -149,6 +196,30 @@ const queFalta = (faltan: { rotulo: string }[]) => {
 </Sistema>
 
 <style>
+  .cab__espera {
+    display: inline-flex;
+    align-items: center;
+    gap: 7px;
+    margin-top: 8px;
+    font-size: var(--u-sm);
+    font-weight: 600;
+    color: var(--azul);
+  }
+  .cab__espera :global(svg) { flex: none; }
+
+  /* Chapa de la fila, no botón: dice de dónde viene el caso. */
+  .pend__chapa {
+    flex: none;
+    padding: 2px 8px;
+    border-radius: 999px;
+    background: var(--bruma);
+    border: 1px solid var(--azul-medio);
+    font-size: var(--u-xs);
+    font-weight: 700;
+    color: var(--azul);
+    white-space: nowrap;
+  }
+
   .msj--bien {
     display: flex;
     align-items: flex-start;

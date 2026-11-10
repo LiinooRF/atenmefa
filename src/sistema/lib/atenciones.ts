@@ -3,8 +3,9 @@
  * el formulario como la API de autoguardado.
  */
 import { and, desc, eq, sql } from 'drizzle-orm';
+import { alias } from 'drizzle-orm/pg-core';
 import { bd, esquema } from './base';
-import { historia, exigidos, type Campo } from '../historia';
+import { historia, exigidos, yaLaEscribioElMedico, type Campo } from '../historia';
 import { laboratorio, exigidosLaboratorio } from '../laboratorio';
 import { ROTULO, esTipo, llaveDe, soloDigitos, type TipoDocumento } from './documento';
 import { asegurarPin } from './verificacion';
@@ -281,6 +282,11 @@ export async function guardarBorrador(
  * y mezclarlas llenaba los borradores del médico de gente que nunca pasó
  * por su consulta.
  */
+/* El mismo "user" entra dos veces en la consulta de los borradores: una por
+   el médico al que está puesta la atención y otra por quien la admitió. Sin
+   alias, Postgres no sabe de cuál de las dos se habla. */
+const admisor = alias(esquema.user, 'admisor');
+
 export async function borradoresAbiertos(limite = 100) {
   const filas = await bd
     .select({
@@ -299,6 +305,11 @@ export async function borradoresAbiertos(limite = 100) {
          administración cualquiera. */
       medicoId: esquema.atencion.medicoId,
       medico: esquema.user.name,
+      /* Quién lo admitió en el mesón, y su nombre. Nulo quiere decir que lo
+         abrió el propio médico: la fila no lleva chapa y se lee como siempre.
+         Ver 019-admision.sql. */
+      abiertaPor: esquema.atencion.abiertaPor,
+      admitio: admisor.name,
       /* Días sin que nadie lo toque, contados como los cuenta el borrado
          automático: la última línea de bitácora, o la creación si no tiene
          ninguna. Así la pantalla avisa con el mismo número con el que se va
@@ -316,6 +327,9 @@ export async function borradoresAbiertos(limite = 100) {
     .from(esquema.atencion)
     .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
     .innerJoin(esquema.user, eq(esquema.user.id, esquema.atencion.medicoId))
+    /* Izquierdo y no interno: la mayoría de los borradores no tiene quién
+       los admitió, y con un join interno la lista se vaciaba. */
+    .leftJoin(admisor, eq(admisor.id, esquema.atencion.abiertaPor))
     .where(and(
       eq(esquema.atencion.estado, 'borrador'),
       eq(esquema.atencion.tipo, 'general'),
@@ -332,6 +346,9 @@ export async function borradoresAbiertos(limite = 100) {
       idx: campos.idx ?? '',
       motivo: campos.motivo ?? '',
       quieto: Number(caso.quieto ?? 0),
+      /* Si el médico ya le puso algo encima deja de ser «recién admitida»:
+         la chapa se va y el caso ya no se lo puede llevar otro. */
+      escrita: yaLaEscribioElMedico(campos),
       faltan: faltantes(campos),
     };
   });
