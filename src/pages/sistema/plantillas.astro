@@ -18,12 +18,30 @@
 import Sistema from '../../layouts/Sistema.astro';
 import Icono from '../../components/Icono.astro';
 import { exigir } from '../../sistema/lib/guardia';
-import { resumenDePlantillas } from '../../sistema/lib/laboratorio';
+import { resumenDePlantillas, crearPlantillaExamen } from '../../sistema/lib/laboratorio';
+import { anotar } from '../../sistema/lib/atenciones';
 
 export const prerender = false;
 
 const corte = exigir(Astro, 'editar_plantillas');
 if (corte) return corte;
+
+const usuario = Astro.locals.usuario!;
+let error = '';
+let creado = '';
+
+/* Una plantilla nueva nace con un solo renglón en blanco: la pantalla de
+   edición ya abierta es la mejor forma de decirle al laboratorio qué falta
+   escribir. Si se arrepiente y la deja vacía, desaparece sola al guardar. */
+if (Astro.request.method === 'POST') {
+  try {
+    const nombre = String((await Astro.request.formData()).get('nombre') ?? '');
+    creado = await crearPlantillaExamen(nombre);
+    await anotar(usuario.id, 'plantilla', undefined, { examen: creado, nueva: true });
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo crear la plantilla.';
+  }
+}
 
 const examenes = await resumenDePlantillas();
 
@@ -51,6 +69,14 @@ const ordenados = [...examenes].sort(
       {subtitulos > 0 && ` y ${subtitulos} subtítulos de bloque`}.
     </p>
   </header>
+
+  {error && <p class="aviso"><Icono nombre="escudo" tam={18} /><span>{error}</span></p>}
+  {creado && (
+    <p class="aviso aviso--bien">
+      <Icono nombre="escudo" tam={18} />
+      <span>{creado} quedó creada. Escriba sus renglones antes de salir.</span>
+    </p>
+  )}
 
   {faltan > 0 ? (
     <p class="aviso">
@@ -89,10 +115,28 @@ const ordenados = [...examenes].sort(
     ))}
   </ul>
 
+  <form method="post" class="nueva">
+    <label for="pl-nombre">Un examen que no está en la lista</label>
+    <div class="nueva__fila">
+      <input type="text" id="pl-nombre" name="nombre" required minlength={3}
+             placeholder="p. ej. Frotis de sangre periférica" autocomplete="off" />
+      <button type="submit" class="sis-boton sis-boton--azul">
+        <Icono nombre="mas" tam={17} />
+        Nueva plantilla
+      </button>
+    </div>
+    <p class="nueva__nota">
+      Nace con un renglón en blanco: se le escriben sus analitos, su unidad y su
+      rango, y de ahí en adelante se carga sola en cada orden, igual que las que
+      salieron del archivo. Los renglones que se responden con una palabra —
+      NEGATIVO, POSITIVO— llevan su menú de opciones.
+    </p>
+  </form>
+
   <p class="pie">
-    {completos} de {examenes.length} exámenes están completos. Orina y heces
-    no están en esta lista: son formularios de dos mitades y el rango de una
-    no es el de la otra, así que se cargan a mano en cada orden.
+    {completos} de {examenes.length} exámenes están completos. Orina, heces y
+    H. ESP son formularios de dos mitades, y el rango de una no es el de la
+    otra: por eso se informan con menú de opciones y no con una sola escala.
   </p>
 </Sistema>
 
@@ -150,4 +194,21 @@ const ordenados = [...examenes].sort(
   .lista__listo { flex: none; font-size: var(--u-xs); color: #2f8f5b; font-weight: 600; }
 
   .pie { margin-top: 18px; font-size: var(--u-xs); color: var(--tinta-tenue); max-width: 72ch; line-height: 1.55; }
+
+  /* La creación de una plantilla nueva va abajo de la lista y no en la
+     cabecera: primero se mira lo que hay, después se agrega. */
+  .nueva {
+    margin-top: 20px; padding: 14px;
+    border: 1px solid var(--linea); border-radius: 10px; background: var(--panel);
+    max-width: 76ch;
+  }
+  .nueva label { font-size: var(--u-sm); font-weight: 600; display: block; margin-bottom: 8px; }
+  .nueva__fila { display: flex; flex-wrap: wrap; gap: 8px; }
+  .nueva__fila input {
+    flex: 1; min-width: 220px; min-height: 44px;
+    padding: 6px 10px; border: 1px solid var(--linea); border-radius: 8px;
+    background: var(--papel); color: var(--tinta); font: inherit; font-size: var(--u-sm);
+  }
+  .nueva__fila input:focus { border-color: var(--azul); outline: none; }
+  .nueva__nota { margin-top: 8px; font-size: var(--u-xs); color: var(--tinta-tenue); line-height: 1.55; }
 </style>

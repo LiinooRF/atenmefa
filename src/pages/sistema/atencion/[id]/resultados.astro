@@ -107,9 +107,13 @@ const plantillas = await plantillasDeExamen();
 /* Cuántos renglones vienen sin rango. Se cuenta del dato y no se escribe a
    mano: ya pasó que la pantalla dijera «92 de 188» cuando la cifra había
    cambiado, y una cifra vieja en una advertencia la vuelve mentira. */
-/* Los encabezados de bloque no se cuentan: nunca van a tener rango. */
+/* Los encabezados de bloque no se cuentan: nunca van a tener rango. Tampoco
+   cuenta el que se responde con menú —NEGATIVO, los colores de la orina—:
+   esa es su forma de informarse, no un rango que le falte. */
 const renglones = plantillas.flatMap((p) => p.analitos).filter((a) => a.tipo !== 'titulo');
-const sinRango = renglones.filter((a) => !a.referencia.trim()).length;
+const sinRango = renglones.filter(
+  (a) => !a.referencia.trim() && !a.opciones.trim(),
+).length;
 
 /**
  * Las líneas que se dibujan.
@@ -142,13 +146,19 @@ const porNombre = new Map(cargados.map((r) => [r.examen, r]));
    el primero que traiga rango: son los mismos valores en las dos hojas del
    archivo, y si algún día dejan de serlo, el bioanalista lo corrige en la
    línea, que es editable. */
-const deLaPlantilla = new Map<string, { unidad: string; referencia: string }>();
+/* El menú de opciones viene con el renglón: «NEGATIVO / TRAZAS /
+   POSITIVO» en las proteínas de la orina, los colores en el aspecto. */
+const deLaPlantilla = new Map<
+  string, { unidad: string; referencia: string; opciones: string }
+>();
 for (const p of plantillas) {
   for (const a of p.analitos) {
     if (a.tipo === 'titulo') continue;
     const antes = deLaPlantilla.get(a.analito);
     if (antes && antes.referencia.trim()) continue;
-    deLaPlantilla.set(a.analito, { unidad: a.unidad, referencia: a.referencia });
+    deLaPlantilla.set(a.analito, {
+      unidad: a.unidad, referencia: a.referencia, opciones: a.opciones,
+    });
   }
 }
 
@@ -163,6 +173,11 @@ const conPlantilla = (r: Resultado): Resultado => {
     referencia: r.referencia.trim() ? r.referencia : d.referencia,
   };
 };
+
+/* Las opciones de la línea que se dibuja: el menú del renglón, cuando su
+   plantilla lo trae. Va como `list` del campo y no como lista fija, para
+   que se pueda elegir Y escribir otra cosa: nada le cierra el paso. */
+const opcionesDe = (analito: string) => deLaPlantilla.get(analito)?.opciones ?? '';
 
 const lineas: Resultado[] = [
   ...nombresPedidos.map((nombre) =>
@@ -256,14 +271,22 @@ const fechaLarga = (f: string) =>
           </thead>
           <tbody id="res-cuerpo">
             {lineas.map((l, i) => (
-              <tr>
+              <tr data-opciones={opcionesDe(l.examen) || undefined}>
                 <td data-rotulo="Examen">
                   <input type="text" name="examen" value={l.examen}
                          aria-label={`Examen de la línea ${i + 1}`} autocomplete="off" />
                 </td>
                 <td data-rotulo="Resultado">
                   <input type="text" name="valor" value={l.valor} inputmode="decimal"
+                         list={`op-${i}`}
                          aria-label={`Resultado de ${l.examen || `la línea ${i + 1}`}`} autocomplete="off" />
+                  {/* El menú del renglón, si su plantilla lo trae. Una <option> por
+                      palabra, tal como las escribió la hoja DAT. del archivo. */}
+                  <datalist id={`op-${i}`}>
+                    {opcionesDe(l.examen).split('\n').filter(Boolean).map((o) => (
+                      <option value={o}></option>
+                    ))}
+                  </datalist>
                 </td>
                 <td data-rotulo="Unidad">
                   <input type="text" name="unidad" value={l.unidad}
@@ -308,9 +331,10 @@ const fechaLarga = (f: string) =>
         Las plantillas salen del archivo de laboratorio del centro: traen el
         analito, su unidad y su valor de referencia.
         <strong>Reviselo antes de firmar</strong>: {sinRango} de los{' '}
-        {renglones.length} analitos vienen sin rango porque su hoja no lo
-        traía en ninguna columna de esa fila, y deducirlo habría puesto el
-        rango de un examen al lado del resultado de otro.
+        {renglones.length} analitos vienen sin rango ni menú de opciones
+        porque su hoja no los traía en ninguna columna de esa fila, y
+        deducirlos habría puesto el rango de un examen al lado del resultado
+        de otro.
       </p>
 
       <details class="cuentas">
@@ -368,17 +392,58 @@ const fechaLarga = (f: string) =>
        nada. */
     const molde = cuerpo.querySelector('tr')?.cloneNode(true) as HTMLTableRowElement | undefined;
 
+    /* Las plantillas, para que el menú de un renglón siga a su nombre cuando
+       el bioanalista lo corrige. Las lee del mismo <select> que el botón
+       «Poner»: es el mismo dato y no se manda dos veces. */
+    type Plantilla = {
+      examen: string;
+      analitos: { analito: string; unidad: string; referencia: string; opciones: string }[];
+    };
+    const eligePlantilla = document.getElementById('res-plantilla') as HTMLSelectElement | null;
+    let PLANTILLAS: Plantilla[] = [];
+    try { PLANTILLAS = JSON.parse(eligePlantilla?.dataset.plantillas ?? '[]'); } catch { PLANTILLAS = []; }
+
     const nuevaFila = () => {
       if (!molde) return null;
       const fila = molde.cloneNode(true) as HTMLTableRowElement;
       fila.querySelectorAll('input').forEach((i) => {
         i.value = '';
+        /* Ni el menú de opciones del renglón modelo: cada uno trae el suyo,
+           y esta fila todavía no sabe cuál es. */
+        i.removeAttribute('list');
         /* El rótulo accesible del modelo nombraba a OTRO examen. Acá no se
            sabe cuál va a ser, así que se nombra por la columna. */
         const columna = i.closest('td')?.dataset.rotulo ?? '';
         i.setAttribute('aria-label', `${columna} de una línea nueva`);
       });
       return fila;
+    };
+
+    /* Le pone a la fila el menú de opciones de su analito: una <datalist>
+       nueva dentro de su celda, y el campo apuntándole. Lo trae la plantilla
+       —sacado de la hoja DAT. del archivo del centro—, y va aparte para
+       que las filas del molde no hereden el de otra. */
+    const ponerOpciones = (fila: HTMLTableRowElement, opciones: string) => {
+      const valor = fila.querySelector<HTMLInputElement>('input[name="valor"]');
+      const celda = valor?.closest('td');
+      if (!valor || !celda) return;
+      const lista = opciones.split('\n').map((o) => o.trim()).filter(Boolean);
+      celda.querySelectorAll('datalist').forEach((d) => d.remove());
+      if (!lista.length) {
+        valor.removeAttribute('list');
+        delete fila.dataset.opciones;
+        return;
+      }
+      const datos = document.createElement('datalist');
+      datos.id = `op-${Math.random().toString(36).slice(2, 9)}`;
+      for (const o of lista) {
+        const option = document.createElement('option');
+        option.value = o;
+        datos.appendChild(option);
+      }
+      celda.appendChild(datos);
+      valor.setAttribute('list', datos.id);
+      fila.dataset.opciones = opciones;
     };
 
     /* ---------- las cuentas ---------- */
@@ -629,6 +694,24 @@ const fechaLarga = (f: string) =>
         `El diferencial suma ${comoSeEscribe(suma, 0)} %, y tiene que sumar ${PARTES.total} %.`;
     };
 
+    /* Si el renglón cambia de nombre, su menú de opciones cambia con él:
+       «Leucocitos» de la orina no ofrece lo mismo que «Leucocitos:» de las
+       heces. El menú lo trae la plantilla, no el nombre. */
+    cuerpo.addEventListener('change', (e) => {
+      const campo = e.target as HTMLInputElement;
+      if (campo.name !== 'examen') return;
+      const fila = campo.closest('tr');
+      if (!fila) return;
+      const nuevo = campo.value.trim();
+      const opciones = PLANTILLAS.find(
+        (p) => p.analitos.some((a) => a.analito.trim().toUpperCase() === nuevo.toUpperCase()),
+      );
+      const renglon = opciones?.analitos.find(
+        (a) => a.analito.trim().toUpperCase() === nuevo.toUpperCase(),
+      );
+      ponerOpciones(fila, renglon?.opciones ?? '');
+    });
+
     /* Si alguien escribe en un campo, el suyo manda y esa celda deja de
        recalcularse: un valor que no se puede corregir es peor que uno
        tecleado, y el equipo puede dar otra cosa que la fórmula.
@@ -670,9 +753,7 @@ const fechaLarga = (f: string) =>
     const poner = document.getElementById('res-poner');
 
     if (elige && poner) {
-      type Plantilla = { examen: string; analitos: { analito: string; unidad: string; referencia: string }[] };
-      let plantillas: Plantilla[] = [];
-      try { plantillas = JSON.parse(elige.dataset.plantillas ?? '[]'); } catch { plantillas = []; }
+      let plantillas: Plantilla[] = PLANTILLAS;
 
       poner.addEventListener('click', () => {
         const p = plantillas.find((x) => x.examen === elige.value);
@@ -696,13 +777,16 @@ const fechaLarga = (f: string) =>
         const faltan = p.analitos.filter((a) => !yaEstan.has(a.analito.toUpperCase()));
         if (!faltan.length) { elige.value = ''; return; }
 
-        const poneFila = (examen: string, unidad = '', referencia = '') => {
+        const poneFila = (
+          examen: string, unidad = '', referencia = '', opciones = '',
+        ) => {
           const fila = nuevaFila();
           if (!fila) return null;
           const dame = (n: string) => fila.querySelector<HTMLInputElement>(`input[name="${n}"]`);
           dame('examen')!.value = examen;
           dame('unidad')!.value = unidad;
           dame('referencia')!.value = referencia;
+          ponerOpciones(fila, opciones);
           cuerpo.appendChild(fila);
           return dame('valor');
         };
@@ -711,14 +795,14 @@ const fechaLarga = (f: string) =>
            exámenes salía impresa como una lista corrida de treinta filas
            sin decir dónde terminaba uno y empezaba el otro; en las hojas
            del laboratorio cada examen es su propia hoja con su título.
-           
+
            Va como renglón sin valor, sin unidad y sin rango, que es la
            forma en que el informe reconoce un subtítulo. */
         poneFila(p.examen);
 
         let primera: HTMLInputElement | null = null;
         for (const a of faltan) {
-          const campo = poneFila(a.analito, a.unidad, a.referencia);
+          const campo = poneFila(a.analito, a.unidad, a.referencia, a.opciones);
           if (!campo) break;
           primera ??= campo;
         }

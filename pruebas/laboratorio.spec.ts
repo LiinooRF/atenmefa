@@ -500,25 +500,28 @@ test('las plantillas entraron, y los rangos que entraron son los de su hoja', as
     SELECT COUNT(DISTINCT examen)::int AS examenes, COUNT(*)::int AS analitos,
            COUNT(*) FILTER (WHERE referencia <> '')::int AS con_rango
       FROM plantilla_examen`);
-  expect(n.examenes).toBe(35);
-  expect(n.analitos).toBe(185);
-  /* 51 vienen en blanco a propósito: su hoja no los trae en ninguna
+  expect(n.examenes).toBe(37);
+  expect(n.analitos).toBe(218);
+  /* 74 vienen en blanco a propósito: su hoja no los trae en ninguna
      columna de esa fila, y deducirlos ponía el rango de un examen al lado
      del resultado de otro. Ver 013-plantillas.sql y 015-unidades.sql: el
      segundo rescató 41 rangos y 12 unidades que estaban escritos en las
      hojas sin fila de cabecera, como la de coagulación. */
-  expect(n.con_rango).toBe(134);
+  expect(n.con_rango).toBe(144);
 
   /* Y de los que quedan sin rango, los que de verdad le faltan al
-     laboratorio son 30: los otros son encabezados de bloque, que no
-     llevan rango nunca. Antes se adivinaban por descarte y la pantalla
-     contaba 51. Ver 016-titulos.sql. */
+     laboratorio son 22: los otros son encabezados de bloque, que no
+     llevan rango nunca, y los renglones de orina y heces que se responden
+     con menú de opciones —su forma de informarse, no una falta—. Antes se
+     adivinaban por descarte y la pantalla contaba 51. Ver 016-titulos.sql
+     y 021-orina-heces.sql. */
   const [t] = await conBase((sql) => sql`
     SELECT COUNT(*) FILTER (WHERE tipo = 'titulo')::int AS titulos,
-           COUNT(*) FILTER (WHERE tipo = 'analito' AND btrim(referencia) = '')::int AS faltan
+           COUNT(*) FILTER (WHERE tipo = 'analito' AND btrim(referencia) = ''
+                             AND btrim(opciones) = '')::int AS faltan
       FROM plantilla_examen`);
-  expect(t.titulos).toBe(21);
-  expect(t.faltan).toBe(30);
+  expect(t.titulos).toBe(26);
+  expect(t.faltan).toBe(22);
 
   /* El tipiaje y el VDRL tampoco tienen rango —se informan con una
      palabra— y son analitos igual: la regla por descarte los daba por
@@ -582,12 +585,32 @@ test('las plantillas entraron, y los rangos que entraron son los de su hoja', as
     'PLAQUETAS', 'LEUCOCITOS', 'SEGMENTADOS', 'LINFOCITOS', 'EOSINOFILOS', 'MONOCITOS',
   ]);
 
-  /* Orina y heces NO están, y es a propósito: son formularios de dos
-     mitades y leerlos por columna emparejaba el aspecto macroscópico con el
-     rango de los leucocitos del microscópico. */
-  const fuera = await conBase((sql) => sql`
-    SELECT 1 FROM plantilla_examen WHERE examen IN ('ORINA', 'HECES')`);
-  expect(fuera.length).toBe(0);
+  /* Orina y heces SÍ están —las trae 021-orina-heces.sql, de las listas con
+     que su propia hoja las responde— y no por columna: cada renglón con el
+     menú que le escribió su hoja, y los macroscópicos sin rango porque no
+     se comparan con una escala. Ver 021-orina-heces.sql. */
+  const colorOrina = await conBase((sql) => sql`
+    SELECT referencia, opciones FROM plantilla_examen
+     WHERE examen = 'ORINA' AND analito = 'COLOR'`);
+  expect(colorOrina[0].referencia).toBe('');
+  expect(colorOrina[0].opciones.split('\n')).toContain('AMARILLA');
+
+  /* Los que su hoja responde con una lista fija no se cargan como
+     determinaciones sueltas: la orina completa se cobra como un ítem del
+     baremo y un perfil la duplicaría. */
+  const enCatalogo = await conBase((sql) => sql`
+    SELECT 1 FROM servicio WHERE categoria = 'laboratorio'
+     AND nombre IN ('ORINA', 'HECES', 'ASPECTO', 'COLOR')`);
+  expect(enCatalogo.length).toBe(0);
+
+  /* La lista de parásitos de la hoja de heces, verbatim: doce respuestas
+     posibles y primero el negativo, que es el que se escribe casi siempre. */
+  const parasitos = await conBase((sql) => sql`
+    SELECT opciones FROM plantilla_examen
+     WHERE examen = 'HECES' AND analito LIKE '%PARASITOS%'`);
+  const lista = parasitos[0].opciones.split('\n');
+  expect(lista[0]).toBe('NO SE OBSERVARON PARASITOS NI SUS FORMAS EVOLUTIVAS');
+  expect(lista).toContain('Quistes de Giardia intestinalis');
 });
 
 test('poner una plantilla llena los renglones, y ponerla dos veces no los duplica', async ({ page }) => {
@@ -799,17 +822,17 @@ test('administración carga los exámenes del archivo de una vez', async ({ page
   await entrar(page, 'administracion');
   await page.goto('/sistema/servicios');
 
-  await expect(page.locator('.lab')).toContainText('141 exámenes');
+  await expect(page.locator('.lab')).toContainText('130 exámenes');
   await page.getByRole('button', { name: /Cargar los exámenes y los perfiles/ }).click();
-  await expect(page.locator('.msj--bien')).toContainText('141 exámenes, todos sin precio');
+  await expect(page.locator('.msj--bien')).toContainText('130 exámenes, todos sin precio');
 
   const [n] = await conBase((sql) => sql`
     SELECT COUNT(*)::int AS n FROM servicio WHERE categoria = 'laboratorio'`);
-  expect(n.n).toBe(141);
+  expect(n.n).toBe(130);
 
   /* Entran en cero: no tenemos sus precios y uno inventado termina cobrado.
      La pantalla lo dice en la cara. */
-  await expect(page.locator('.aviso-precio')).toContainText('141 servicios sin precio');
+  await expect(page.locator('.aviso-precio')).toContainText('130 servicios sin precio');
 
   // Correrlo otra vez no duplica nada.
   await page.goto('/sistema/servicios');
@@ -1049,9 +1072,10 @@ test('el bioanalista ve la lista de exámenes y cuántos rangos faltan', async (
   await entrar(page, 'bioanalista');
   await page.goto('/sistema/plantillas');
 
-  await expect(page.locator('.lista li')).toHaveCount(35);
-  // La cifra es la de los analitos de verdad, sin los encabezados.
-  await expect(page.locator('.aviso')).toContainText('30 analitos sin rango');
+  await expect(page.locator('.lista li')).toHaveCount(37);
+  // La cifra es la de los analitos de verdad, sin los encabezados ni los
+  // que ya se responden con su menú de opciones.
+  await expect(page.locator('.aviso')).toContainText('22 analitos sin rango');
 
   // Los que tienen algo que arreglar van primero.
   const primero = page.locator('.lista li').first();

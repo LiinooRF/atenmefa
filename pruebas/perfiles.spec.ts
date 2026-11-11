@@ -42,16 +42,19 @@ test('administración carga los exámenes y los perfiles del archivo', async ({ 
   await entrar(page, 'administracion');
   await page.goto('/sistema/servicios');
   await page.getByRole('button', { name: /Cargar/ }).click();
-  await expect(page.locator('.msj--bien')).toContainText('141 exámenes, todos sin precio');
-  await expect(page.locator('.msj--bien')).toContainText('31 perfiles');
+  await expect(page.locator('.msj--bien')).toContainText('130 exámenes, todos sin precio');
+  await expect(page.locator('.msj--bien')).toContainText('30 perfiles');
 
   const [n] = await conBase((sql) => sql`
     SELECT (SELECT COUNT(*)::int FROM servicio WHERE categoria = 'laboratorio') AS examenes,
            (SELECT COUNT(*)::int FROM perfil) AS perfiles`);
-  /* 141 determinaciones y 31 perfiles: las hojas de su archivo con más de
-     un analito son perfiles, las de uno solo son exámenes sueltos. */
-  expect(n.examenes).toBe(141);
-  expect(n.perfiles).toBe(31);
+  /* 130 determinaciones y 30 perfiles: las hojas de su archivo con más de
+     un analito son perfiles, las de uno solo son exámenes sueltos. Orina,
+     heces y H. ESP no cuentan en ninguno de los dos: se venden enteras
+     como un ítem del baremo y armarlas de determinaciones las cobraría dos
+     veces. Ver 021-orina-heces.sql. */
+  expect(n.examenes).toBe(130);
+  expect(n.perfiles).toBe(30);
 
   /* El perfil lipídico trae sus cinco, los mismos que su hoja. Es el
      ejemplo que él usó: «un perfil puede tener 5 exámenes». */
@@ -151,7 +154,7 @@ test('el filtro no esconde lo que ya está marcado', async ({ page }) => {
   await fila.locator('input[name="examen"]').check();
 
   await page.locator('#ex-filtro').fill('colesterol');
-  await expect(page.locator('#ex-filtrados')).toContainText('de 141');
+  await expect(page.locator('#ex-filtrados')).toContainText('de 130');
   // Sigue visible aunque no diga «colesterol».
   await expect(fila).toBeVisible();
 });

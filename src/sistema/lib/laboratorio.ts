@@ -45,6 +45,21 @@ const NO_SON_EXAMENES = new Set([
   'tipo de muestra:',
 ]);
 
+/**
+ * Hojas que se venden ENTERAS y no por renglones: el General de Orina y los
+ * exámenes de heces del baremo son un solo ítem con precio —$3, $3 y $5—,
+ * no un menú de «ASPECTO», «COLOR» y «MOCO» a un dólar cada uno.
+ *
+ * Cuando estos formularios entraron como plantilla (021), sus renglones
+ * cualitativos empezaron a aparecer en la lista de determinaciones que se
+ * pueden cargar al catálogo: treinta nombres que nadie compra sueltos, y
+ * la hoja entera convertida en un «perfil» que duplica el ítem del baremo.
+ * No se excluyen por ser cualitativos sino por ser de estas tres hojas: una
+ * plantilla nueva que el laboratorio escriba a mano sí tiene que poder
+ * entrar al catálogo.
+ */
+const NO_SE_VENDE_POR_PARTES = new Set(['orina', 'heces', 'h. esp']);
+
 /** Los exámenes que el centro cobra, con su precio. */
 export function catalogoDeExamenes() {
   return bd
@@ -165,16 +180,22 @@ export async function plantillasDeExamen() {
       unidad: esquema.plantillaExamen.unidad,
       referencia: esquema.plantillaExamen.referencia,
       tipo: esquema.plantillaExamen.tipo,
+      opciones: esquema.plantillaExamen.opciones,
     })
     .from(esquema.plantillaExamen)
     .orderBy(asc(esquema.plantillaExamen.examen), asc(esquema.plantillaExamen.orden));
 
   const porExamen = new Map<
-    string, { analito: string; unidad: string; referencia: string; tipo: string }[]
+    string, {
+      analito: string; unidad: string; referencia: string; tipo: string; opciones: string;
+    }[]
   >();
   for (const f of filas) {
     const lista = porExamen.get(f.examen) ?? [];
-    lista.push({ analito: f.analito, unidad: f.unidad, referencia: f.referencia, tipo: f.tipo });
+    lista.push({
+      analito: f.analito, unidad: f.unidad, referencia: f.referencia,
+      tipo: f.tipo, opciones: f.opciones,
+    });
     porExamen.set(f.examen, lista);
   }
 
@@ -195,9 +216,14 @@ export async function resumenDePlantillas() {
       examen: esquema.plantillaExamen.examen,
       analitos: count(),
       /* Los encabezados de bloque no cuentan: nunca van a tener rango y
-         los sumaba a la cifra de lo que el laboratorio tiene que escribir. */
-      analitosDeVerdad: sql<number>`count(*) filter (where ${esquema.plantillaExamen.tipo} = 'analito')`,
-      conRango: sql<number>`count(*) filter (where ${esquema.plantillaExamen.tipo} = 'analito' and btrim(${esquema.plantillaExamen.referencia}) <> '')`,
+         los sumaba a la cifra de lo que el laboratorio tiene que escribir.
+         Tampoco el renglón en blanco con el que nace una plantilla nueva. */
+      analitosDeVerdad: sql<number>`count(*) filter (where ${esquema.plantillaExamen.tipo} = 'analito' and btrim(${esquema.plantillaExamen.analito}) <> '')`,
+      /* La falta es la del renglón que no tiene NI rango NI menú: un menú
+         —NEGATIVO, los colores de la orina— es su forma de informarse y
+         no un rango pendiente. Contarlo aparte y restarlo después era un
+         error: el que tenía los dos se descontaba dos veces. */
+      sinRango: sql<number>`count(*) filter (where ${esquema.plantillaExamen.tipo} = 'analito' and btrim(${esquema.plantillaExamen.analito}) <> '' and btrim(${esquema.plantillaExamen.referencia}) = '' and btrim(${esquema.plantillaExamen.opciones}) = '')`,
     })
     .from(esquema.plantillaExamen)
     .groupBy(esquema.plantillaExamen.examen)
@@ -207,8 +233,7 @@ export async function resumenDePlantillas() {
     examen: f.examen,
     renglones: Number(f.analitos),
     analitos: Number(f.analitosDeVerdad),
-    conRango: Number(f.conRango),
-    sinRango: Number(f.analitosDeVerdad) - Number(f.conRango),
+    sinRango: Number(f.sinRango),
   }));
 }
 
@@ -221,6 +246,7 @@ export async function plantillaDe(examen: string) {
       unidad: esquema.plantillaExamen.unidad,
       referencia: esquema.plantillaExamen.referencia,
       tipo: esquema.plantillaExamen.tipo,
+      opciones: esquema.plantillaExamen.opciones,
     })
     .from(esquema.plantillaExamen)
     .where(eq(esquema.plantillaExamen.examen, examen))
@@ -243,20 +269,26 @@ export async function plantillaDe(examen: string) {
  */
 export async function guardarPlantilla(
   examen: string,
-  filas: readonly { analito: string; unidad: string; referencia: string; tipo?: string }[],
+  filas: readonly {
+    analito: string; unidad: string; referencia: string; tipo?: string; opciones?: string;
+  }[],
 ) {
   const limpias = filas
     .map((f) => ({
       analito: f.analito.trim(),
       unidad: f.unidad.trim(),
       referencia: f.referencia.trim(),
+      /* En la pantalla se escriben separadas por « / », porque una opción
+         puede traer una coma adentro —«ACIDA (6,5)»— y también se aceptan
+         ya separadas por línea, que es como viven en la base. */
+      opciones: normalizarOpciones(f.opciones ?? ''),
       /* Un encabezado de bloque no lleva unidad ni rango aunque alguien
          los haya tecleado antes de marcarlo: si los guardara, el informe
          lo imprimiría como un analito vacío. */
       tipo: f.tipo === 'titulo' ? 'titulo' : 'analito',
     }))
     .filter((f) => f.analito)
-    .map((f) => (f.tipo === 'titulo' ? { ...f, unidad: '', referencia: '' } : f));
+    .map((f) => (f.tipo === 'titulo' ? { ...f, unidad: '', referencia: '', opciones: '' } : f));
 
   await bd.transaction(async (tx) => {
     await tx.delete(esquema.plantillaExamen).where(eq(esquema.plantillaExamen.examen, examen));
@@ -268,6 +300,45 @@ export async function guardarPlantilla(
   });
 
   return limpias.length;
+}
+
+/** El texto tal como se guarda: una opción por línea, sin vacíos ni repetidas. */
+function normalizarOpciones(texto: string) {
+  const vistos = new Set<string>();
+  return texto
+    .split(/\s*[/\n]\s*/)
+    .map((o) => o.trim())
+    .filter((o) => {
+      if (!o || vistos.has(o)) return false;
+      vistos.add(o);
+      return true;
+    })
+    .join('\n');
+}
+
+/**
+ * Crea una plantilla nueva, para un examen que el archivo del laboratorio no
+ * traía.
+ *
+ * Es lo que pedía el bioanalista: su archivo tiene las hojas de siempre,
+ * pero el laboratorio hace más exámenes que los que están escritos ahí, y
+ * hasta ahora cargar uno nuevo obligaba a escribirlo entero en cada orden.
+ * La plantilla nace con un solo renglón en blanco, que es la pantalla de
+ * edición ya abierta; si se guarda sin escribirle nada, desaparece sola.
+ */
+export async function crearPlantillaExamen(nombre: unknown) {
+  const limpio = String(nombre ?? '').replace(/\s+/g, ' ').trim();
+  if (limpio.length < 3) throw new Error('El nombre del examen hace falta, con al menos tres letras.');
+
+  const [ya] = await bd
+    .select({ analito: esquema.plantillaExamen.analito })
+    .from(esquema.plantillaExamen)
+    .where(eq(esquema.plantillaExamen.examen, limpio))
+    .limit(1);
+  if (ya) throw new Error(`Ya hay una plantilla llamada ${limpio}.`);
+
+  await bd.insert(esquema.plantillaExamen).values({ examen: limpio, orden: 1, analito: '' });
+  return limpio;
 }
 
 /**
@@ -291,7 +362,7 @@ export async function examenesDelArchivo(): Promise<string[]> {
  */
 export async function determinacionesDelArchivo(): Promise<string[]> {
   const filas = await bd
-    .selectDistinct({ analito: esquema.plantillaExamen.analito })
+    .selectDistinct({ examen: esquema.plantillaExamen.examen, analito: esquema.plantillaExamen.analito })
     .from(esquema.plantillaExamen)
     .orderBy(asc(esquema.plantillaExamen.analito));
 
@@ -302,7 +373,11 @@ export async function determinacionesDelArchivo(): Promise<string[]> {
   const unicos = new Map<string, string>();
   for (const f of filas) {
     const llave = normalizar(f.analito);
+    /* El renglón en blanco con el que nace una plantilla nueva. */
+    if (!llave) continue;
     if (NO_SON_EXAMENES.has(llave)) continue;
+    /* Orina, heces y H. ESP se cobran como un ítem del baremo. */
+    if (NO_SE_VENDE_POR_PARTES.has(normalizar(f.examen))) continue;
     if (!unicos.has(llave)) unicos.set(llave, f.analito);
   }
   return [...unicos.values()];
@@ -325,7 +400,7 @@ export async function faltanEnElCatalogo(): Promise<number> {
   const examenes = delArchivo.filter((d) => !conocidos.has(normalizar(d))).length;
 
   /* También cuentan los perfiles que falten.
-     
+
      Antes esto solo miraba los exámenes, y con el catálogo lleno y la tabla
      de perfiles vacía la tarjeta de «cargar» no aparecía nunca: la pantalla
      de la orden quedaba con la columna de perfiles vacía y sin forma de
@@ -339,9 +414,13 @@ export async function faltanEnElCatalogo(): Promise<number> {
     .select({ nombreBusca: esquema.perfil.nombreBusca })
     .from(esquema.perfil);
   const perfilesConocidos = new Set(yaPerfiles.map((p) => p.nombreBusca));
-  // Una hoja con un solo analito es un examen, no un perfil.
+  // Una hoja con un solo analito es un examen, no un perfil. Y las que se
+  // venden enteras no generan perfil: eso lo hace el baremo.
   const perfiles = hojas.filter(
-    (h) => Number(h.cuantos) > 1 && !perfilesConocidos.has(normalizar(h.examen)),
+    (h) =>
+      Number(h.cuantos) > 1 &&
+      !perfilesConocidos.has(normalizar(h.examen)) &&
+      !NO_SE_VENDE_POR_PARTES.has(normalizar(h.examen)),
   ).length;
 
   return examenes + perfiles;
@@ -392,7 +471,8 @@ export async function cargarExamenesAlCatalogo(): Promise<{
   const determinaciones = new Map<string, string>();
   for (const f of filas) {
     const llave = normalizar(f.analito);
-    if (NO_SON_EXAMENES.has(llave)) continue;
+    if (!llave || NO_SON_EXAMENES.has(llave)) continue;
+    if (NO_SE_VENDE_POR_PARTES.has(normalizar(f.examen))) continue;
     determinaciones.set(llave, f.analito);
   }
 
@@ -434,6 +514,9 @@ export async function cargarExamenesAlCatalogo(): Promise<{
     if (miembros.length < 2) continue;
     const llave = normalizar(hoja);
     if (perfilesConocidos.has(llave)) continue;
+    /* Las hojas que se venden enteras no arman perfil: el ítem del baremo
+       ya es el precio de la hoja completa, y un perfil lo duplicaría. */
+    if (NO_SE_VENDE_POR_PARTES.has(llave)) continue;
 
     const [creado] = await bd
       .insert(esquema.perfil)

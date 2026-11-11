@@ -129,6 +129,13 @@ export const plantillaExamen = pgTable('plantilla_examen', {
    * palabra— clasificados como encabezados.
    */
   tipo: text('tipo').notNull().default('analito'),
+  /**
+   * Las respuestas que se eligen de una lista —NEGATIVO, POSITIVO, los
+   * colores de la orina—, una por línea. Solo la traen los renglones que su
+   * hoja informaba con palabras; el resto queda vacío y se escribe libre.
+   * Ver 021-orina-heces.sql.
+   */
+  opciones: text('opciones').notNull().default(''),
 }, (t) => [primaryKey({ columns: [t.examen, t.orden] })]);
 
 export const servicio = pgTable('servicio', {

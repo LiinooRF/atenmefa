@@ -13,6 +13,7 @@ import Icono from '../../../components/Icono.astro';
 import { anotar } from '../../../sistema/lib/atenciones';
 import { exigir } from '../../../sistema/lib/guardia';
 import { plantillaDe, guardarPlantilla } from '../../../sistema/lib/laboratorio';
+import { CALCULOS_EN_LLAVES, llaveDeAnalito } from '../../../sistema/calculos';
 
 export const prerender = false;
 
@@ -30,17 +31,18 @@ if (Astro.request.method === 'POST') {
   const analitos = form.getAll('analito').map(String);
   const unidades = form.getAll('unidad').map(String);
   const referencias = form.getAll('referencia').map(String);
+  const opciones = form.getAll('opciones').map(String);
   /* Las casillas sin marcar no viajan en un formulario, así que cada fila
      manda además un campo oculto con su número y la casilla manda el
      mismo: lo que queda marcado es lo que aparece en la lista corta. */
   const filaDe = form.getAll('fila').map(String);
   const titulos = new Set(form.getAll('titulo').map(String));
 
-  /* Los tres arreglos vienen del mismo formulario y tienen que medir lo
-     mismo. Si no, algo se perdió en el camino y guardar emparejaría el
-     rango de un analito con el de al lado: se para acá. */
+  /* Los arreglos vienen del mismo formulario y tienen que medir lo mismo.
+     Si no, algo se perdió en el camino y guardar emparejaría el rango de
+     un analito con el de al lado: se para acá. */
   if (analitos.length !== unidades.length || analitos.length !== referencias.length
-      || analitos.length !== filaDe.length) {
+      || analitos.length !== opciones.length || analitos.length !== filaDe.length) {
     error = 'Los renglones llegaron incompletos. Vuelva a cargar la página y pruebe otra vez.';
   } else {
     const cuantos = await guardarPlantilla(
@@ -49,6 +51,7 @@ if (Astro.request.method === 'POST') {
         analito: a,
         unidad: unidades[i],
         referencia: referencias[i],
+        opciones: opciones[i],
         tipo: titulos.has(filaDe[i]) ? 'titulo' : 'analito',
       })),
     );
@@ -66,7 +69,18 @@ if (filas.length === 0 && !aviso) return Astro.redirect('/sistema/plantillas');
    casilla de la derecha. */
 const esTitulo = (f: { tipo: string }) => f.tipo === 'titulo';
 const analitos = filas.filter((f) => !esTitulo(f));
-const faltanDeVerdad = analitos.filter((f) => !f.referencia.trim()).length;
+/* El que se responde con menú no está esperando un rango: la falta es del
+   que no tiene ni rango ni menú, y así la hoja de orina no amanece entera
+   pintada de amarillo cuando ya está completa. */
+const faltaRango = (f: { referencia: string; opciones: string }) =>
+  !f.referencia.trim() && !f.opciones.trim();
+const faltanDeVerdad = analitos.filter((f) => faltaRango(f)).length;
+
+/* Qué renglón se calcula solo en la pantalla de resultados y cómo, para
+   pintárselo acá: que el laboratorio vea la fórmula que ya está andando
+   antes de meterle mano al renglón. */
+const formulaDe = new Map(CALCULOS_EN_LLAVES.map((c) => [c.resultado, c.comoSeLee]));
+const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito));
 ---
 
 <Sistema titulo={`Referencia · ${examen}`}>
@@ -98,18 +112,24 @@ const faltanDeVerdad = analitos.filter((f) => !f.referencia.trim()).length;
             <th scope="col" class="pl__que">Analito</th>
             <th scope="col">Unidad</th>
             <th scope="col">Valor de referencia</th>
+            <th scope="col" class="pl__opc">Menú de opciones</th>
             <th scope="col" class="pl__es">Subtítulo</th>
             <th scope="col"><span class="oculto">Quitar</span></th>
           </tr>
         </thead>
         <tbody id="pl-cuerpo">
           {filas.map((f, i) => (
-            <tr data-falta={!f.referencia.trim() && !esTitulo(f) ? '' : undefined}
+            <tr data-falta={faltaRango(f) && !esTitulo(f) ? '' : undefined}
                 data-titulo={esTitulo(f) ? '' : undefined}>
               <td data-rotulo="Analito">
                 <input type="hidden" name="fila" value={String(i)} />
                 <input type="text" name="analito" value={f.analito}
                        aria-label={`Analito del renglón ${i + 1}`} autocomplete="off" />
+                {comoSeCalcula(f.analito) && !esTitulo(f) && (
+                  <span class="pl__formula" title={`Se calcula solo al cargar resultados: ${comoSeCalcula(f.analito)}`}>
+                    fórmula
+                  </span>
+                )}
               </td>
               <td data-rotulo="Unidad">
                 <input type="text" name="unidad" value={f.unidad}
@@ -118,6 +138,12 @@ const faltanDeVerdad = analitos.filter((f) => !f.referencia.trim()).length;
               <td data-rotulo="Valor de referencia">
                 <input type="text" name="referencia" value={f.referencia}
                        aria-label={`Valor de referencia de ${f.analito}`} autocomplete="off" />
+              </td>
+              <td data-rotulo="Menú de opciones">
+                <input type="text" name="opciones"
+                       value={f.opciones ? f.opciones.split('\n').join(' / ') : ''}
+                       aria-label={`Opciones de ${f.analito}`}
+                       placeholder="NEGATIVO / POSITIVO" autocomplete="off" />
               </td>
               <td class="pl__es" data-rotulo="Subtítulo">
                 <label class="marca">
@@ -149,6 +175,15 @@ const faltanDeVerdad = analitos.filter((f) => !f.referencia.trim()).length;
       12-17 / Mujer: 11-15», «HASTA 200». No hace falta que sean números —el
       informe lo copia como texto— y por eso caben los cualitativos, que se
       informan «NEGATIVO».
+    </p>
+    <p class="nota">
+      <strong>Menú de opciones</strong> es para los renglones que se responden
+      eligiendo una palabra y no tecleando una cifra: «NEGATIVO / TRAZAS /
+      POSITIVO» en las proteínas, «CLARA / TURBIO» en el aspecto de la orina.
+      Van separados por « / » —no por comas, porque una opción puede traer
+      una coma adentro, como «ACIDA (6,5)»— y quien carga el resultado las
+      ve como lista para elegir, aunque siempre puede escribir otra cosa a
+      mano. El que queda vacío se escribe libre.
     </p>
     <p class="nota">
       Marcar <strong>subtítulo</strong> convierte el renglón en un encabezado
@@ -218,11 +253,12 @@ const faltanDeVerdad = analitos.filter((f) => !f.referencia.trim()).length;
       else fila?.querySelectorAll('input').forEach((i) => { i.value = ''; });
     });
 
-    /* El amarillo se apaga en cuanto se escribe el rango: ver que el aviso
-       se va es la confirmación de que quedó cargado. */
+    /* El amarillo se apaga en cuanto se escribe el rango —o el menú de
+       opciones, que es la otra forma de informarse—: ver que el aviso se
+       va es la confirmación de que quedó cargado. */
     cuerpo.addEventListener('input', (e) => {
       const campo = e.target as HTMLInputElement;
-      if (campo.name !== 'referencia') return;
+      if (campo.name !== 'referencia' && campo.name !== 'opciones') return;
       const fila = campo.closest('tr');
       if (campo.value.trim()) fila?.removeAttribute('data-falta');
     });
@@ -237,7 +273,7 @@ const faltanDeVerdad = analitos.filter((f) => !f.referencia.trim()).length;
       if (campo.checked) {
         fila.setAttribute('data-titulo', '');
         fila.removeAttribute('data-falta');
-        fila.querySelectorAll<HTMLInputElement>('input[name="unidad"], input[name="referencia"]')
+        fila.querySelectorAll<HTMLInputElement>('input[name="unidad"], input[name="referencia"], input[name="opciones"]')
           .forEach((i) => { i.value = ''; });
       } else {
         fila.removeAttribute('data-titulo');
@@ -265,7 +301,7 @@ const faltanDeVerdad = analitos.filter((f) => !f.referencia.trim()).length;
 
   /* La tabla se desplaza dentro de su caja: el panel nunca se mueve de lado. */
   .tablon { margin-top: 16px; border: 1px solid var(--linea); border-radius: 10px; overflow-x: auto; background: var(--papel); }
-  .pl { width: 100%; min-width: 680px; border-collapse: collapse; }
+  .pl { width: 100%; min-width: 820px; border-collapse: collapse; }
   .pl th {
     text-align: left; padding: 9px 12px;
     border-bottom: 1px solid var(--linea);
@@ -275,15 +311,27 @@ const faltanDeVerdad = analitos.filter((f) => !f.referencia.trim()).length;
   .pl td { padding: 4px 8px; border-bottom: 1px solid var(--linea-tenue); }
   .pl tbody tr:last-child td { border-bottom: 0; }
   .pl__que { width: 34%; }
+  .pl__opc { width: 22%; }
   .pl__es { width: 86px; text-align: center; }
   .pl__quitar { width: 44px; text-align: center; }
 
   /* El subtítulo se ve como lo que es: un encabezado, no un renglón al que
-     le falte algo. Y sus campos de unidad y rango quedan apagados. */
+     le falte algo. Y sus campos de unidad, rango y opciones quedan apagados. */
   .pl tr[data-titulo] { background: var(--panel); }
   .pl tr[data-titulo] input[name='analito'] { font-weight: 700; }
   .pl tr[data-titulo] input[name='unidad'],
-  .pl tr[data-titulo] input[name='referencia'] { opacity: 0.35; pointer-events: none; }
+  .pl tr[data-titulo] input[name='referencia'],
+  .pl tr[data-titulo] input[name='opciones'] { opacity: 0.35; pointer-events: none; }
+
+  /* El renglón que la pantalla de resultados calcula sola, para no
+     confundirlo con uno al que haya que escribirle el valor. */
+  .pl__formula {
+    display: inline-block; margin-left: 6px;
+    padding: 1px 7px; border-radius: 999px;
+    background: #eef1fb; color: #44507c;
+    font-size: var(--u-xs); font-weight: 600; vertical-align: middle;
+    white-space: nowrap; cursor: help;
+  }
 
   .marca { display: inline-flex; align-items: center; justify-content: center; min-height: 44px; min-width: 44px; cursor: pointer; }
   .marca input { width: 19px; height: 19px; accent-color: var(--azul); cursor: pointer; }
