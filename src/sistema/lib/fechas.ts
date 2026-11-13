@@ -69,3 +69,21 @@ export function nombreDelRango(desde: string, hasta: string) {
     ? `del ${f(desde, { day: 'numeric', month: 'short' })} al ${f(hasta, { day: 'numeric', month: 'long', year: 'numeric' })}`
     : `del ${f(desde, { day: 'numeric', month: 'short', year: 'numeric' })} al ${f(hasta, { day: 'numeric', month: 'short', year: 'numeric' })}`;
 }
+
+/**
+ * Años cumplidos entre dos fechas date de Postgres, que llegan como
+ * 'YYYY-MM-DD'.
+ *
+ * Se comparan año, mes y día como números y no con new Date() + toISOString:
+ * una fecha date de la base no es un instante sino un día, y convertirla a
+ * Date la arrastra a una zona horaria donde puede amanecer un día antes o
+ * después. El cumpleaños es el cumpleaños en cualquier zona.
+ */
+export function aniosCumplidos(nacimiento: string, hasta: string): number {
+  const [na, nm, nd] = nacimiento.split('-').map(Number);
+  const [ha, hm, hd] = hasta.split('-').map(Number);
+  let anios = ha - na;
+  /* Todavía no cumplió: hasta el día antes es un año menos. */
+  if (hm < nm || (hm === nm && hd < nd)) anios--;
+  return anios;
+}

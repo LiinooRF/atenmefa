@@ -123,3 +123,53 @@ const comun = {
   }
   .pista { font-size: var(--u-xs); color: var(--tinta-tenue); }
 </style>
+
+<script>
+  /* La edad se llena sola cuando se escribe la fecha de nacimiento: es el
+     dato que menos cambia de un paciente, y con él la edad deja de quedar
+     vieja en la ficha. Sigue editable encima, porque hay quien llega sin
+     saber el año exacto y una edad aproximada escrita a mano vale más que
+     nada.
+
+     Vive en Campo y no en cada pantalla porque los dos campos existen en la
+     historia clínica y en la orden de laboratorio, y este componente es el
+     único que saben dibujar los tres formularios. El script se incluye una
+     vez por página aunque haya muchos campos: Astro lo agrupa. */
+  const nacimiento = document.getElementById('c-nacimiento') as HTMLInputElement | null;
+  const edad = document.getElementById('c-edad') as HTMLInputElement | null;
+
+  if (nacimiento && edad) {
+    /** Los años cumplidos, con la misma cuenta que aniosCumplidos en
+        lib/fechas.ts. Se repite mínima acá porque el navegador no puede
+        importar los módulos del servidor; si una cambia, cambia la otra. */
+    const aniosCumplidos = (nac: string): number | null => {
+      /* La fecha de la atención si el formulario la trae; si no, hoy en
+         el calendario local de quien escribe. */
+      const campoFecha = document.getElementById('c-fecha') as HTMLInputElement | null;
+      const hoy = new Date();
+      const ref = campoFecha?.value.trim() ||
+        `${hoy.getFullYear()}-${String(hoy.getMonth() + 1).padStart(2, '0')}-${String(hoy.getDate()).padStart(2, '0')}`;
+      const [na, nm, nd] = nac.split('-').map(Number);
+      const [ha, hm, hd] = ref.split('-').map(Number);
+      if (![na, nm, nd, ha, hm, hd].every(Number.isFinite)) return null;
+      let anios = ha - na;
+      if (hm < nm || (hm === nm && hd < nd)) anios--;
+      return anios >= 0 ? anios : null;
+    };
+
+    const calcular = () => {
+      const nac = nacimiento.value.trim();
+      if (!nac) return;
+      const anios = aniosCumplidos(nac);
+      if (anios === null) return;
+      edad.value = String(anios);
+      /* Asignar .value no dispara 'input', y el guardado automático del
+         formulario se entera por los eventos: sin esto, la edad recién
+         calculada se quedaba en la pantalla sin llegar a la base. */
+      edad.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+
+    nacimiento.addEventListener('input', calcular);
+    nacimiento.addEventListener('change', calcular);
+  }
+</script>

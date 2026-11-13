@@ -93,6 +93,10 @@ export async function examenesPedidos(atencionId: string) {
       renglonId: esquema.renglon.id,
       servicioId: esquema.renglon.servicioId,
       nombre: esquema.renglon.descripcion,
+      /* La hoja con la que se informa este examen, si el catálogo se la
+         puso: con ella el informe abre con los renglones de la hoja y no
+         con una línea con el nombre del servicio. */
+      plantilla: esquema.servicio.plantilla,
     })
     .from(esquema.renglon)
     .innerJoin(esquema.servicio, eq(esquema.servicio.id, esquema.renglon.servicioId))

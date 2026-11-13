@@ -132,7 +132,7 @@ const bloquesLab = esLab
       .map((s) => ({
         ...s,
         campos: s.campos.filter(
-          (c) => d[c.clave] && !['nombre', 'cedula', 'edad', 'sexo', 'telefono',
+          (c) => d[c.clave] && !['nombre', 'cedula', 'edad', 'nacimiento', 'sexo', 'telefono',
             'whatsapp', 'correo', 'fecha', 'aseguradora', 'poliza', 'examenes'].includes(c.clave),
         ),
       }))
@@ -142,7 +142,7 @@ const bloquesLab = esLab
 /* Lo que ya sale en la cabecera o en la fila de signos vitales no se
    repite abajo: en papel la repetición hace parecer que falta algo. */
 const yaArriba = new Set([
-  'nombre', 'cedula', 'edad', 'sexo', 'telefono', 'titular', 'direccion',
+  'nombre', 'cedula', 'edad', 'nacimiento', 'sexo', 'telefono', 'titular', 'direccion',
   'ciudad', 'aseguradora', 'poliza', 'fecha', 'caso_numero',
   /* El WhatsApp y el correo sirven para mandarle el informe, no para que
      salgan impresos en él: en el papel serían dos renglones de datos de

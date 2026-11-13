@@ -124,10 +124,37 @@ const sinRango = renglones.filter(
  * la orden: borrarle a alguien una medición por destildar una casilla
  * sería mucho peor que dejar una línea de más.
  */
-const nombresPedidos = [
-  ...pedidos.map((p) => p.nombre),
-  ...(registro.examenes ?? '').split('\n').map((t) => t.trim()).filter(Boolean),
-];
+/* Las hojas del archivo ya están cargadas un poco más arriba; esta es la
+   misma lista vuelta Map, para preguntarle por la hoja de un servicio. */
+const porHoja = new Map(plantillas.map((p) => [p.examen, p.analitos]));
+
+/* Un examen pedido con hoja abre el informe con LOS RENGLONES de esa hoja
+   y no con una línea con su nombre: la hematología completa son doce
+   analitos, y hasta ahora el bioanalista tenía que ponerlos a mano con
+   «o las líneas de». Sin hoja —o con una hoja que ya no exista— sigue
+   abriendo con una línea con el nombre, como siempre.
+
+   Los renglones que son puro encabezado de bloque no van, ni los que
+   quedaron en blanco. Y si dos exámenes pedidos comparten un analito,
+   aparece una sola vez: es el mismo valor medido dos veces. */
+const nombresPedidos: string[] = [];
+const puestos = new Set<string>();
+for (const p of pedidos) {
+  const hoja = p.plantilla ? porHoja.get(p.plantilla) : undefined;
+  const nombres = hoja
+    ? hoja.filter((a) => a.tipo !== 'titulo' && a.analito.trim()).map((a) => a.analito)
+    : [p.nombre];
+  for (const nombre of nombres) {
+    if (puestos.has(nombre)) continue;
+    puestos.add(nombre);
+    nombresPedidos.push(nombre);
+  }
+}
+for (const escrito of (registro.examenes ?? '').split('\n').map((t) => t.trim()).filter(Boolean)) {
+  if (puestos.has(escrito)) continue;
+  puestos.add(escrito);
+  nombresPedidos.push(escrito);
+}
 
 const porNombre = new Map(cargados.map((r) => [r.examen, r]));
 

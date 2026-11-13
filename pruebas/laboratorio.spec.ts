@@ -37,16 +37,21 @@ const CEDULA_SIN_PRECIO = cedulaDePrueba(13, 5);
 const CEDULA_HEMA = cedulaDePrueba(13, 6);
 const CEDULA_COAG = cedulaDePrueba(13, 7);
 const CEDULA_RANGO = cedulaDePrueba(13, 8);
+const CEDULA_HOJA = cedulaDePrueba(13, 9);
+const CEDULA_NACIMIENTO = cedulaDePrueba(13, 10);
 const NOMBRE = 'Carmen Rosa Laboratorio de Prueba';
 
 const EXAMEN_A = 'Hematología completa de prueba';
 const EXAMEN_B = 'Glicemia de prueba';
+/* El ítem del baremo con su hoja enlazada, para la prueba de que el informe
+   abre con los renglones de la hoja. */
+const EXAMEN_HOJA = 'Hematología Completa';
 
 const limpiar = () =>
   conBase(async (sql) => {
     for (const c of [CEDULA, CEDULA_GENERAL, CEDULA_PEDIDOS, CEDULA_PLANTILLA,
                      CEDULA_CALCULO, CEDULA_SIN_PRECIO, CEDULA_HEMA, CEDULA_COAG,
-                     CEDULA_RANGO]) {
+                     CEDULA_RANGO, CEDULA_HOJA, CEDULA_NACIMIENTO]) {
       const busca = c.replace(/\D/g, '');
       const suyas = sql`SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
                          WHERE p.cedula_busca = ${busca}`;
@@ -73,7 +78,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await limpiar();
-  await borrarExamen(EXAMEN_A, EXAMEN_B);
+  await borrarExamen(EXAMEN_A, EXAMEN_B, EXAMEN_HOJA);
 });
 
 /* ------------------------------------------------------------------
@@ -1222,4 +1227,79 @@ test('cambiar un rango queda en bitácora', async ({ page }) => {
   await entrar(page, 'administracion');
   await page.goto('/sistema/bitacora?accion=plantilla');
   await expect(page.locator('table')).toContainText('Cambió los valores de referencia');
+});
+
+/* ------------------------------------------------------------------
+   La hoja del servicio y la fecha de nacimiento.
+   ------------------------------------------------------------------ */
+
+test('se siembra el ítem del baremo con su hoja y se registra la orden', async ({ page }) => {
+  /* El ítem lo enlazó 022-servicio-plantilla.sql, pero la prueba de arriba
+     —cargar los exámenes del archivo— vació el catálogo de laboratorio para
+     probar el camino desde cero. Se siembra acá y no en el beforeAll por lo
+     mismo: sería lo primero que aquella prueba borraría. */
+  await conBase(async (sql) => {
+    await sql`
+      INSERT INTO servicio (nombre, categoria, precio, moneda, activo, plantilla)
+      VALUES (${EXAMEN_HOJA}, 'laboratorio', 4, 'USD', true, 'HEMA')
+      ON CONFLICT DO NOTHING`;
+  });
+
+  await entrar(page, 'recepcionista');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_HOJA)}`);
+  await page.locator('#c-nombre').fill('Hoja del Servicio de Prueba');
+  await page.locator('#c-edad').fill('40');
+  await page.locator('#c-sexo').selectOption('Femenino');
+  await page.locator('[data-ir="1"]').click();
+  await casillaDelExamen(page, EXAMEN_HOJA).check();
+  await page.getByRole('button', { name: 'Guardar la orden' }).click();
+  await expect(page).toHaveURL(FICHA);
+});
+
+test('la orden de Hematología Completa abre con los renglones de su hoja', async ({ page }) => {
+  /* Hasta ahora este informe abría con UNA línea que decía «Hematología
+     Completa» y el bioanalista tenía que ir a poner los doce renglones con
+     «o las líneas de». Con la hoja enlazada al ítem del baremo abren solos,
+     con la unidad y el rango de la hoja. */
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_HOJA)}/resultados`);
+
+  // Los doce de la hoja HEMA, en su orden y sin el nombre del servicio.
+  expect(await renglonesDe(page)).toEqual([
+    'HEMOGLOBINA', 'HEMATOCRITO', 'VCM', 'HCM', 'CHCM', 'ERITROCITOS',
+    'PLAQUETAS', 'LEUCOCITOS', 'SEGMENTADOS', 'LINFOCITOS', 'EOSINOFILOS', 'MONOCITOS',
+  ]);
+
+  /* Y con la unidad y el rango ya puestos, que es el cruce con la plantilla:
+     los renglones salen de la hoja, así que el calce es por su propio
+     nombre. El rango de la hemoglobina lo rescató 015-unidades.sql de la
+     fila de su celda. */
+  const primera = page.locator('#res-cuerpo tr').nth(0);
+  await expect(primera.locator('input[name="unidad"]')).toHaveValue('gr/dl');
+  await expect(primera.locator('input[name="referencia"]'))
+    .toHaveValue('Hombre: 12-17 /Mujer: 11-15');
+});
+
+test('la fecha de nacimiento llena la edad sola y queda en la ficha', async ({ page }) => {
+  await entrar(page, 'recepcionista');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_NACIMIENTO)}`);
+
+  await page.locator('#c-nombre').fill('Nacimiento de Prueba Rojas');
+  /* Nació un 1º de enero: los años cumplidos hasta hoy son los del año año
+     menos 1980, sin importar el día en que corra la suite. */
+  await page.locator('#c-nacimiento').fill('1980-01-01');
+  await expect(page.locator('#c-edad'))
+    .toHaveValue(String(Number(hoyEnCaracas().slice(0, 4)) - 1980));
+
+  // Y sigue editable: la edad es lo que manda cuando no se sabe la fecha.
+  await page.locator('#c-sexo').selectOption('Femenino');
+  await page.getByRole('button', { name: 'Guardar la orden' }).click();
+  await expect(page).toHaveURL(FICHA);
+
+  /* La fecha quedó en la ficha del paciente y no solo en la atención: es el
+     dato que hace que la próxima vez la edad se calcule sola. */
+  const [persona] = await conBase((sql) => sql`
+    SELECT nacimiento::text AS nacimiento FROM paciente
+     WHERE cedula_busca = ${CEDULA_NACIMIENTO.replace(/\D/g, '')}`);
+  expect(persona.nacimiento).toBe('1980-01-01');
 });

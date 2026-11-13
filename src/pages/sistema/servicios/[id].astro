@@ -13,6 +13,7 @@ import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
 import {
   CATEGORIAS, MONEDAS, activarServicio, dinero, guardarServicio, rotuloCategoria,
 } from '../../../sistema/lib/cobro';
+import { examenesDelArchivo } from '../../../sistema/lib/laboratorio';
 import { eq, sql } from 'drizzle-orm';
 import { exigir } from '../../../sistema/lib/guardia';
 
@@ -48,6 +49,7 @@ if (Astro.request.method === 'POST') {
         categoria: String(form.get('categoria') ?? ''),
         precio: String(form.get('precio') ?? ''),
         moneda: String(form.get('moneda') ?? ''),
+        plantilla: String(form.get('plantilla') ?? ''),
       };
       const guardado = await guardarServicio(id, tecleado);
       await anotar(usuario.id, 'servicio', undefined, { accion: 'edito', servicio: guardado.nombre });
@@ -82,6 +84,13 @@ const valor = (clave: 'nombre' | 'categoria' | 'moneda') =>
 /* El precio se muestra como se escribe acá —35,00, no 35.00— que es como lo
    devuelve la columna numeric y como lo lee de vuelta montoDe(). */
 const precioVista = tecleado?.precio ?? dinero(servicio.precio);
+
+/* Las hojas del archivo del laboratorio, para decir con cuál se informa
+   este examen. Solo se ofrecen las que existen: elegir una y que después
+   alguien la borre deja el informe como estaba, con una línea con su
+   nombre. */
+const hojas = await examenesDelArchivo();
+const plantillaVista = tecleado?.plantilla ?? servicio.plantilla ?? '';
 ---
 
 <Sistema titulo={servicio.nombre}>
@@ -144,6 +153,24 @@ const precioVista = tecleado?.precio ?? dinero(servicio.precio);
           ))}
         </select>
       </div>
+
+      {/* Solo los exámenes se informan con una hoja: una consulta o un
+          traslado no tienen renglones. Si la categoría se cambia a otra, el
+          select desaparece y el guardado deja la hoja en NULL. */}
+      {valor('categoria') === 'laboratorio' && (
+        <div class="sis-campo">
+          <label for="plantilla">Se informa con la hoja</label>
+          <select id="plantilla" name="plantilla">
+            <option value="" selected={!plantillaVista}>Una línea con su nombre</option>
+            {hojas.map((h) => (
+              <option value={h} selected={plantillaVista === h}>{h}</option>
+            ))}
+          </select>
+          <span class="pista">
+            Con la hoja elegida, el informe de resultados abre con sus renglones.
+          </span>
+        </div>
+      )}
     </div>
 
     <div class="edita__pie">

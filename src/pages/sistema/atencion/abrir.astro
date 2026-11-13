@@ -32,6 +32,7 @@ import {
   ROTULO, TIPOS, alcanza, comoSeLee, esTipo, formatearInterno,
   llaveDe, numeroInterno, type TipoDocumento,
 } from '../../../sistema/lib/documento';
+import { aniosCumplidos } from '../../../sistema/lib/fechas';
 import { and, asc, desc, eq, ne, sql, isNotNull } from 'drizzle-orm';
 
 export const prerender = false;
@@ -95,14 +96,20 @@ if (hayPaciente) {
 
     const d = (ultima?.datos ?? {}) as Record<string, string>;
 
-    /* La edad se recalcula si pasó más de un año desde la última vez.
-       Copiarla tal cual deja niños de 8 que ya tienen 11. */
-    let edad = d.edad ?? '';
-    if (edad && ultima?.fecha) {
-      const anios = Math.floor(
-        (Date.now() - new Date(`${ultima.fecha}T12:00:00`).getTime()) / 31_557_600_000,
-      );
-      if (anios >= 1) edad = String(Number(edad) + anios);
+    /* Con fecha de nacimiento la edad sale exacta y sola, contada hasta
+       hoy, que es la fecha de esta admisión. Sin ella se arrastra lo que
+       quedó escrito, recalculado a mano desde la última atención. */
+    let edad = '';
+    if (paciente.nacimiento) {
+      edad = String(aniosCumplidos(paciente.nacimiento, hoyEnVenezuela()));
+    } else {
+      edad = d.edad ?? '';
+      if (edad && ultima?.fecha) {
+        const anios = Math.floor(
+          (Date.now() - new Date(`${ultima.fecha}T12:00:00`).getTime()) / 31_557_600_000,
+        );
+        if (anios >= 1) edad = String(Number(edad) + anios);
+      }
     }
 
     conocido = {

@@ -5,8 +5,8 @@
 import { and, desc, eq, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import { bd, esquema } from './base';
-import { historia, exigidos, yaLaEscribioElMedico, type Campo } from '../historia';
-import { laboratorio, exigidosLaboratorio } from '../laboratorio';
+import { historia, yaLaEscribioElMedico, type Campo } from '../historia';
+import { laboratorio } from '../laboratorio';
 import { ROTULO, esTipo, llaveDe, soloDigitos, type TipoDocumento } from './documento';
 import { asegurarPin } from './verificacion';
 
@@ -52,13 +52,40 @@ export function limpiarDatos(form: FormData) {
  * falta el motivo de consulta, le faltan cuatro datos del paciente. Sin
  * esto, la pantalla de una orden avisaba de veinte campos pendientes que
  * ese formulario no tiene.
+ *
+ * La edad dejó de ser obligatoria por sí sola: con la fecha de nacimiento
+ * alcanza, y el formulario la calcula. Sin ninguna de las dos sí falta, y
+ * se avisa igual que siempre —con su rótulo y en su lugar de la lista—.
+ * La exigencia «esto o aquello» no la puede escribir el HTML, así que la
+ * única garante de la regla es el servidor, que es quien cierra.
  */
 export function faltantes(
   datos: Record<string, string>,
   tipo: 'general' | 'laboratorio' = 'general',
 ): readonly Campo[] {
-  const lista = tipo === 'laboratorio' ? exigidosLaboratorio : exigidos;
-  return lista.filter((c) => !datos[c.clave]);
+  const modelo = tipo === 'laboratorio' ? laboratorio : historia;
+  const faltan: Campo[] = [];
+  for (const s of modelo) {
+    for (const c of s.campos) {
+      const exigido = c.exigido || (c.clave === 'edad' && !datos.nacimiento);
+      if (exigido && !datos[c.clave]) faltan.push(c);
+    }
+  }
+  return faltan;
+}
+
+/**
+ * Una fecha de nacimiento que se puede guardar, o null.
+ *
+ * El navegador manda YYYY-MM-DD o nada, pero un POST armado a mano puede
+ * mandar lo que sea, y una fecha imposible en la ficha es peor que ningún
+ * dato. Se comparan como texto y no con Date: en ISO el orden de las
+ * cadenas es el orden de los calendarios.
+ */
+function nacimientoValido(texto: string | undefined): string | null {
+  if (!texto || !/^\d{4}-\d{2}-\d{2}$/.test(texto)) return null;
+  if (texto < '1900-01-01' || texto > hoyEnVenezuela()) return null;
+  return texto;
 }
 
 /**
@@ -105,6 +132,10 @@ export async function pacienteDe(datos: Record<string, string>) {
         whatsapp: datos.whatsapp ?? ya.whatsapp,
         correo: datos.correo ?? ya.correo,
         sexo: datos.sexo ?? ya.sexo,
+        /* La fecha de nacimiento sigue la misma regla que el contacto: lo
+           que llega vale, lo que no llega conserva lo que había. Nunca se
+           borra desde una atención. */
+        nacimiento: nacimientoValido(datos.nacimiento) ?? ya.nacimiento,
       })
       .where(eq(esquema.paciente.id, ya.id));
     return ya;
@@ -122,6 +153,7 @@ export async function pacienteDe(datos: Record<string, string>) {
       whatsapp: datos.whatsapp ?? null,
       correo: datos.correo ?? null,
       sexo: datos.sexo ?? null,
+      nacimiento: nacimientoValido(datos.nacimiento),
     })
     .returning();
 

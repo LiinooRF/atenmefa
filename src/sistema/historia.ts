@@ -68,7 +68,15 @@ export const historia: readonly Seccion[] = [
          servir para los cuatro casos, acá y en el papel que se imprime. */
       { clave: 'cedula', rotulo: 'Cédula o documento', tipo: 'cedula', exigido: true, ancho: 2,
         pista: 'La cédula con su letra: V, E, J o G.' },
-      { clave: 'edad', rotulo: 'Edad', tipo: 'numero', exigido: true, unidad: 'años', ancho: 1 },
+      /* La fecha de nacimiento es lo que de verdad se sabe: con ella la
+         edad se calcula sola y no vuelve a quedar vieja en la ficha. No se
+         exige, porque hay quien llega sin decir el año. */
+      { clave: 'nacimiento', rotulo: 'Fecha de nacimiento', tipo: 'fecha', ancho: 1,
+        pista: 'Con ella la edad se calcula sola.' },
+      /* Ya no es obligatoria por sí sola: basta con cualquiera de las dos.
+         Quien mira si hay una de las dos es el servidor, porque el HTML no
+         sabe exigir «esto o aquello». */
+      { clave: 'edad', rotulo: 'Edad', tipo: 'numero', unidad: 'años', ancho: 1 },
       { clave: 'sexo', rotulo: 'Sexo', tipo: 'opcion', opciones: ['Femenino', 'Masculino'], exigido: true, ancho: 1 },
       { clave: 'telefono', rotulo: 'Teléfono', tipo: 'telefono', ancho: 2 },
       /* Los dos son para poder mandarle el documento después. Ninguno es
@@ -195,11 +203,6 @@ export const historia: readonly Seccion[] = [
     ],
   },
 ] as const;
-
-/** Campos sin los cuales no se puede cerrar una atención. */
-export const exigidos = historia.flatMap((s) =>
-  s.campos.filter((c) => c.exigido).map((c) => ({ seccion: s.clave, ...c })),
-);
 
 /** Todas las claves, para armar la tabla y validar lo que llega. */
 export const claves = historia.flatMap((s) => s.campos.map((c) => c.clave));

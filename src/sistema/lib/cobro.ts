@@ -236,6 +236,9 @@ interface DatosServicio {
   categoria: unknown;
   precio: unknown;
   moneda: unknown;
+  /* La hoja de plantilla_examen con la que se informa. Solo la manda la
+     pantalla de edición de un examen del laboratorio; el alta no la trae. */
+  plantilla?: unknown;
 }
 
 /** Valida lo que llegó del formulario del catálogo. Lanza con el motivo. */
@@ -269,9 +272,25 @@ export async function guardarServicio(id: string, datos: DatosServicio) {
      lo que es: un servicio que ya no está. */
   if (!esIdentificador(id)) throw new Error('Ese servicio ya no está en el catálogo.');
 
+  const base = revisarServicio(datos);
+
+  /* La hoja con la que se informa, si es un examen del laboratorio y si esa
+     hoja existe de verdad. El <select> sale de la tabla, pero el POST se
+     puede armar a mano y una hoja inventada haría peor que nada: el informe
+     abriría sin sus renglones y sin decir por qué. Si no calza, NULL: una
+     línea con el nombre del servicio, que es el comportamiento de siempre. */
+  const hoja = String(datos.plantilla ?? '').trim();
+  const [existe] = base.categoria === 'laboratorio' && hoja
+    ? await bd
+        .select({ examen: esquema.plantillaExamen.examen })
+        .from(esquema.plantillaExamen)
+        .where(eq(esquema.plantillaExamen.examen, hoja))
+        .limit(1)
+    : [];
+
   const [guardado] = await bd
     .update(esquema.servicio)
-    .set(revisarServicio(datos))
+    .set({ ...base, plantilla: existe ? hoja : null })
     .where(eq(esquema.servicio.id, id))
     .returning({ id: esquema.servicio.id, nombre: esquema.servicio.nombre });
 

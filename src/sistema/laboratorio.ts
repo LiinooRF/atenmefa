@@ -79,7 +79,13 @@ export const laboratorio: readonly Seccion[] = [
       /* "o documento" y no "Cédula" a secas: el que llega sin cédula también
          se hace exámenes. Ver src/sistema/lib/documento.ts. */
       { clave: 'cedula', rotulo: 'Cédula o documento', tipo: 'cedula', exigido: true, ancho: 2 },
-      { clave: 'edad', rotulo: 'Edad', tipo: 'numero', exigido: true, unidad: 'años', ancho: 1 },
+      /* La fecha de nacimiento, igual que en la historia clínica: con ella
+         la edad se calcula sola mientras se escribe. No se exige. */
+      { clave: 'nacimiento', rotulo: 'Fecha de nacimiento', tipo: 'fecha', ancho: 1,
+        pista: 'Con ella la edad se calcula sola.' },
+      /* Basta la fecha o la edad; el servidor comprueba que haya una de
+         las dos. */
+      { clave: 'edad', rotulo: 'Edad', tipo: 'numero', unidad: 'años', ancho: 1 },
       { clave: 'sexo', rotulo: 'Sexo', tipo: 'opcion', opciones: ['Femenino', 'Masculino'], exigido: true, ancho: 1 },
       { clave: 'telefono', rotulo: 'Teléfono', tipo: 'telefono', ancho: 2 },
       { clave: 'whatsapp', rotulo: 'WhatsApp', tipo: 'telefono', ancho: 2,
@@ -111,14 +117,3 @@ export const laboratorio: readonly Seccion[] = [
     ],
   },
 ];
-
-/**
- * Lo que hace falta para poder guardar algo útil.
- *
- * Los exámenes no están en esta lista aunque sean obligatorios de verdad:
- * no son un campo del formulario sino la selección del catálogo, y quien
- * los comprueba es la pantalla. Ver `sinExamenes`.
- */
-export const exigidosLaboratorio = laboratorio
-  .flatMap((s) => s.campos)
-  .filter((c) => c.exigido);

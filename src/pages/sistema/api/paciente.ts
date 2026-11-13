@@ -13,7 +13,8 @@
 import type { APIRoute } from 'astro';
 import { eq, desc, and, ne } from 'drizzle-orm';
 import { bd, esquema } from '../../../sistema/lib/base';
-import { soloDigitos } from '../../../sistema/lib/atenciones';
+import { soloDigitos, hoyEnVenezuela } from '../../../sistema/lib/atenciones';
+import { aniosCumplidos } from '../../../sistema/lib/fechas';
 import { exigirEnApi } from '../../../sistema/lib/guardia';
 
 export const prerender = false;
@@ -53,14 +54,20 @@ export const GET: APIRoute = async (ctx) => {
 
   const d = (ultima?.datos ?? {}) as Record<string, string>;
 
-  /* La edad se recalcula si pasó más de un año desde la última atención:
-     copiarla tal cual deja pacientes de 8 años que ya tienen 11. */
-  let edad = d.edad ?? '';
-  if (edad && ultima?.fecha) {
-    const anios = Math.floor(
-      (Date.now() - new Date(`${ultima.fecha}T12:00:00`).getTime()) / 31_557_600_000,
-    );
-    if (anios >= 1) edad = String(Number(edad) + anios);
+  /* La edad sale exacta si hay fecha de nacimiento, contada hasta hoy: es
+     la fecha de la atención que se está abriendo. Si no la hay, se arrastra
+     lo que quedó escrito, recalculado desde la última atención. */
+  let edad = '';
+  if (paciente.nacimiento) {
+    edad = String(aniosCumplidos(paciente.nacimiento, hoyEnVenezuela()));
+  } else {
+    edad = d.edad ?? '';
+    if (edad && ultima?.fecha) {
+      const anios = Math.floor(
+        (Date.now() - new Date(`${ultima.fecha}T12:00:00`).getTime()) / 31_557_600_000,
+      );
+      if (anios >= 1) edad = String(Number(edad) + anios);
+    }
   }
 
   const antecedentes = {
@@ -79,6 +86,9 @@ export const GET: APIRoute = async (ctx) => {
       cedula: paciente.cedula,
       telefono: paciente.telefono ?? '',
       sexo: paciente.sexo ?? '',
+      /* La fecha de nacimiento viaja también: el campo existe en el
+         formulario y con ella la edad se recalcula sola. */
+      nacimiento: paciente.nacimiento ?? '',
       edad,
       direccion: d.direccion ?? '',
       ciudad: d.ciudad ?? '',

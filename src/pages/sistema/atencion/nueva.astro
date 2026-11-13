@@ -32,6 +32,7 @@ import {
   llaveDe, numeroInterno, type TipoDocumento,
 } from '../../../sistema/lib/documento';
 import { asegurarPin } from '../../../sistema/lib/verificacion';
+import { aniosCumplidos } from '../../../sistema/lib/fechas';
 import { puede } from '../../../sistema/lib/permisos';
 import ExamenesLab from '../../../components/sistema/ExamenesLab.astro';
 import {
@@ -109,7 +110,8 @@ const llave = llaveDe(tipoDoc, cedulaPedida);
    ---------------------------------------------------------------- */
 let conocido: {
   nombre: string; cedula: string; tipoDoc: TipoDocumento; telefono: string;
-  sexo: string; edad: string; direccion: string; ciudad: string; referencia: string;
+  sexo: string; nacimiento: string; edad: string;
+  direccion: string; ciudad: string; referencia: string;
   ultima: { numero: number; fecha: string; idx: string } | null;
 } | null = null;
 
@@ -139,14 +141,21 @@ if (alcanza(tipoDoc, cedulaPedida)) {
 
     const d = (ultima?.datos ?? {}) as Record<string, string>;
 
-    /* La edad se recalcula si pasó más de un año: copiarla tal cual deja
-       niños de 8 que ya tienen 11. */
-    let edad = d.edad ?? '';
-    if (edad && ultima?.fecha) {
-      const anios = Math.floor(
-        (Date.now() - new Date(`${ultima.fecha}T12:00:00`).getTime()) / 31_557_600_000,
-      );
-      if (anios >= 1) edad = String(Number(edad) + anios);
+    /* Con fecha de nacimiento la edad sale exacta y sola, contada hasta
+       hoy, que es la fecha con la que abre este formulario. Sin ella se
+       sigue arrastrando lo que quedó escrito, recalculado a mano: copiarla
+       tal cual deja niños de 8 que ya tienen 11. */
+    let edad = '';
+    if (paciente.nacimiento) {
+      edad = String(aniosCumplidos(paciente.nacimiento, hoyEnVenezuela()));
+    } else {
+      edad = d.edad ?? '';
+      if (edad && ultima?.fecha) {
+        const anios = Math.floor(
+          (Date.now() - new Date(`${ultima.fecha}T12:00:00`).getTime()) / 31_557_600_000,
+        );
+        if (anios >= 1) edad = String(Number(edad) + anios);
+      }
     }
 
     antecedentesPrevios = {
@@ -164,6 +173,7 @@ if (alcanza(tipoDoc, cedulaPedida)) {
       tipoDoc: paciente.tipoDoc,
       telefono: paciente.telefono ?? '',
       sexo: paciente.sexo ?? '',
+      nacimiento: paciente.nacimiento ?? '',
       edad,
       direccion: d.direccion ?? '',
       ciudad: d.ciudad ?? '',
@@ -231,6 +241,7 @@ let datos: Record<string, string> = {
         nombre: conocido.nombre,
         telefono: conocido.telefono,
         sexo: conocido.sexo,
+        nacimiento: conocido.nacimiento,
         edad: conocido.edad,
         direccion: conocido.direccion,
         ciudad: conocido.ciudad,

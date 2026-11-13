@@ -145,6 +145,8 @@ export const servicio = pgTable('servicio', {
   precio: numeric('precio', { precision: 14, scale: 2 }).notNull().default('0'),
   moneda: text('moneda').notNull().default('USD'),
   activo: boolean('activo').notNull().default(true),
+  /** Con qué hoja de plantilla_examen se informa. Ver 022-servicio-plantilla.sql. */
+  plantilla: text('plantilla'),
 });
 
 /**

@@ -82,9 +82,13 @@ test('sin los campos obligatorios el navegador no deja cerrar', async ({ page })
 
   /* El botón de cerrar no lleva formnovalidate, al revés que el de
      borrador, así que la validación del propio navegador lo detiene en el
-     primer obligatorio vacío: la edad. Seguimos en el formulario con lo
-     tecleado delante; si hubiera cerrado, esto ya sería una ficha. */
-  await expect(page.locator('#c-edad:invalid')).toHaveCount(1);
+     primer obligatorio vacío. Antes era la edad; ya no lo es, porque con
+     la fecha de nacimiento alcanza y el HTML no sabe exigir «esto o
+     aquello»: esa regla la cuida el servidor, y la cumple la prueba de más
+     abajo. El primer obligatorio que sí bloquea es el sexo. Seguimos en el
+     formulario con lo tecleado delante; si hubiera cerrado, esto ya sería
+     una ficha. */
+  await expect(page.locator('#c-sexo:invalid')).toHaveCount(1);
   await expect(page.locator('#c-nombre')).toHaveValue('Nadie de Prueba');
 
   /* Seguimos en el formulario, no en una ficha. La dirección ya no es
