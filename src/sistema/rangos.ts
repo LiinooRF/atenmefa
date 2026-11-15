@@ -167,6 +167,13 @@ export function fueraDeRango(
   const texto = String(referencia ?? '').trim();
   if (!texto) return null;
 
+  /* Una tabla por semanas de embarazo —la BHCG: «1 SEMANA: 10 - 30 / 2
+     SEMANA: 30 - 100 / …»— no se puede comparar sin saber de cuántas
+     semanas va la paciente, y eso el sistema no lo sabe. Comparar contra
+     un tramo cualquiera pintaría de rojo un embarazo normal. Se imprime la
+     tabla entera y la lee quien firma. */
+  if (/semana|embaraz/i.test(texto)) return null;
+
   const lim = limitesPara(texto, sexo);
   if (!lim) return null;
 

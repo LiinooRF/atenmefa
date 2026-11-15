@@ -39,6 +39,7 @@ const CEDULA_COAG = cedulaDePrueba(13, 7);
 const CEDULA_RANGO = cedulaDePrueba(13, 8);
 const CEDULA_HOJA = cedulaDePrueba(13, 9);
 const CEDULA_NACIMIENTO = cedulaDePrueba(13, 10);
+const CEDULA_COAG_HOJA = cedulaDePrueba(13, 11);
 const NOMBRE = 'Carmen Rosa Laboratorio de Prueba';
 
 const EXAMEN_A = 'Hematología completa de prueba';
@@ -46,12 +47,13 @@ const EXAMEN_B = 'Glicemia de prueba';
 /* El ítem del baremo con su hoja enlazada, para la prueba de que el informe
    abre con los renglones de la hoja. */
 const EXAMEN_HOJA = 'Hematología Completa';
+const EXAMEN_COAG = 'Coagulación de prueba';
 
 const limpiar = () =>
   conBase(async (sql) => {
     for (const c of [CEDULA, CEDULA_GENERAL, CEDULA_PEDIDOS, CEDULA_PLANTILLA,
                      CEDULA_CALCULO, CEDULA_SIN_PRECIO, CEDULA_HEMA, CEDULA_COAG,
-                     CEDULA_RANGO, CEDULA_HOJA, CEDULA_NACIMIENTO]) {
+                     CEDULA_RANGO, CEDULA_HOJA, CEDULA_NACIMIENTO, CEDULA_COAG_HOJA]) {
       const busca = c.replace(/\D/g, '');
       const suyas = sql`SELECT a.id FROM atencion a JOIN paciente p ON p.id = a.paciente_id
                          WHERE p.cedula_busca = ${busca}`;
@@ -78,7 +80,7 @@ test.beforeAll(async () => {
 
 test.afterAll(async () => {
   await limpiar();
-  await borrarExamen(EXAMEN_A, EXAMEN_B, EXAMEN_HOJA);
+  await borrarExamen(EXAMEN_A, EXAMEN_B, EXAMEN_HOJA, EXAMEN_COAG);
 });
 
 /* ------------------------------------------------------------------
@@ -506,27 +508,29 @@ test('las plantillas entraron, y los rangos que entraron son los de su hoja', as
            COUNT(*) FILTER (WHERE referencia <> '')::int AS con_rango
       FROM plantilla_examen`);
   expect(n.examenes).toBe(37);
-  expect(n.analitos).toBe(218);
+  // 219: la gota gruesa ganó su renglón NOTA en 023-respuestas-laboratorio.sql.
+  expect(n.analitos).toBe(219);
   /* 74 vienen en blanco a propósito: su hoja no los trae en ninguna
      columna de esa fila, y deducirlos ponía el rango de un examen al lado
      del resultado de otro. Ver 013-plantillas.sql y 015-unidades.sql: el
      segundo rescató 41 rangos y 12 unidades que estaban escritos en las
      hojas sin fila de cabecera, como la de coagulación. */
-  expect(n.con_rango).toBe(144);
+  expect(n.con_rango).toBe(147);
 
   /* Y de los que quedan sin rango, los que de verdad le faltan al
      laboratorio son 22: los otros son encabezados de bloque, que no
      llevan rango nunca, y los renglones de orina y heces que se responden
      con menú de opciones —su forma de informarse, no una falta—. Antes se
      adivinaban por descarte y la pantalla contaba 51. Ver 016-titulos.sql
-     y 021-orina-heces.sql. */
+     y 021-orina-heces.sql. Con lo que el laboratorio contestó el
+     15-11-2026 quedaron 12 (ver 023-respuestas-laboratorio.sql). */
   const [t] = await conBase((sql) => sql`
     SELECT COUNT(*) FILTER (WHERE tipo = 'titulo')::int AS titulos,
            COUNT(*) FILTER (WHERE tipo = 'analito' AND btrim(referencia) = ''
                              AND btrim(opciones) = '')::int AS faltan
       FROM plantilla_examen`);
-  expect(t.titulos).toBe(26);
-  expect(t.faltan).toBe(22);
+  expect(t.titulos).toBe(25);
+  expect(t.faltan).toBe(12);
 
   /* El tipiaje y el VDRL tampoco tienen rango —se informan con una
      palabra— y son analitos igual: la regla por descarte los daba por
@@ -994,8 +998,10 @@ test('los dos bloques de coagulación no se mezclan', async ({ page }) => {
   // Y la actividad del primer bloque no se movió: usa sus propios tiempos.
   await expect(await campoDe(page, 'ACTIVIDAD')).toHaveValue('70,6');
 
-  // El INR no se calcula: depende del ISI del reactivo y va escrito a mano.
-  await expect(await campoDe(page, 'INR')).toHaveValue('');
+  /* El INR depende del ISI del reactivo, y por eso hasta el 15-11-2026 iba
+     escrito a mano. El laboratorio mandó el suyo: INR=(TP/TC)^1,17. Con
+     los tiempos del PT, (14 ÷ 12) elevado a 1,17 = 1,1977… */
+  await expect(await campoDe(page, 'INR')).toHaveValue('1,20');
 });
 
 test('el informe impreso separa los bloques de la hoja', async ({ page }) => {
@@ -1080,7 +1086,7 @@ test('el bioanalista ve la lista de exámenes y cuántos rangos faltan', async (
   await expect(page.locator('.lista li')).toHaveCount(37);
   // La cifra es la de los analitos de verdad, sin los encabezados ni los
   // que ya se responden con su menú de opciones.
-  await expect(page.locator('.aviso')).toContainText('22 analitos sin rango');
+  await expect(page.locator('.aviso')).toContainText('12 analitos sin rango');
 
   // Los que tienen algo que arreglar van primero.
   const primero = page.locator('.lista li').first();
@@ -1103,7 +1109,7 @@ test('escribir un rango lo deja puesto para las órdenes que vienen', async ({ p
   await entrar(page, 'bioanalista');
   await page.goto(`/sistema/plantillas/${encodeURIComponent('COAG.')}`);
 
-  /* Por el atributo value y no por hasText: lo que dice «TIEMPO CONTROL»
+  /* Por el atributo value y no por hasText: lo que dice «TIEMPO PACIENTE»
      es el value de un input, no texto de la fila, y hasText no lo ve. Acá
      sí sirve el atributo porque estos renglones los pinta el servidor; en
      la pantalla de resultados, donde los agrega el navegador, no. */
@@ -1112,22 +1118,24 @@ test('escribir un rango lo deja puesto para las órdenes que vienen', async ({ p
       .filter({ has: page.locator(`input[name="analito"][value="${analito}"]`) })
       .first();
 
-  /* El tiempo control sale del archivo con su unidad y sin rango: es uno
-     de los 51 que el laboratorio tiene que escribir. */
-  const control = fila('TIEMPO CONTROL');
-  await expect(control.locator('input[name="unidad"]')).toHaveValue('seg');
-  await expect(control).toHaveAttribute('data-falta', '');
+  /* El tiempo del paciente sale del archivo con su unidad y sin rango: es
+     uno de los que el laboratorio todavía no mandó. (El tiempo control ya
+     no sirve de ejemplo: desde 023 trae el valor de su reactivo como
+     opción, y un renglón con menú no está en falta.) */
+  const paciente = fila('TIEMPO PACIENTE');
+  await expect(paciente.locator('input[name="unidad"]')).toHaveValue('seg');
+  await expect(paciente).toHaveAttribute('data-falta', '');
 
-  await control.locator('input[name="referencia"]').fill('11 - 13 seg');
+  await paciente.locator('input[name="referencia"]').fill('11 - 13 seg');
   // El amarillo se apaga al escribir: es la confirmación de que quedó.
-  await expect(control).not.toHaveAttribute('data-falta', '');
+  await expect(paciente).not.toHaveAttribute('data-falta', '');
 
   await page.getByRole('button', { name: 'Guardar' }).click();
   await expect(page.locator('.msj--bien')).toContainText('renglones');
 
   const [guardado] = await conBase((sql) => sql`
     SELECT referencia FROM plantilla_examen
-     WHERE examen = 'COAG.' AND analito = 'TIEMPO CONTROL' ORDER BY orden LIMIT 1`);
+     WHERE examen = 'COAG.' AND analito = 'TIEMPO PACIENTE' ORDER BY orden LIMIT 1`);
   expect(guardado.referencia).toBe('11 - 13 seg');
 
   /* Y lo que importa: el bioanalista abre una orden NUEVA —la de arriba
@@ -1138,7 +1146,7 @@ test('escribir un rango lo deja puesto para las órdenes que vienen', async ({ p
   await page.getByRole('button', { name: 'Poner' }).click();
 
   const nombres = await renglonesDe(page);
-  const donde = nombres.indexOf('TIEMPO CONTROL');
+  const donde = nombres.indexOf('TIEMPO PACIENTE');
   await expect(
     page.locator('#res-cuerpo tr').nth(donde).locator('input[name="referencia"]'),
   ).toHaveValue('11 - 13 seg');
@@ -1264,8 +1272,11 @@ test('la orden de Hematología Completa abre con los renglones de su hoja', asyn
   await entrar(page, 'bioanalista');
   await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_HOJA)}/resultados`);
 
-  // Los doce de la hoja HEMA, en su orden y sin el nombre del servicio.
+  /* Los doce de la hoja HEMA, en su orden, debajo del nombre del examen:
+     con varios exámenes en una orden, el encabezado es lo que dice en el
+     papel dónde termina uno y empieza el otro. */
   expect(await renglonesDe(page)).toEqual([
+    EXAMEN_HOJA,
     'HEMOGLOBINA', 'HEMATOCRITO', 'VCM', 'HCM', 'CHCM', 'ERITROCITOS',
     'PLAQUETAS', 'LEUCOCITOS', 'SEGMENTADOS', 'LINFOCITOS', 'EOSINOFILOS', 'MONOCITOS',
   ]);
@@ -1274,7 +1285,7 @@ test('la orden de Hematología Completa abre con los renglones de su hoja', asyn
      los renglones salen de la hoja, así que el calce es por su propio
      nombre. El rango de la hemoglobina lo rescató 015-unidades.sql de la
      fila de su celda. */
-  const primera = page.locator('#res-cuerpo tr').nth(0);
+  const primera = page.locator('#res-cuerpo tr').nth(1);
   await expect(primera.locator('input[name="unidad"]')).toHaveValue('gr/dl');
   await expect(primera.locator('input[name="referencia"]'))
     .toHaveValue('Hombre: 12-17 /Mujer: 11-15');
@@ -1302,4 +1313,94 @@ test('la fecha de nacimiento llena la edad sola y queda en la ficha', async ({ p
     SELECT nacimiento::text AS nacimiento FROM paciente
      WHERE cedula_busca = ${CEDULA_NACIMIENTO.replace(/\D/g, '')}`);
   expect(persona.nacimiento).toBe('1980-01-01');
+});
+
+/* ------------------------------------------------------------------
+   Coagulación: dos renglones con el mismo nombre.
+   ------------------------------------------------------------------
+
+   La hoja COAG. trae «TIEMPO CONTROL» y «TIEMPO PACIENTE» dos veces: los
+   del tiempo de protrombina y los del PTT. Abrirla desde el catálogo
+   juntaba los dos pares en uno —se repartía por nombre— y la diferencia
+   P-C terminaba calculada con los tiempos del PT. */
+
+test('se registra una orden de coagulación enlazada a su hoja', async ({ page }) => {
+  await conBase(async (sql) => {
+    await sql`
+      INSERT INTO servicio (nombre, categoria, precio, moneda, activo, plantilla)
+      VALUES (${EXAMEN_COAG}, 'laboratorio', 6, 'USD', true, 'COAG.')
+      ON CONFLICT DO NOTHING`;
+  });
+  await entrar(page, 'recepcionista');
+  await page.goto(`/sistema/atencion/nueva?cedula=${encodeURIComponent(CEDULA_COAG_HOJA)}`);
+  await page.locator('#c-nombre').fill('Coagulación de Prueba Méndez');
+  await page.locator('#c-edad').fill('55');
+  await page.locator('#c-sexo').selectOption('Masculino');
+  await page.locator('[data-ir="1"]').click();
+  await casillaDelExamen(page, EXAMEN_COAG).check();
+  await page.getByRole('button', { name: 'Guardar la orden' }).click();
+  await expect(page).toHaveURL(FICHA);
+});
+
+test('coagulación abre con sus dos bloques y cada cuenta usa los suyos', async ({ page }) => {
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_COAG_HOJA)}/resultados`);
+
+  // La hoja entera, con los subtítulos que separan el PT del PTT.
+  expect(await renglonesDe(page)).toEqual([
+    EXAMEN_COAG,
+    'TIEMPO DE PROTROMBINA:', 'TIEMPO CONTROL', 'TIEMPO PACIENTE', 'ACTIVIDAD',
+    'RAZON P/C:', 'INR',
+    'TIEMPO DE TROMBOPLASTINA PARCIAL ACTIVADA', 'TIEMPO CONTROL', 'TIEMPO PACIENTE',
+    'DIFERENCIA P-C', 'FIBRINOGENO',
+  ]);
+
+  const fila = (i: number) => page.locator('#res-cuerpo tr').nth(i);
+  const valor = (i: number) => fila(i).locator('input[name="valor"]');
+
+  /* Cada control trae el valor de SU reactivo como opción, no el del otro:
+     12 segundos el del PT, 32 el del PTT. */
+  const opciones = (i: number) => fila(i).locator('datalist option')
+    .evaluateAll((o) => o.map((x) => (x as HTMLOptionElement).value));
+  expect(await opciones(2)).toEqual(['12']);
+  expect(await opciones(8)).toEqual(['32']);
+
+  await valor(2).fill('12');
+  await valor(3).fill('14');
+  await valor(8).fill('32');
+  await valor(9).fill('35');
+
+  // Actividad: (12 − 7,2) ÷ (14 − 7,2) × 100 = 70,588…
+  await expect(valor(4)).toHaveValue('70,6');
+  // Razón P/C: 14 ÷ 12 = 1,1666…
+  await expect(valor(5)).toHaveValue('1,17');
+  // INR, la fórmula que mandó el laboratorio: (14 ÷ 12) elevado a 1,17 = 1,1977…
+  await expect(valor(6)).toHaveValue('1,20');
+  // Y la diferencia con los tiempos del PTT, no los del PT: 35 − 32.
+  await expect(valor(10)).toHaveValue('3,0');
+
+  /* Guardado y vuelto a abrir, cada «TIEMPO PACIENTE» conserva el suyo.
+     Repartiendo por nombre los dos mostraban el último. */
+  await page.getByRole('button', { name: 'Guardar y seguir después' }).click();
+  await page.waitForLoadState('networkidle');
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_COAG_HOJA)}/resultados`);
+  await expect(valor(3)).toHaveValue('14');
+  await expect(valor(9)).toHaveValue('35');
+});
+
+test('la BHCG imprime su tabla por semanas y no marca fuera de rango', async ({ page }) => {
+  /* Un embarazo de seis semanas da miles: contra «NO EMBARAZADAS: 0 - 10»
+     saldría en rojo. Sin saber la semana no se compara. */
+  const [p] = await conBase((sql) => sql`
+    SELECT referencia FROM plantilla_examen WHERE examen = 'B-HCG CUANTIFICADA' AND orden = 1`);
+  expect(p.referencia).toContain('6 SEMANA: 11334 - 100154');
+  expect(p.referencia).toContain('HOMBRES: 0 - 10');
+
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_COAG_HOJA)}/resultados`);
+  await page.locator('#res-plantilla').selectOption('B-HCG CUANTIFICADA');
+  await page.locator('#res-poner').click();
+  const ultima = page.locator('#res-cuerpo tr').last();
+  await ultima.locator('input[name="valor"]').fill('25000');
+  await expect(ultima).not.toHaveAttribute('data-fuera', /.+/);
 });

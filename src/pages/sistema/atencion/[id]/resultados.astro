@@ -128,35 +128,69 @@ const sinRango = renglones.filter(
    misma lista vuelta Map, para preguntarle por la hoja de un servicio. */
 const porHoja = new Map(plantillas.map((p) => [p.examen, p.analitos]));
 
+/** De dónde sale la unidad, el rango y el menú de una línea. */
+type Fuente = { unidad: string; referencia: string; opciones: string };
+const SIN_NADA: Fuente = { unidad: '', referencia: '', opciones: '' };
+
 /* Un examen pedido con hoja abre el informe con LOS RENGLONES de esa hoja
    y no con una línea con su nombre: la hematología completa son doce
-   analitos, y hasta ahora el bioanalista tenía que ponerlos a mano con
-   «o las líneas de». Sin hoja —o con una hoja que ya no exista— sigue
-   abriendo con una línea con el nombre, como siempre.
+   analitos. Sin hoja —o con una hoja que ya no exista— sigue abriendo con
+   una línea con el nombre, como siempre.
 
-   Los renglones que son puro encabezado de bloque no van, ni los que
-   quedaron en blanco. Y si dos exámenes pedidos comparten un analito,
-   aparece una sola vez: es el mismo valor medido dos veces. */
-const nombresPedidos: string[] = [];
+   La hoja va entera y en su orden, con sus subtítulos y encabezada por el
+   nombre del examen, igual que cuando el bioanalista la pone a mano con
+   «o las líneas de». Los subtítulos no son adorno: en coagulación hay dos
+   «TIEMPO CONTROL» y dos «TIEMPO PACIENTE», uno del tiempo de protrombina y
+   otro del PTT, y lo único que los distingue en el papel es el subtítulo
+   que tienen arriba.
+
+   Por lo mismo, cada renglón trae la unidad, el rango y el menú de SU fila
+   de la hoja y no de la primera fila que se llame igual: el control del PT
+   y el del PTT no tienen el mismo valor.
+
+   Lo que sí se evita es repetir un analito entre DOS exámenes pedidos: si
+   dos hojas traen el colesterol, aparece una vez. Dentro de una misma hoja
+   no se toca nada. */
+const plan: { examen: string; fuente?: Fuente }[] = [];
 const puestos = new Set<string>();
 for (const p of pedidos) {
   const hoja = p.plantilla ? porHoja.get(p.plantilla) : undefined;
-  const nombres = hoja
-    ? hoja.filter((a) => a.tipo !== 'titulo' && a.analito.trim()).map((a) => a.analito)
-    : [p.nombre];
-  for (const nombre of nombres) {
-    if (puestos.has(nombre)) continue;
-    puestos.add(nombre);
-    nombresPedidos.push(nombre);
+  if (!hoja) {
+    if (!puestos.has(p.nombre)) {
+      puestos.add(p.nombre);
+      plan.push({ examen: p.nombre });
+    }
+    continue;
   }
+  const propios = hoja.filter(
+    (a) => a.analito.trim() && (a.tipo === 'titulo' || !puestos.has(a.analito)),
+  );
+  // Si todos sus analitos ya los trajo otro examen, no queda nada que poner.
+  if (!propios.some((a) => a.tipo !== 'titulo')) continue;
+
+  /* El encabezado, salvo que se llame como uno de sus analitos —«GOTA
+     GRUESA» es el examen y es su único renglón—: ahí sería una línea
+     repetida que confunde. */
+  const mismo = (t: string) => t.trim().toUpperCase();
+  if (!hoja.some((a) => mismo(a.analito) === mismo(p.nombre))) {
+    plan.push({ examen: p.nombre, fuente: SIN_NADA });
+  }
+  for (const a of propios) {
+    plan.push({
+      examen: a.analito,
+      fuente: a.tipo === 'titulo'
+        ? SIN_NADA
+        : { unidad: a.unidad, referencia: a.referencia, opciones: a.opciones },
+    });
+  }
+  for (const a of propios) if (a.tipo !== 'titulo') puestos.add(a.analito);
 }
 for (const escrito of (registro.examenes ?? '').split('\n').map((t) => t.trim()).filter(Boolean)) {
   if (puestos.has(escrito)) continue;
   puestos.add(escrito);
-  nombresPedidos.push(escrito);
+  plan.push({ examen: escrito });
 }
 
-const porNombre = new Map(cargados.map((r) => [r.examen, r]));
 
 /* La unidad y el rango de cada analito, por nombre.
    
@@ -206,14 +240,44 @@ const conPlantilla = (r: Resultado): Resultado => {
    que se pueda elegir Y escribir otra cosa: nada le cierra el paso. */
 const opcionesDe = (analito: string) => deLaPlantilla.get(analito)?.opciones ?? '';
 
-const lineas: Resultado[] = [
-  ...nombresPedidos.map((nombre) =>
-    conPlantilla(porNombre.get(nombre) ?? { examen: nombre, valor: '', unidad: '', referencia: '' }),
-  ),
-  // Lo cargado que no calza con ningún examen pedido: líneas agregadas a mano.
-  ...cargados.filter((r) => !nombresPedidos.includes(r.examen)).map(conPlantilla),
-];
-if (lineas.length === 0) lineas.push({ examen: '', valor: '', unidad: '', referencia: '' });
+/* Lo ya guardado se reparte por nombre Y en orden: el primer «TIEMPO
+   CONTROL» guardado va al primer renglón que se llama así, el segundo al
+   segundo. Con un Map por nombre, los dos renglones mostraban el mismo
+   valor —el último— y al volver a guardar se perdía el otro. */
+const usados = new Set<number>();
+const tomar = (nombre: string) => {
+  const i = cargados.findIndex((r, j) => !usados.has(j) && r.examen === nombre);
+  if (i < 0) return null;
+  usados.add(i);
+  return cargados[i];
+};
+const vacia = (examen: string): Resultado => ({ examen, valor: '', unidad: '', referencia: '' });
+
+/* Lo guardado manda; la fuente solo rellena lo que quedó vacío. */
+const conFuente = (r: Resultado, f: Fuente | undefined): Resultado => f
+  ? {
+      ...r,
+      unidad: r.unidad.trim() ? r.unidad : f.unidad,
+      referencia: r.referencia.trim() ? r.referencia : f.referencia,
+    }
+  : conPlantilla(r);
+
+const lineas: Resultado[] = [];
+const opcionesDeLinea: string[] = [];
+for (const { examen, fuente } of plan) {
+  lineas.push(conFuente(tomar(examen) ?? vacia(examen), fuente));
+  opcionesDeLinea.push(fuente ? fuente.opciones : opcionesDe(examen));
+}
+// Lo cargado que no calza con ningún examen pedido: líneas agregadas a mano.
+cargados.forEach((r, j) => {
+  if (usados.has(j)) return;
+  lineas.push(conPlantilla(r));
+  opcionesDeLinea.push(opcionesDe(r.examen));
+});
+if (lineas.length === 0) {
+  lineas.push(vacia(''));
+  opcionesDeLinea.push('');
+}
 
 const fechaLarga = (f: string) =>
   new Date(`${f}T12:00:00`).toLocaleDateString('es-VE', { day: 'numeric', month: 'long', year: 'numeric' });
@@ -298,7 +362,7 @@ const fechaLarga = (f: string) =>
           </thead>
           <tbody id="res-cuerpo">
             {lineas.map((l, i) => (
-              <tr data-opciones={opcionesDe(l.examen) || undefined}>
+              <tr data-opciones={opcionesDeLinea[i] || undefined}>
                 <td data-rotulo="Examen">
                   <input type="text" name="examen" value={l.examen}
                          aria-label={`Examen de la línea ${i + 1}`} autocomplete="off" />
@@ -310,7 +374,7 @@ const fechaLarga = (f: string) =>
                   {/* El menú del renglón, si su plantilla lo trae. Una <option> por
                       palabra, tal como las escribió la hoja DAT. del archivo. */}
                   <datalist id={`op-${i}`}>
-                    {opcionesDe(l.examen).split('\n').filter(Boolean).map((o) => (
+                    {opcionesDeLinea[i].split('\n').filter(Boolean).map((o) => (
                       <option value={o}></option>
                     ))}
                   </datalist>
@@ -478,7 +542,8 @@ const fechaLarga = (f: string) =>
     type Op =
       | { tipo: 'resta' } | { tipo: 'division' } | { tipo: 'dividirPor'; por: number }
       | { tipo: 'divisionEscalada'; factor: number } | { tipo: 'productoSobre' }
-      | { tipo: 'relacionDescontada'; descuento: number };
+      | { tipo: 'relacionDescontada'; descuento: number }
+      | { tipo: 'potenciaDeCociente'; exponente: number };
     type Calculo = {
       resultado: string; insumos: string[]; operacion: Op;
       decimales: number; comoSeLee: string;
@@ -576,6 +641,9 @@ const fechaLarga = (f: string) =>
               r = v[1] - d === 0 ? null : ((v[0] - d) / (v[1] - d)) * 100;
               break;
             }
+            case 'potenciaDeCociente':
+              r = v[1] === 0 || v[0] / v[1] < 0 ? null : (v[0] / v[1]) ** c.operacion.exponente;
+              break;
           }
           if (r === null || !Number.isFinite(r)) continue;
 
@@ -658,6 +726,8 @@ const fechaLarga = (f: string) =>
       if (v === null) return '';
       const texto = String(referencia ?? '').trim();
       if (!texto) return '';
+      // Tabla por semanas de embarazo: no se compara. Ver sistema/rangos.ts.
+      if (/semana|embaraz/i.test(texto)) return '';
       const lim = limitesPara(texto);
       if (!lim) return '';
       if (lim.max !== null && v > lim.max) return 'alto';

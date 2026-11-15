@@ -66,7 +66,13 @@ export type Operacion =
    * descuenta una constante antes de dividirlos, y el resultado va en por
    * ciento. =(U14-7.2)/(T15-7.2)*100
    */
-  | { tipo: 'relacionDescontada'; descuento: number };
+  | { tipo: 'relacionDescontada'; descuento: number }
+  /**
+   * El primero sobre el segundo, elevado a una potencia. Es el INR: la
+   * razón paciente/control elevada al ISI del reactivo, que el laboratorio
+   * informó como 1,17.
+   */
+  | { tipo: 'potenciaDeCociente'; exponente: number };
 
 export interface Calculo {
   /** El analito que se calcula, como se llama en las plantillas. */
@@ -182,6 +188,17 @@ export const CALCULOS: readonly Calculo[] = [
     comoSeLee: 'tiempo del paciente ÷ tiempo control',
   },
   {
+    /* INR=(TP/TC)^1,17, como lo mandó el laboratorio el 15-11-2026. El
+       1,17 es el ISI de su reactivo: si cambian de lote o de marca, cambia
+       este número y nada más. Va en el bloque del tiempo de protrombina,
+       debajo de la razón P/C, así que sus dos tiempos son los de arriba. */
+    resultado: 'INR',
+    insumos: ['TIEMPO PACIENTE', 'TIEMPO CONTROL'],
+    operacion: { tipo: 'potenciaDeCociente', exponente: 1.17 },
+    decimales: 2,
+    comoSeLee: '(tiempo del paciente ÷ tiempo control) elevado a 1,17',
+  },
+  {
     /* =T23-U22, en el bloque del PTT. */
     resultado: 'DIFERENCIA P-C',
     insumos: ['TIEMPO PACIENTE', 'TIEMPO CONTROL'],
@@ -248,6 +265,8 @@ export function calcular(c: Calculo, valores: readonly (number | null)[]): numbe
       const d = c.operacion.descuento;
       return v[1] - d === 0 ? null : ((v[0] - d) / (v[1] - d)) * 100;
     }
+    case 'potenciaDeCociente':
+      return v[1] === 0 || v[0] / v[1] < 0 ? null : (v[0] / v[1]) ** c.operacion.exponente;
   }
 }
 

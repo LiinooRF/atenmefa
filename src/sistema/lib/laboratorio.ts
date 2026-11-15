@@ -41,6 +41,9 @@ const NO_SON_EXAMENES = new Set([
   'caracteres fisicos:',
   'examen solicitado:',
   'fecha de entrada:',
+  /* La nota del período febril de la gota gruesa: se elige junto con el
+     resultado, no se cobra aparte. */
+  'nota',
   'otras determinaciones:',
   'tipo de muestra:',
 ]);
@@ -410,10 +413,19 @@ export async function faltanEnElCatalogo(): Promise<number> {
      de la orden quedaba con la columna de perfiles vacía y sin forma de
      llenarla desde adentro. Pasa de verdad cada vez que alguien borra los
      perfiles sin borrar los exámenes. */
-  const hojas = await bd
-    .select({ examen: esquema.plantillaExamen.examen, cuantos: count() })
-    .from(esquema.plantillaExamen)
-    .groupBy(esquema.plantillaExamen.examen);
+  /* Contados con la misma regla que el cargador: sin los rótulos ni la
+     nota de la gota gruesa. Contándolos, la gota gruesa parecía un perfil
+     por cargar y la tarjeta no se iba nunca. */
+  const renglones = await bd
+    .select({ examen: esquema.plantillaExamen.examen, analito: esquema.plantillaExamen.analito })
+    .from(esquema.plantillaExamen);
+  const cuantosPorHoja = new Map<string, number>();
+  for (const r of renglones) {
+    const llave = normalizar(r.analito);
+    if (!llave || NO_SON_EXAMENES.has(llave)) continue;
+    cuantosPorHoja.set(r.examen, (cuantosPorHoja.get(r.examen) ?? 0) + 1);
+  }
+  const hojas = [...cuantosPorHoja].map(([examen, cuantos]) => ({ examen, cuantos }));
   const yaPerfiles = await bd
     .select({ nombreBusca: esquema.perfil.nombreBusca })
     .from(esquema.perfil);
@@ -500,9 +512,14 @@ export async function cargarExamenesAlCatalogo(): Promise<{
     for (const c of creados) porNombre.set(normalizar(c.nombre), c.id);
   }
 
-  /* Los perfiles: una hoja con más de un analito. */
+  /* Los perfiles: una hoja con más de un analito. Los rótulos y la nota de
+     la gota gruesa no cuentan como miembro: con la nota, la gota gruesa
+     pasaba a «perfil de dos» y el cargador apagaba la gota gruesa como
+     examen suelto. */
   const porHoja = new Map<string, { analito: string; orden: number }[]>();
   for (const f of filas) {
+    const llaveDelRenglon = normalizar(f.analito);
+    if (!llaveDelRenglon || NO_SON_EXAMENES.has(llaveDelRenglon)) continue;
     const lista = porHoja.get(f.examen) ?? [];
     lista.push({ analito: f.analito, orden: f.orden });
     porHoja.set(f.examen, lista);
