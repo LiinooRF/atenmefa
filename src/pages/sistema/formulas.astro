@@ -1,0 +1,116 @@
+---
+/**
+ * Las fórmulas del laboratorio, en palabras.
+ *
+ * Antes solo se veían pasando el mouse sobre un renglón y vivían en el
+ * código. Acá están las catorce juntas, como se leen, y el bioanalista puede
+ * cambiar los tres números que dependen del reactivo: el ISI del INR, lo
+ * que se descuenta en la actividad y el divisor del VLDL. La forma de la
+ * cuenta no se cambia desde acá: una fórmula mal escrita da resultados
+ * equivocados en todos los informes. Ver lib/formulas.ts.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { CALCULOS as DE_FABRICA, comoSeLeeAhora, valorAjustable } from '../../sistema/calculos';
+import { calculosVigentes, cambiarConstante, cambiosDeConstantes } from '../../sistema/lib/formulas';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'editar_plantillas');
+if (corte) return corte;
+const usuario = Astro.locals.usuario!;
+
+let error = '';
+let tecleado: { clave: string; valor: string } | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const clave = String(form.get('clave') ?? '');
+  const valor = String(form.get('valor') ?? '');
+  try {
+    const hecho = await cambiarConstante(usuario, clave, valor);
+    return Astro.redirect(`/sistema/formulas?cambiado=${encodeURIComponent(hecho.analito)}`);
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo guardar.';
+    tecleado = { clave, valor };
+  }
+}
+
+const vigentes = await calculosVigentes();
+const cambios = await cambiosDeConstantes();
+const coma = (n: number | null) => (n === null ? '' : String(n).replace('.', ','));
+const deFabrica = (resultado: string) => valorAjustable(DE_FABRICA.find((c) => c.resultado === resultado)!);
+const cuando = (d: Date) => d.toLocaleString('es-VE', {
+  timeZone: 'America/Caracas', day: 'numeric', month: 'short', year: 'numeric',
+});
+
+const cambiado = Astro.url.searchParams.get('cambiado');
+---
+
+<Sistema titulo="Fórmulas del laboratorio">
+  <div class="cab">
+    <h1>Fórmulas del laboratorio</h1>
+    <p class="cab__nota">
+      Estos {vigentes.length} analitos se calculan solos al cargar resultados, con las cuentas
+      de su propio archivo. Siempre se puede escribir otro valor encima.
+    </p>
+  </div>
+
+  {cambiado && (
+    <p class="msj--bien" role="status">
+      {cambiado}: guardado. Las órdenes que se carguen desde ahora usan el número nuevo; los informes
+      ya entregados no cambian.
+    </p>
+  )}
+  {error && <p class="sis-error" role="alert">{error}</p>}
+
+  <ul class="lista">
+    {vigentes.map((c) => {
+      const n = valorAjustable(c);
+      const cambio = c.ajustable ? cambios.get(c.ajustable.clave) : undefined;
+      return (
+        <li class="sis-tarjeta formula">
+          <p class="formula__cuenta">
+            <strong>{c.resultado}</strong> = {comoSeLeeAhora(c)}
+          </p>
+          <p class="formula__usa">Usa: {c.insumos.join(' · ')}</p>
+
+          {c.ajustable && (
+            <form method="post" class="formula__ajuste">
+              <input type="hidden" name="clave" value={c.ajustable.clave} />
+              <div class="sis-campo">
+                <label for={`v-${c.ajustable.clave}`}>{c.ajustable.rotulo}</label>
+                <input id={`v-${c.ajustable.clave}`} name="valor" type="text" inputmode="decimal" required
+                       value={tecleado?.clave === c.ajustable.clave ? tecleado.valor : coma(n)} />
+              </div>
+              <button type="submit" class="sis-boton sis-boton--suave">Guardar</button>
+              <p class="formula__pista">
+                Entre {coma(c.ajustable.min)} y {coma(c.ajustable.max)}. De fábrica: {coma(deFabrica(c.resultado))}.
+                {cambio && <> Lo cambió {cambio.quien} el {cuando(cambio.cambiado)}.</>}
+              </p>
+            </form>
+          )}
+        </li>
+      );
+    })}
+  </ul>
+</Sistema>
+
+<style>
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 6px; max-width: 62ch; font-size: var(--u-sm); color: var(--tinta-suave); }
+  .msj--bien {
+    margin-top: 16px; padding: 11px 14px; border-radius: 8px;
+    background: #e4f2ea; border: 1px solid #a9d5bd; color: #105433; font-size: var(--u-sm);
+  }
+  .sis-error { margin-top: 16px; }
+  .lista { list-style: none; margin: 20px 0 0; padding: 0; display: grid; gap: 12px; }
+  .formula { padding: 14px 16px; }
+  .formula__cuenta { overflow-wrap: anywhere; }
+  .formula__usa { margin-top: 4px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .formula__ajuste {
+    display: grid; grid-template-columns: minmax(0, 240px) auto; align-items: end; gap: 8px 12px;
+    margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--linea-tenue);
+  }
+  .formula__pista { grid-column: 1 / -1; font-size: var(--u-sm); color: var(--tinta-tenue); }
+</style>

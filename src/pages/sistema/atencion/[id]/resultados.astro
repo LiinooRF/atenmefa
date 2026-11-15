@@ -36,12 +36,17 @@ import {
   examenesPedidos, guardarResultados, leerResultados, plantillasDeExamen, sinNombre,
 } from '../../../../sistema/lib/laboratorio';
 import type { Resultado } from '../../../../sistema/laboratorio';
-import { CALCULOS_EN_LLAVES, CALCULOS, SUMAN_CIEN } from '../../../../sistema/calculos';
+import { SUMAN_CIEN, comoSeLeeAhora, enLlaves } from '../../../../sistema/calculos';
+import { calculosVigentes } from '../../../../sistema/lib/formulas';
 
 export const prerender = false;
 
 const corte = exigir(Astro, 'cargar_resultados');
 if (corte) return corte;
+
+/* Las cuentas con los números que puso el laboratorio (el ISI del INR, la
+   constante de la actividad). Ver lib/formulas.ts. */
+const CALCULOS = await calculosVigentes();
 
 const { id } = Astro.params;
 const usuario = Astro.locals.usuario!;
@@ -347,7 +352,7 @@ const fechaLarga = (f: string) =>
 
       {/* Las cuentas del archivo del laboratorio. Viajan acá para que el
           campo se llene mientras se teclea, sin ir y volver al servidor. */}
-      <div class="tablon" data-calculos={JSON.stringify(CALCULOS_EN_LLAVES)}
+      <div class="tablon" data-calculos={JSON.stringify(enLlaves(CALCULOS))}
            data-suman-cien={JSON.stringify(SUMAN_CIEN)}
            data-sexo={registro.sexo ?? ''}>
         <table class="res">
@@ -439,7 +444,7 @@ const fechaLarga = (f: string) =>
         </p>
         <ul class="cuentas__lista">
           {CALCULOS.map((c) => (
-            <li><strong>{c.resultado}</strong> = {c.comoSeLee}</li>
+            <li><strong>{c.resultado}</strong> = {comoSeLeeAhora(c)}</li>
           ))}
         </ul>
         <p class="nota-ref">

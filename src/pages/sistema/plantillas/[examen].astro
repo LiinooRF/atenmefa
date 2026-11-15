@@ -13,7 +13,8 @@ import Icono from '../../../components/Icono.astro';
 import { anotar } from '../../../sistema/lib/atenciones';
 import { exigir } from '../../../sistema/lib/guardia';
 import { plantillaDe, guardarPlantilla } from '../../../sistema/lib/laboratorio';
-import { CALCULOS_EN_LLAVES, llaveDeAnalito } from '../../../sistema/calculos';
+import { enLlaves, llaveDeAnalito } from '../../../sistema/calculos';
+import { calculosVigentes } from '../../../sistema/lib/formulas';
 
 export const prerender = false;
 
@@ -79,7 +80,7 @@ const faltanDeVerdad = analitos.filter((f) => faltaRango(f)).length;
 /* Qué renglón se calcula solo en la pantalla de resultados y cómo, para
    pintárselo acá: que el laboratorio vea la fórmula que ya está andando
    antes de meterle mano al renglón. */
-const formulaDe = new Map(CALCULOS_EN_LLAVES.map((c) => [c.resultado, c.comoSeLee]));
+const formulaDe = new Map(enLlaves(await calculosVigentes()).map((c) => [c.resultado, c.comoSeLee]));
 const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito));
 ---
 

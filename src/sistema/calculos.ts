@@ -81,8 +81,16 @@ export interface Calculo {
   insumos: string[];
   operacion: Operacion;
   decimales: number;
-  /** Para explicarlo en pantalla, en palabras. */
+  /** Para explicarlo en pantalla, en palabras. `{n}` es el número ajustable. */
   comoSeLee: string;
+  /**
+   * El número de la cuenta que depende del laboratorio y no de la
+   * aritmética: el ISI del reactivo, la constante de la actividad, el
+   * divisor del VLDL. El laboratorio lo cambia en la pantalla de fórmulas;
+   * lo demás —el ×10 del VCM, los 1440 minutos del día— es conversión de
+   * unidades y no se toca. Ver lib/formulas.ts.
+   */
+  ajustable?: { clave: string; rotulo: string; min: number; max: number };
 }
 
 export const CALCULOS: readonly Calculo[] = [
@@ -91,7 +99,8 @@ export const CALCULOS: readonly Calculo[] = [
     insumos: ['TRIGLICERIDOS'],
     operacion: { tipo: 'dividirPor', por: 5 },
     decimales: 1,
-    comoSeLee: 'triglicéridos ÷ 5',
+    comoSeLee: 'triglicéridos ÷ {n}',
+    ajustable: { clave: 'vldl_divisor', rotulo: 'Divisor de los triglicéridos', min: 1, max: 10 },
   },
   {
     /* Friedewald, y es la de su hoja: =U13-U14-U16. Depende del VLDL, que a
@@ -177,7 +186,8 @@ export const CALCULOS: readonly Calculo[] = [
     insumos: ['TIEMPO CONTROL', 'TIEMPO PACIENTE'],
     operacion: { tipo: 'relacionDescontada', descuento: 7.2 },
     decimales: 1,
-    comoSeLee: '(tiempo control − 7,2) ÷ (tiempo del paciente − 7,2) × 100',
+    comoSeLee: '(tiempo control − {n}) ÷ (tiempo del paciente − {n}) × 100',
+    ajustable: { clave: 'actividad_descuento', rotulo: 'Lo que se descuenta a los dos tiempos', min: 0, max: 20 },
   },
   {
     /* =T15/U14. El nombre lleva los dos puntos que trae su hoja. */
@@ -196,7 +206,8 @@ export const CALCULOS: readonly Calculo[] = [
     insumos: ['TIEMPO PACIENTE', 'TIEMPO CONTROL'],
     operacion: { tipo: 'potenciaDeCociente', exponente: 1.17 },
     decimales: 2,
-    comoSeLee: '(tiempo del paciente ÷ tiempo control) elevado a 1,17',
+    comoSeLee: '(tiempo del paciente ÷ tiempo control) elevado a {n}',
+    ajustable: { clave: 'inr_isi', rotulo: 'ISI del reactivo', min: 0.5, max: 3 },
   },
   {
     /* =T23-U22, en el bloque del PTT. */
@@ -270,11 +281,39 @@ export function calcular(c: Calculo, valores: readonly (number | null)[]): numbe
   }
 }
 
-/** Lo que viaja al navegador: lo mismo, con las llaves ya resueltas. */
-export const CALCULOS_EN_LLAVES = CALCULOS.map((c) => ({
+/** El número ajustable de una cuenta, tal como está en su operación. */
+export function valorAjustable(c: Calculo): number | null {
+  if (!c.ajustable) return null;
+  const o = c.operacion;
+  if (o.tipo === 'dividirPor') return o.por;
+  if (o.tipo === 'relacionDescontada') return o.descuento;
+  if (o.tipo === 'potenciaDeCociente') return o.exponente;
+  return null;
+}
+
+/** La misma cuenta con otro valor en su número ajustable. */
+export function conValor(c: Calculo, n: number): Calculo {
+  const o = c.operacion;
+  if (o.tipo === 'dividirPor') return { ...c, operacion: { ...o, por: n } };
+  if (o.tipo === 'relacionDescontada') return { ...c, operacion: { ...o, descuento: n } };
+  if (o.tipo === 'potenciaDeCociente') return { ...c, operacion: { ...o, exponente: n } };
+  return c;
+}
+
+/** Cómo se lee, con el número que tiene ahora y con coma decimal. */
+export const comoSeLeeAhora = (c: Calculo) => {
+  const n = valorAjustable(c);
+  return n === null ? c.comoSeLee : c.comoSeLee.replaceAll('{n}', String(n).replace('.', ','));
+};
+
+/** Lo que viaja al navegador: las cuentas con las llaves ya resueltas. */
+export const enLlaves = (calculos: readonly Calculo[]) => calculos.map((c) => ({
   resultado: llaveDeAnalito(c.resultado),
   insumos: c.insumos.map(llaveDeAnalito),
   operacion: c.operacion,
   decimales: c.decimales,
-  comoSeLee: c.comoSeLee,
+  comoSeLee: comoSeLeeAhora(c),
 }));
+
+/** Con los valores de fábrica. Las pantallas usan calculosVigentes() de lib/formulas.ts. */
+export const CALCULOS_EN_LLAVES = enLlaves(CALCULOS);

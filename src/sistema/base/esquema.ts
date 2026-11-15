@@ -243,6 +243,14 @@ export const interconsulta = pgTable('interconsulta', {
   anuladaMotivo: text('anulada_motivo'),
 });
 
+/** Lo que el laboratorio le puso a un número de sus fórmulas. Ver 027-formulas.sql. */
+export const formulaConstante = pgTable('formula_constante', {
+  clave: text('clave').primaryKey(),
+  valor: numeric('valor', { precision: 10, scale: 4 }).notNull(),
+  cambiadoPor: text('cambiado_por').notNull().references(() => user.id),
+  cambiado: timestamp('cambiado', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const bitacora = pgTable('bitacora', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
   usuarioId: text('usuario_id').references(() => user.id),
