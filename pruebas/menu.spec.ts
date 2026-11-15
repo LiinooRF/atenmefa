@@ -49,8 +49,9 @@ test('administración ve siete entradas en vez de once sueltas', async ({ page }
     page.locator('.sis__grupo').filter({ hasText: grupo }).locator('.sis__menu a')
       .evaluateAll((a) => a.map((x) => (x.textContent ?? '').trim()));
 
+  expect(await dentro('Casos')).toEqual(['Casos', 'Interconsultas']);
   expect(await dentro('Cobros')).toEqual([
-    'Cierre del mes', 'Servicios y precios', 'Perfiles del laboratorio',
+    'Cierre del mes', 'Servicios y precios', 'Perfiles del laboratorio', 'Especialistas',
   ]);
   expect(await dentro('Reportes')).toEqual(['Tablero', 'Marketing del sitio']);
   expect(await dentro('Administración')).toEqual([

@@ -44,6 +44,8 @@ interface Bloque { texto: string; icono: Icono; entradas: Entrada[] }
 const MENU: Bloque[] = [
   { texto: 'Casos', icono: 'estetoscopio', entradas: [
     { href: '/sistema', texto: 'Casos', permiso: 'ver_casos' },
+    /* Lo que los médicos derivaron a un especialista y hay que contactar. */
+    { href: '/sistema/interconsultas', texto: 'Interconsultas', permiso: 'gestionar_interconsultas' },
   ] },
   { texto: 'Nueva atención', icono: 'mas', entradas: [
     { href: '/sistema/atencion/nueva', texto: 'Nueva atención', permiso: 'escribir_historia' },
@@ -74,6 +76,7 @@ const MENU: Bloque[] = [
     { href: '/sistema/cierre', texto: 'Cierre del mes', permiso: 'ver_cierre' },
     { href: '/sistema/servicios', texto: 'Servicios y precios', permiso: 'editar_catalogo' },
     { href: '/sistema/perfiles', texto: 'Perfiles del laboratorio', permiso: 'editar_catalogo' },
+    { href: '/sistema/especialistas', texto: 'Especialistas', permiso: 'editar_catalogo' },
   ] },
   { texto: 'Reportes', icono: 'latido', entradas: [
     { href: '/sistema/tablero', texto: 'Tablero', permiso: 'ver_cierre' },

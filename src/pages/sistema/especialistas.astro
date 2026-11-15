@@ -1,0 +1,186 @@
+---
+/**
+ * Los especialistas, con lo que cobran y su WhatsApp.
+ *
+ * Es la libreta que administración tenía para las interconsultas, pero
+ * acá: cuando un médico pide oftalmología, la lista de interconsultas
+ * muestra los oftalmólogos de esta pantalla con su precio y el botón para
+ * escribirles. Ninguno viene cargado: los nombres, los números y los
+ * precios son del centro.
+ *
+ * Un especialista no se borra, se apaga: las interconsultas viejas dicen a
+ * quién se le escribió.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { dinero } from '../../sistema/lib/cobro';
+import { comoSeLee } from '../../sistema/lib/telefono';
+import {
+  activarEspecialista, especialistaPorId, guardarEspecialista, listarEspecialistas,
+} from '../../sistema/lib/interconsultas';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'editar_catalogo');
+if (corte) return corte;
+const usuario = Astro.locals.usuario!;
+
+let error = '';
+let tecleado: Record<string, string> | null = null;
+
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  const accion = String(form.get('accion') ?? '');
+  const id = String(form.get('id') ?? '');
+  try {
+    if (accion === 'guardar') {
+      tecleado = Object.fromEntries(
+        ['especialidad', 'nombre', 'whatsapp', 'precio', 'notas'].map((k) => [k, String(form.get(k) ?? '')]),
+      );
+      await guardarEspecialista(usuario, id || null, tecleado);
+      return Astro.redirect(`/sistema/especialistas?hecho=${id ? 'editado' : 'creado'}`);
+    }
+    if (accion === 'apagar' || accion === 'prender') {
+      await activarEspecialista(usuario, id, accion === 'prender');
+      return Astro.redirect(`/sistema/especialistas?hecho=${accion}`);
+    }
+    return Astro.redirect('/sistema/especialistas');
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo guardar.';
+  }
+}
+
+const editando = await especialistaPorId(Astro.url.searchParams.get('editar') ?? '');
+const todos = await listarEspecialistas();
+const especialidadesConocidas = [...new Set(todos.map((e) => e.especialidad))];
+
+const valor = (k: 'especialidad' | 'nombre' | 'whatsapp' | 'precio' | 'notas') => {
+  if (tecleado) return tecleado[k] ?? '';
+  if (!editando) return '';
+  if (k === 'whatsapp') return editando.whatsapp ? comoSeLee(editando.whatsapp) : '';
+  if (k === 'precio') return editando.precio ? dinero(editando.precio) : '';
+  return (editando[k] ?? '') as string;
+};
+
+const hecho = Astro.url.searchParams.get('hecho');
+const aviso = {
+  creado: 'Especialista cargado. Ya aparece en las interconsultas de su área.',
+  editado: 'Cambios guardados.',
+  apagar: 'Apagado: deja de aparecer en las interconsultas.',
+  prender: 'Prendido otra vez.',
+}[hecho ?? ''] ?? '';
+---
+
+<Sistema titulo="Especialistas">
+  <div class="cab">
+    <div>
+      <h1>Especialistas</h1>
+      <p class="cab__nota">
+        A quién se le manda una interconsulta, cuánto cobra y su WhatsApp.
+        <a href="/sistema/interconsultas">Ver las interconsultas</a>
+      </p>
+    </div>
+  </div>
+
+  {aviso && <p class="msj--bien" role="status">{aviso}</p>}
+  {error && <p class="sis-error" role="alert">{error}</p>}
+
+  <div class="col">
+    <section class="sis-tarjeta">
+      <h2>{editando ? `Corregir a ${editando.nombre}` : 'Cargar un especialista'}</h2>
+      <form method="post" class="form">
+        <input type="hidden" name="accion" value="guardar" />
+        {editando && <input type="hidden" name="id" value={editando.id} />}
+        <div class="sis-campo">
+          <label for="especialidad">Especialidad</label>
+          <input id="especialidad" name="especialidad" type="text" required maxlength="120"
+                 list="especialidades" value={valor('especialidad')} placeholder="Oftalmología" />
+          <datalist id="especialidades">
+            {especialidadesConocidas.map((e) => <option value={e}></option>)}
+          </datalist>
+        </div>
+        <div class="sis-campo">
+          <label for="nombre">Nombre</label>
+          <input id="nombre" name="nombre" type="text" required maxlength="160" value={valor('nombre')} />
+        </div>
+        <div class="sis-campo">
+          <label for="whatsapp">WhatsApp</label>
+          <input id="whatsapp" name="whatsapp" type="tel" maxlength="40" value={valor('whatsapp')}
+                 placeholder="0414-1234567" />
+        </div>
+        <div class="sis-campo">
+          <label for="precio">Precio de la consulta <span class="pista">en dólares</span></label>
+          <input id="precio" name="precio" type="text" inputmode="decimal" maxlength="30"
+                 value={valor('precio')} placeholder="40,00" />
+        </div>
+        <div class="sis-campo">
+          <label for="notas">Notas <span class="pista">días que atiende, si va a domicilio, otros servicios y su precio</span></label>
+          <textarea id="notas" name="notas" rows="2" maxlength="500">{valor('notas')}</textarea>
+        </div>
+        <div class="form__pie">
+          <button type="submit" class="sis-boton sis-boton--primario">{editando ? 'Guardar cambios' : 'Cargar'}</button>
+          {editando && <a href="/sistema/especialistas">Cancelar</a>}
+        </div>
+      </form>
+    </section>
+
+    <section class="sis-tarjeta">
+      <h2>Los que hay <span class="cuantos">{todos.length}</span></h2>
+      {todos.length === 0 ? (
+        <p class="pista">
+          Todavía no hay ninguno. Hasta que se cargue el primero, las interconsultas
+          se ven en la lista pero sin a quién escribirle.
+        </p>
+      ) : (
+        <ul class="lista">
+          {todos.map((e) => (
+            <li class:list={[!e.activo && 'lista--apagado']}>
+              <div>
+                <strong>{e.nombre}</strong>
+                <span class="lista__area">{e.especialidad}</span>
+                <p class="pista">
+                  {e.precio ? `${dinero(e.precio)} ${e.moneda}` : 'Sin precio'}
+                  {' · '}
+                  {e.whatsapp ? comoSeLee(e.whatsapp) : 'sin WhatsApp'}
+                  {!e.activo && ' · apagado'}
+                </p>
+              </div>
+              <div class="lista__acciones">
+                <a href={`/sistema/especialistas?editar=${e.id}`}>Corregir</a>
+                <form method="post">
+                  <input type="hidden" name="accion" value={e.activo ? 'apagar' : 'prender'} />
+                  <input type="hidden" name="id" value={e.id} />
+                  <button type="submit" class="sis-boton sis-boton--suave">{e.activo ? 'Apagar' : 'Prender'}</button>
+                </form>
+              </div>
+            </li>
+          ))}
+        </ul>
+      )}
+    </section>
+  </div>
+</Sistema>
+
+<style>
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .msj--bien {
+    margin-top: 16px; padding: 11px 14px; border-radius: 8px;
+    background: #e4f2ea; border: 1px solid #a9d5bd; color: #105433; font-size: var(--u-sm);
+  }
+  .sis-error { margin-top: 16px; }
+  .col { display: grid; gap: 16px; margin-top: 20px; grid-template-columns: minmax(0, 1fr); }
+  @media (min-width: 900px) { .col { grid-template-columns: minmax(0, 2fr) minmax(0, 3fr); align-items: start; } }
+  .sis-tarjeta { padding: 18px; }
+  .sis-tarjeta h2 { font-size: var(--u-md); }
+  .form { display: grid; gap: 12px; margin-top: 12px; }
+  .pista { font-size: var(--u-sm); color: var(--tinta-tenue); font-weight: 400; }
+  .form__pie { display: flex; align-items: center; gap: 14px; }
+  .cuantos { margin-left: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .lista { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 1px; }
+  .lista li { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 8px 14px; padding: 11px 0; border-top: 1px solid var(--linea-tenue); }
+  .lista li:first-child { border-top: 0; }
+  .lista__area { margin-left: 8px; font-size: var(--u-xs); padding: 2px 9px; border-radius: 999px; background: var(--azul-tenue); }
+  .lista--apagado strong { color: var(--tinta-tenue); }
+  .lista__acciones { display: flex; align-items: center; gap: 12px; font-size: var(--u-sm); }
+</style>

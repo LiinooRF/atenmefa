@@ -21,6 +21,9 @@ import {
   ROTULO_AGREGADO, agregadosDe, agregar, anularAgregado, lineasDeExamenes,
 } from '../../../sistema/lib/agregados';
 import Diagnostico from '../../../components/sistema/Diagnostico.astro';
+import {
+  ROTULO_ESTADO, especialidades, interconsultasDe, pedirInterconsulta,
+} from '../../../sistema/lib/interconsultas';
 
 export const prerender = false;
 
@@ -101,6 +104,8 @@ const tomable = puedeTomarCaso(usuario, { ...caso, escrita });
    a escribir. Las reglas las mira lib/agregados.ts, no esto. */
 let errorAgregado = '';
 let tecleado = { tipo: 'nota', texto: '', dx: '', dxCodigo: '' };
+let errorInterconsulta = '';
+let pedido = { especialidad: '', otra: '', motivo: '' };
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
@@ -148,6 +153,23 @@ if (Astro.request.method === 'POST') {
       return Astro.redirect(`/sistema/atencion/${caso.id}?agregado=1#agregados`);
     } catch (e) {
       errorAgregado = e instanceof Error ? e.message : 'No se pudo agregar.';
+    }
+  } else if (accion === 'pedir_interconsulta') {
+    pedido = {
+      especialidad: String(form.get('especialidad') ?? ''),
+      otra: String(form.get('otra') ?? ''),
+      motivo: String(form.get('motivo_interconsulta') ?? ''),
+    };
+    try {
+      await pedirInterconsulta(usuario, caso.id, {
+        /* «Otra» es para la especialidad que todavía no tiene especialista
+           cargado: el médico no tiene por qué saber quién está en la lista. */
+        especialidad: pedido.especialidad === '__otra' ? pedido.otra : pedido.especialidad,
+        motivo: pedido.motivo,
+      });
+      return Astro.redirect(`/sistema/atencion/${caso.id}?interconsulta=1#interconsultas`);
+    } catch (e) {
+      errorInterconsulta = e instanceof Error ? e.message : 'No se pudo pedir la interconsulta.';
     }
   } else if (accion === 'anular_agregado') {
     try {
@@ -240,6 +262,16 @@ const cuando = (d: Date) => d.toLocaleString('es-VE', {
   hour: 'numeric', minute: '2-digit',
 });
 const campoDx = { clave: 'dx_agregado', rotulo: 'Diagnóstico', tipo: 'diagnostico', ancho: 4 } as const;
+
+/* Las interconsultas de esta consulta. Se piden con el caso abierto o ya
+   cerrado: lo que no se hace es pedir una desde una anulada. */
+const interconsultas = esLab ? [] : await interconsultasDe(caso.id);
+const puedePedirInterconsulta = !esLab && caso.estado !== 'anulada'
+  && puede(usuario.rol as string, 'pedir_interconsulta');
+const lasEspecialidades = puedePedirInterconsulta ? await especialidades() : [];
+const avisoInterconsulta = Astro.url.searchParams.get('interconsulta') === '1'
+  ? 'Interconsulta pedida. Administración la ve en su lista y contacta al especialista.'
+  : '';
 
 /* Una cuenta por moneda, como en la pantalla de cobro. Dólares y bolívares
    no se suman: el número que saldría de mezclarlos no se le puede pasar a
@@ -503,7 +535,7 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
                       {puedeAnularAgregado && (
                         <details class="agregado__anular">
                           <summary>Anular</summary>
-                          <form method="post">
+                          <form method="post" class="sis-campo">
                             <input type="hidden" name="accion" value="anular_agregado" />
                             <input type="hidden" name="agregado" value={a.id} />
                             <label for={`motivo-${a.id}`}>¿Por qué se anula?</label>
@@ -532,20 +564,75 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
                 ))}
               </fieldset>
 
-              <div class="agregar__campo" data-para="nota">
+              <div class="agregar__campo sis-campo" data-para="nota">
                 <label for="nota_texto">Nota</label>
                 <textarea id="nota_texto" name="nota_texto" rows="4" maxlength="4000">{tecleado.tipo === 'nota' ? tecleado.texto : ''}</textarea>
               </div>
-              <div class="agregar__campo" data-para="diagnostico">
+              <div class="agregar__campo sis-campo" data-para="diagnostico">
                 <Diagnostico campo={campoDx} valor={tecleado.dx} codigo={tecleado.dxCodigo} />
               </div>
-              <div class="agregar__campo" data-para="examenes">
+              <div class="agregar__campo sis-campo" data-para="examenes">
                 <label for="examenes_texto">Exámenes indicados <span class="lado__vacio">· uno por línea</span></label>
                 <textarea id="examenes_texto" name="examenes_texto" rows="4" maxlength="4000">{tecleado.tipo === 'examenes' ? tecleado.texto : ''}</textarea>
                 <p class="lado__vacio">Recepción los ve en su cola y registra la orden con su precio.</p>
               </div>
 
               <button type="submit" class="sis-boton sis-boton--azul">Agregar</button>
+            </form>
+          )}
+        </section>
+      )}
+
+      {!esLab && (interconsultas.length > 0 || puedePedirInterconsulta || errorInterconsulta) && (
+        <section class="ficha interconsultas" id="interconsultas">
+          <h2>Interconsultas</h2>
+          {avisoInterconsulta && <p class="msj--bien" role="status">{avisoInterconsulta}</p>}
+          {errorInterconsulta && <p class="sis-error" role="alert">{errorInterconsulta}</p>}
+
+          {interconsultas.length > 0 && (
+            <ul class="ic__lista">
+              {interconsultas.map((ic) => (
+                <li class:list={['ic', `ic--${ic.estado}`]}>
+                  <p class="ic__cabeza">
+                    <strong>{ic.especialidad}</strong>
+                    <span class="ic__estado">{ROTULO_ESTADO[ic.estado]}</span>
+                  </p>
+                  {ic.motivo && <p class="ic__motivo">{ic.motivo}</p>}
+                  <p class="lado__vacio">
+                    Pedida por {ic.medico}, {cuando(ic.pedida)}
+                    {ic.especialista && <> · se le escribió a {ic.especialista}</>}
+                    {ic.anuladaMotivo && <> · anulada: {ic.anuladaMotivo}</>}
+                  </p>
+                </li>
+              ))}
+            </ul>
+          )}
+
+          {puedePedirInterconsulta && (
+            <form method="post" class="ic__pedir" data-interconsulta>
+              <input type="hidden" name="accion" value="pedir_interconsulta" />
+              <div class="agregar__campo sis-campo">
+                <label for="especialidad">Especialidad</label>
+                <select id="especialidad" name="especialidad" required>
+                  <option value="" disabled selected={!pedido.especialidad}>Elija una</option>
+                  {lasEspecialidades.map((e) => (
+                    <option value={e} selected={pedido.especialidad === e}>{e}</option>
+                  ))}
+                  <option value="__otra" selected={pedido.especialidad === '__otra'}>
+                    {lasEspecialidades.length ? 'Otra, que no está en la lista' : 'Escribirla'}
+                  </option>
+                </select>
+              </div>
+              <div class="agregar__campo sis-campo" data-otra>
+                <label for="otra">¿Cuál?</label>
+                <input id="otra" name="otra" type="text" maxlength="120" value={pedido.otra}
+                       placeholder="Oftalmología, nefrología…" />
+              </div>
+              <div class="agregar__campo sis-campo">
+                <label for="motivo_interconsulta">Para qué <span class="lado__vacio">· lo que tiene que mirar el especialista</span></label>
+                <textarea id="motivo_interconsulta" name="motivo_interconsulta" rows="3" maxlength="2000">{pedido.motivo}</textarea>
+              </div>
+              <button type="submit" class="sis-boton sis-boton--azul">Pedir la interconsulta</button>
             </form>
           )}
         </section>
@@ -867,6 +954,22 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
   .agregar__campo { display: grid; gap: 6px; }
   .agregar__campo textarea { width: 100%; }
   .agregar__campo[hidden] { display: none; }
+
+  .interconsultas .msj--bien {
+    margin-top: 12px; padding: 10px 13px; border-radius: 8px;
+    background: #e4f2ea; border: 1px solid #a9d5bd; color: #105433; font-size: var(--u-sm);
+  }
+  .ic__lista { list-style: none; margin: 10px 0 0; padding: 0; display: grid; gap: 1px; }
+  .ic { padding: 11px 0; border-top: 1px solid var(--linea-tenue); }
+  .ic__cabeza { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 6px 12px; }
+  .ic__estado { font-size: var(--u-xs); padding: 2px 9px; border-radius: 999px; background: var(--azul-tenue); }
+  .ic--pendiente .ic__estado { background: #fff1cc; color: #6b4b00; }
+  .ic--atendida .ic__estado { background: #e4f2ea; color: #15663f; }
+  .ic--anulada .ic__cabeza strong { text-decoration: line-through; color: var(--tinta-tenue); }
+  .ic__motivo { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .ic__pedir { display: grid; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--linea); }
+  .ic__pedir select, .ic__pedir input, .ic__pedir textarea { width: 100%; }
+  [data-otra][hidden] { display: none; }
   .lado__quien { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--linea-tenue); font-size: var(--u-sm); color: var(--tinta-suave); }
 
   .renglones { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
@@ -914,5 +1017,15 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
       if ((e.target as HTMLInputElement).name === 'tipo') mostrar();
     });
     mostrar();
+  }
+
+  /* «¿Cuál?» solo cuando se eligió «Otra». Sin JS se ve siempre. */
+  const ic = document.querySelector<HTMLFormElement>('[data-interconsulta]');
+  if (ic) {
+    const lista = ic.querySelector<HTMLSelectElement>('select[name="especialidad"]')!;
+    const otra = ic.querySelector<HTMLElement>('[data-otra]')!;
+    const ver = () => { otra.hidden = lista.value !== '__otra'; };
+    lista.addEventListener('change', ver);
+    ver();
   }
 </script>

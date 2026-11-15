@@ -50,6 +50,8 @@ export type Permiso =
   | 'abrir_consulta'       // admitir el caso en el mesón para que el médico lo escriba
   | 'cerrar_atencion'      // firmar y cerrar
   | 'agregar_al_caso'      // sumarle notas, diagnósticos o exámenes a una cerrada, sin editarla
+  | 'pedir_interconsulta'  // derivar al paciente a un especialista
+  | 'gestionar_interconsultas' // contactar al especialista y llevar la interconsulta
   | 'anular_atencion'      // dejar sin efecto una cerrada, con motivo
   | 'imprimir_documento'   // el "2 en 1"
   | 'cargar_cobro'         // renglones de una atención
@@ -87,6 +89,9 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
        segunda vez puede ser otro. Agrega debajo de lo cerrado y no lo
        edita; anularlo es de administración. Ver 024-agregados.sql. */
     'agregar_al_caso',
+    /* Él ve que el problema no le toca y elige la especialidad. A quién
+       se le escribe y cuánto cobra lo resuelve administración. */
+    'pedir_interconsulta',
     'imprimir_documento',
     'enviar_documento',
     'cargar_cobro',
@@ -125,6 +130,9 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
     'cola_laboratorio',
     'registrar_laboratorio',
     'enviar_documento',
+    /* La lista de interconsultas pendientes, con el especialista, su
+       precio y el botón de WhatsApp. Ver 026-interconsultas.sql. */
+    'gestionar_interconsultas',
   ],
 
   /**
@@ -336,6 +344,8 @@ export const porQueNo: Record<Permiso, string> = {
   cerrar_atencion: 'Solo el personal médico cierra y firma una atención.',
   anular_atencion: 'Solo administración puede anular una atención cerrada.',
   agregar_al_caso: 'Solo el personal médico le agrega notas a una atención cerrada.',
+  pedir_interconsulta: 'Las interconsultas las pide el médico.',
+  gestionar_interconsultas: 'Las interconsultas las lleva administración.',
   imprimir_documento: 'Su usuario no puede imprimir el documento.',
   cargar_cobro: 'El cobro lo carga administración.',
   editar_catalogo: 'El catálogo de servicios lo maneja administración.',

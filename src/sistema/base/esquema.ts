@@ -210,6 +210,39 @@ export const agregado = pgTable('agregado', {
   index('agregado_atencion_idx').on(t.atencionId, t.creado),
 ]);
 
+/** A quién se le manda una interconsulta. Ver 026-interconsultas.sql. */
+export const especialista = pgTable('especialista', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  especialidad: text('especialidad').notNull(),
+  especialidadBusca: text('especialidad_busca').notNull(),
+  nombre: text('nombre').notNull(),
+  whatsapp: text('whatsapp'),
+  precio: numeric('precio', { precision: 14, scale: 2 }),
+  moneda: text('moneda').notNull().default('USD'),
+  notas: text('notas'),
+  activo: boolean('activo').notNull().default(true),
+  creado: timestamp('creado', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Lo que el médico deriva a un especialista. Ver 026-interconsultas.sql. */
+export const interconsulta = pgTable('interconsulta', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  atencionId: uuid('atencion_id').notNull().references(() => atencion.id),
+  especialidad: text('especialidad').notNull(),
+  especialidadBusca: text('especialidad_busca').notNull(),
+  motivo: text('motivo').notNull().default(''),
+  pedidaPor: text('pedida_por').notNull().references(() => user.id),
+  pedida: timestamp('pedida', { withTimezone: true }).notNull().defaultNow(),
+  estado: text('estado').notNull().default('pendiente')
+    .$type<'pendiente' | 'contactada' | 'atendida' | 'anulada'>(),
+  especialistaId: uuid('especialista_id').references(() => especialista.id),
+  contactadaPor: text('contactada_por').references(() => user.id),
+  contactada: timestamp('contactada', { withTimezone: true }),
+  atendida: timestamp('atendida', { withTimezone: true }),
+  anuladaPor: text('anulada_por').references(() => user.id),
+  anuladaMotivo: text('anulada_motivo'),
+});
+
 export const bitacora = pgTable('bitacora', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
   usuarioId: text('usuario_id').references(() => user.id),
