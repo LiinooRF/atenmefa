@@ -33,17 +33,16 @@ if (Astro.request.method === 'POST') {
   const unidades = form.getAll('unidad').map(String);
   const referencias = form.getAll('referencia').map(String);
   const opciones = form.getAll('opciones').map(String);
-  /* Las casillas sin marcar no viajan en un formulario, así que cada fila
-     manda además un campo oculto con su número y la casilla manda el
-     mismo: lo que queda marcado es lo que aparece en la lista corta. */
-  const filaDe = form.getAll('fila').map(String);
-  const titulos = new Set(form.getAll('titulo').map(String));
+  /* Cada fila manda su tipo en una lista, y una lista siempre viaja: los
+     arreglos quedan parejos sin el truco del número de fila que hacía
+     falta con la casilla de «subtítulo». */
+  const tipos = form.getAll('tipo').map(String);
 
   /* Los arreglos vienen del mismo formulario y tienen que medir lo mismo.
      Si no, algo se perdió en el camino y guardar emparejaría el rango de
      un analito con el de al lado: se para acá. */
   if (analitos.length !== unidades.length || analitos.length !== referencias.length
-      || analitos.length !== opciones.length || analitos.length !== filaDe.length) {
+      || analitos.length !== opciones.length || analitos.length !== tipos.length) {
     error = 'Los renglones llegaron incompletos. Vuelva a cargar la página y pruebe otra vez.';
   } else {
     const cuantos = await guardarPlantilla(
@@ -53,7 +52,7 @@ if (Astro.request.method === 'POST') {
         unidad: unidades[i],
         referencia: referencias[i],
         opciones: opciones[i],
-        tipo: titulos.has(filaDe[i]) ? 'titulo' : 'analito',
+        tipo: tipos[i],
       })),
     );
     await anotar(usuario.id, 'plantilla', undefined, { examen, renglones: cuantos });
@@ -69,13 +68,23 @@ if (filas.length === 0 && !aviso) return Astro.redirect('/sistema/plantillas');
    Ya no se adivina por descarte; es un dato de la fila, y se cambia con la
    casilla de la derecha. */
 const esTitulo = (f: { tipo: string }) => f.tipo === 'titulo';
+/* Solo el que se mide puede estar «sin rango». El subtítulo es un
+   encabezado y el que escribe el bioanalista —el gram, el frotis— es un
+   texto: ninguno de los dos lleva rango nunca. */
+const esMedido = (f: { tipo: string }) => f.tipo === 'analito';
 const analitos = filas.filter((f) => !esTitulo(f));
 /* El que se responde con menú no está esperando un rango: la falta es del
    que no tiene ni rango ni menú, y así la hoja de orina no amanece entera
    pintada de amarillo cuando ya está completa. */
 const faltaRango = (f: { referencia: string; opciones: string }) =>
   !f.referencia.trim() && !f.opciones.trim();
-const faltanDeVerdad = analitos.filter((f) => faltaRango(f)).length;
+const faltanDeVerdad = filas.filter((f) => esMedido(f) && faltaRango(f)).length;
+
+const TIPOS = [
+  { valor: 'analito', rotulo: 'Resultado' },
+  { valor: 'texto', rotulo: 'Lo escribe el bioanalista' },
+  { valor: 'titulo', rotulo: 'Subtítulo' },
+] as const;
 
 /* Qué renglón se calcula solo en la pantalla de resultados y cómo, para
    pintárselo acá: que el laboratorio vea la fórmula que ya está andando
@@ -114,14 +123,15 @@ const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito)
             <th scope="col">Unidad</th>
             <th scope="col">Valor de referencia</th>
             <th scope="col" class="pl__opc">Menú de opciones</th>
-            <th scope="col" class="pl__es">Subtítulo</th>
+            <th scope="col" class="pl__es">Tipo</th>
             <th scope="col"><span class="oculto">Quitar</span></th>
           </tr>
         </thead>
         <tbody id="pl-cuerpo">
           {filas.map((f, i) => (
-            <tr data-falta={faltaRango(f) && !esTitulo(f) ? '' : undefined}
-                data-titulo={esTitulo(f) ? '' : undefined}>
+            <tr data-falta={faltaRango(f) && esMedido(f) ? '' : undefined}
+                data-titulo={esTitulo(f) ? '' : undefined}
+                data-texto={f.tipo === 'texto' ? '' : undefined}>
               <td data-rotulo="Analito">
                 <input type="hidden" name="fila" value={String(i)} />
                 <input type="text" name="analito" value={f.analito}
@@ -146,13 +156,12 @@ const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito)
                        aria-label={`Opciones de ${f.analito}`}
                        placeholder="NEGATIVO / POSITIVO" autocomplete="off" />
               </td>
-              <td class="pl__es" data-rotulo="Subtítulo">
-                <label class="marca">
-                  <input type="checkbox" name="titulo" value={String(i)}
-                         checked={esTitulo(f)}
-                         aria-label={`${f.analito} es un subtítulo del informe`} />
-                  <span class="oculto">Es un subtítulo</span>
-                </label>
+              <td class="pl__es" data-rotulo="Tipo">
+                <select name="tipo" aria-label={`Tipo de ${f.analito || `el renglón ${i + 1}`}`}>
+                  {TIPOS.map((t) => (
+                    <option value={t.valor} selected={f.tipo === t.valor}>{t.rotulo}</option>
+                  ))}
+                </select>
               </td>
               <td class="pl__quitar">
                 <button type="button" class="quitar" data-quitar
@@ -232,13 +241,15 @@ const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito)
       const fila = molde.cloneNode(true) as HTMLTableRowElement;
       fila.removeAttribute('data-falta');
       fila.removeAttribute('data-titulo');
+      fila.removeAttribute('data-texto');
 
       const numero = String(proximo++);
       fila.querySelectorAll('input').forEach((i) => {
         const campo = i as HTMLInputElement;
-        if (campo.type === 'checkbox') { campo.checked = false; campo.value = numero; return; }
         campo.value = campo.name === 'fila' ? numero : '';
       });
+      const tipo = fila.querySelector<HTMLSelectElement>('select[name="tipo"]');
+      if (tipo) tipo.value = 'analito';
 
       cuerpo.appendChild(fila);
       fila.querySelector<HTMLInputElement>('input[name="analito"]')?.focus();
@@ -264,22 +275,24 @@ const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito)
       if (campo.value.trim()) fila?.removeAttribute('data-falta');
     });
 
-    /* Marcar «subtítulo» apaga la unidad y el rango en el acto: así se ve
-       que ese renglón deja de ser un analito antes de guardar. */
+    /* Cambiar el tipo apaga en el acto lo que ese renglón ya no lleva: un
+       subtítulo o un texto no tienen unidad, rango ni menú. Así se ve antes
+       de guardar, y el guardado los vacía igual. */
     cuerpo.addEventListener('change', (e) => {
-      const campo = e.target as HTMLInputElement;
-      if (campo.name !== 'titulo') return;
+      const campo = e.target as HTMLSelectElement;
+      if (campo.name !== 'tipo') return;
       const fila = campo.closest('tr');
       if (!fila) return;
-      if (campo.checked) {
-        fila.setAttribute('data-titulo', '');
+      fila.toggleAttribute('data-titulo', campo.value === 'titulo');
+      fila.toggleAttribute('data-texto', campo.value === 'texto');
+      if (campo.value === 'analito') {
+        const rango = fila.querySelector<HTMLInputElement>('input[name="referencia"]');
+        const menu = fila.querySelector<HTMLInputElement>('input[name="opciones"]');
+        fila.toggleAttribute('data-falta', !rango?.value.trim() && !menu?.value.trim());
+      } else {
         fila.removeAttribute('data-falta');
         fila.querySelectorAll<HTMLInputElement>('input[name="unidad"], input[name="referencia"], input[name="opciones"]')
           .forEach((i) => { i.value = ''; });
-      } else {
-        fila.removeAttribute('data-titulo');
-        const rango = fila.querySelector<HTMLInputElement>('input[name="referencia"]');
-        if (!rango?.value.trim()) fila.setAttribute('data-falta', '');
       }
     });
   }
@@ -313,7 +326,8 @@ const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito)
   .pl tbody tr:last-child td { border-bottom: 0; }
   .pl__que { width: 34%; }
   .pl__opc { width: 22%; }
-  .pl__es { width: 86px; text-align: center; }
+  .pl__es { width: 190px; }
+  .pl__es select { width: 100%; }
   .pl__quitar { width: 44px; text-align: center; }
 
   /* El subtítulo se ve como lo que es: un encabezado, no un renglón al que
@@ -323,6 +337,10 @@ const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito)
   .pl tr[data-titulo] input[name='unidad'],
   .pl tr[data-titulo] input[name='referencia'],
   .pl tr[data-titulo] input[name='opciones'] { opacity: 0.35; pointer-events: none; }
+  /* El que escribe el bioanalista tampoco lleva unidad, rango ni menú. */
+  .pl tr[data-texto] input[name='unidad'],
+  .pl tr[data-texto] input[name='referencia'],
+  .pl tr[data-texto] input[name='opciones'] { opacity: 0.35; pointer-events: none; }
 
   /* El renglón que la pantalla de resultados calcula sola, para no
      confundirlo con uno al que haya que escribirle el valor. */

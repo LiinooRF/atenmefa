@@ -134,7 +134,7 @@ const sinRango = renglones.filter(
 const porHoja = new Map(plantillas.map((p) => [p.examen, p.analitos]));
 
 /** De dónde sale la unidad, el rango y el menú de una línea. */
-type Fuente = { unidad: string; referencia: string; opciones: string };
+type Fuente = { unidad: string; referencia: string; opciones: string; tipo?: string };
 const SIN_NADA: Fuente = { unidad: '', referencia: '', opciones: '' };
 
 /* Un examen pedido con hoja abre el informe con LOS RENGLONES de esa hoja
@@ -185,7 +185,7 @@ for (const p of pedidos) {
       examen: a.analito,
       fuente: a.tipo === 'titulo'
         ? SIN_NADA
-        : { unidad: a.unidad, referencia: a.referencia, opciones: a.opciones },
+        : { unidad: a.unidad, referencia: a.referencia, opciones: a.opciones, tipo: a.tipo },
     });
   }
   for (const a of propios) if (a.tipo !== 'titulo') puestos.add(a.analito);
@@ -215,7 +215,7 @@ for (const escrito of (registro.examenes ?? '').split('\n').map((t) => t.trim())
 /* El menú de opciones viene con el renglón: «NEGATIVO / TRAZAS /
    POSITIVO» en las proteínas de la orina, los colores en el aspecto. */
 const deLaPlantilla = new Map<
-  string, { unidad: string; referencia: string; opciones: string }
+  string, { unidad: string; referencia: string; opciones: string; tipo: string }
 >();
 for (const p of plantillas) {
   for (const a of p.analitos) {
@@ -223,7 +223,7 @@ for (const p of plantillas) {
     const antes = deLaPlantilla.get(a.analito);
     if (antes && antes.referencia.trim()) continue;
     deLaPlantilla.set(a.analito, {
-      unidad: a.unidad, referencia: a.referencia, opciones: a.opciones,
+      unidad: a.unidad, referencia: a.referencia, opciones: a.opciones, tipo: a.tipo,
     });
   }
 }
@@ -269,19 +269,26 @@ const conFuente = (r: Resultado, f: Fuente | undefined): Resultado => f
 
 const lineas: Resultado[] = [];
 const opcionesDeLinea: string[] = [];
+/* Si la línea la escribe el bioanalista —el gram, el frotis—: va en un
+   cuadro de varias líneas y no en el campo corto de un número. */
+const esTextoDeLinea: boolean[] = [];
+const tipoDe = (analito: string) => deLaPlantilla.get(analito)?.tipo ?? '';
 for (const { examen, fuente } of plan) {
   lineas.push(conFuente(tomar(examen) ?? vacia(examen), fuente));
   opcionesDeLinea.push(fuente ? fuente.opciones : opcionesDe(examen));
+  esTextoDeLinea.push((fuente ? fuente.tipo : tipoDe(examen)) === 'texto');
 }
 // Lo cargado que no calza con ningún examen pedido: líneas agregadas a mano.
 cargados.forEach((r, j) => {
   if (usados.has(j)) return;
   lineas.push(conPlantilla(r));
   opcionesDeLinea.push(opcionesDe(r.examen));
+  esTextoDeLinea.push(tipoDe(r.examen) === 'texto' || r.valor.includes('\n'));
 });
 if (lineas.length === 0) {
   lineas.push(vacia(''));
   opcionesDeLinea.push('');
+  esTextoDeLinea.push(false);
 }
 
 const fechaLarga = (f: string) =>
@@ -367,15 +374,27 @@ const fechaLarga = (f: string) =>
           </thead>
           <tbody id="res-cuerpo">
             {lineas.map((l, i) => (
-              <tr data-opciones={opcionesDeLinea[i] || undefined}>
+              <tr data-opciones={opcionesDeLinea[i] || undefined}
+                  data-clase={esTextoDeLinea[i] ? 'escribe' : opcionesDeLinea[i] ? 'elige' : undefined}>
                 <td data-rotulo="Examen">
                   <input type="text" name="examen" value={l.examen}
                          aria-label={`Examen de la línea ${i + 1}`} autocomplete="off" />
                 </td>
                 <td data-rotulo="Resultado">
-                  <input type="text" name="valor" value={l.valor} inputmode="decimal"
-                         list={`op-${i}`}
-                         aria-label={`Resultado de ${l.examen || `la línea ${i + 1}`}`} autocomplete="off" />
+                  {esTextoDeLinea[i] ? (
+                    /* Lo redacta el bioanalista: el gram, el cultivo, el frotis. */
+                    <textarea name="valor" rows="3" class="valor--texto"
+                              aria-label={`Resultado de ${l.examen || `la línea ${i + 1}`}`}>{l.valor}</textarea>
+                  ) : (
+                    /* Teclado de números solo donde se escribe un número: con
+                       menú se elige una palabra, y en la tablet el teclado
+                       numérico no deja escribir «NEGATIVO». */
+                    <input type="text" name="valor" value={l.valor}
+                           inputmode={opcionesDeLinea[i] ? undefined : 'decimal'}
+                           list={`op-${i}`}
+                           placeholder={opcionesDeLinea[i] ? 'Elegir o escribir' : undefined}
+                           aria-label={`Resultado de ${l.examen || `la línea ${i + 1}`}`} autocomplete="off" />
+                  )}
                   {/* El menú del renglón, si su plantilla lo trae. Una <option> por
                       palabra, tal como las escribió la hoja DAT. del archivo. */}
                   <datalist id={`op-${i}`}>
@@ -493,7 +512,7 @@ const fechaLarga = (f: string) =>
        «Poner»: es el mismo dato y no se manda dos veces. */
     type Plantilla = {
       examen: string;
-      analitos: { analito: string; unidad: string; referencia: string; opciones: string }[];
+      analitos: { analito: string; unidad: string; referencia: string; opciones: string; tipo?: string }[];
     };
     const eligePlantilla = document.getElementById('res-plantilla') as HTMLSelectElement | null;
     let PLANTILLAS: Plantilla[] = [];
@@ -512,8 +531,41 @@ const fechaLarga = (f: string) =>
         const columna = i.closest('td')?.dataset.rotulo ?? '';
         i.setAttribute('aria-label', `${columna} de una línea nueva`);
       });
+      /* El molde puede ser un renglón de texto: la línea nueva arranca
+         siempre con el campo corto, que es lo más común. */
+      ponerTexto(fila, false);
+      delete fila.dataset.clase;
+      fila.querySelectorAll('datalist').forEach((d) => d.remove());
       return fila;
     };
+
+    /**
+     * Cambia el campo del resultado entre el corto —un número, una palabra
+     * del menú— y el cuadro de varias líneas de lo que redacta el
+     * bioanalista. Se reemplaza el elemento entero: un <input> no puede
+     * tener varias líneas.
+     */
+    function ponerTexto(fila: HTMLTableRowElement, texto: boolean) {
+      const actual = fila.querySelector<HTMLInputElement | HTMLTextAreaElement>('[name="valor"]');
+      if (!actual) return;
+      const esTexto = actual.tagName === 'TEXTAREA';
+      if (esTexto === texto) return;
+      const nuevo = texto ? document.createElement('textarea') : document.createElement('input');
+      nuevo.name = 'valor';
+      nuevo.setAttribute('aria-label', actual.getAttribute('aria-label') ?? 'Resultado');
+      if (texto) {
+        (nuevo as HTMLTextAreaElement).rows = 3;
+        nuevo.className = 'valor--texto';
+        fila.dataset.clase = 'escribe';
+      } else {
+        (nuevo as HTMLInputElement).type = 'text';
+        nuevo.setAttribute('inputmode', 'decimal');
+        nuevo.setAttribute('autocomplete', 'off');
+        if (fila.dataset.clase === 'escribe') delete fila.dataset.clase;
+      }
+      nuevo.value = actual.value;
+      actual.replaceWith(nuevo);
+    }
 
     /* Le pone a la fila el menú de opciones de su analito: una <datalist>
        nueva dentro de su celda, y el campo apuntándole. Lo trae la plantilla
@@ -527,9 +579,16 @@ const fechaLarga = (f: string) =>
       celda.querySelectorAll('datalist').forEach((d) => d.remove());
       if (!lista.length) {
         valor.removeAttribute('list');
+        valor.removeAttribute('placeholder');
+        valor.setAttribute('inputmode', 'decimal');
         delete fila.dataset.opciones;
+        if (fila.dataset.clase === 'elige') delete fila.dataset.clase;
         return;
       }
+      // Con menú se elige una palabra: el teclado de números estorba.
+      valor.removeAttribute('inputmode');
+      valor.setAttribute('placeholder', 'Elegir o escribir');
+      fila.dataset.clase = 'elige';
       const datos = document.createElement('datalist');
       datos.id = `op-${Math.random().toString(36).slice(2, 9)}`;
       for (const o of lista) {
@@ -613,6 +672,10 @@ const fechaLarga = (f: string) =>
       for (let vuelta = 0; vuelta < 2; vuelta++) {
         for (let i = 0; i < filas.length; i++) {
           const c = calculos.find((x) => x.resultado === llaves[i]);
+          /* La marca de «se calcula» va aunque falten sus insumos: el
+             bioanalista tiene que saber de antemano que ese no se escribe. */
+          if (c) filas[i].dataset.clase = 'calcula';
+          else if (filas[i].dataset.clase === 'calcula') delete filas[i].dataset.clase;
           if (!c) continue;
 
           const campo = dame(filas[i], 'valor');
@@ -880,15 +943,16 @@ const fechaLarga = (f: string) =>
         if (!faltan.length) { elige.value = ''; return; }
 
         const poneFila = (
-          examen: string, unidad = '', referencia = '', opciones = '',
+          examen: string, unidad = '', referencia = '', opciones = '', tipo = '',
         ) => {
           const fila = nuevaFila();
           if (!fila) return null;
-          const dame = (n: string) => fila.querySelector<HTMLInputElement>(`input[name="${n}"]`);
+          const dame = (n: string) => fila.querySelector<HTMLInputElement>(`[name="${n}"]`);
           dame('examen')!.value = examen;
           dame('unidad')!.value = unidad;
           dame('referencia')!.value = referencia;
-          ponerOpciones(fila, opciones);
+          if (tipo === 'texto') ponerTexto(fila, true);
+          else ponerOpciones(fila, opciones);
           cuerpo.appendChild(fila);
           return dame('valor');
         };
@@ -904,7 +968,7 @@ const fechaLarga = (f: string) =>
 
         let primera: HTMLInputElement | null = null;
         for (const a of faltan) {
-          const campo = poneFila(a.analito, a.unidad, a.referencia, a.opciones);
+          const campo = poneFila(a.analito, a.unidad, a.referencia, a.opciones, a.tipo);
           if (!campo) break;
           primera ??= campo;
         }
@@ -930,6 +994,20 @@ const fechaLarga = (f: string) =>
 </script>
 
 <style>
+  /* Qué es cada renglón, dicho debajo de su nombre: el que se calcula solo,
+     el que se elige de una lista y el que redacta el bioanalista. Antes los
+     tres se veían igual que un número a escribir y había que adivinar. Va
+     en el ::after del nombre porque el ::before de cada celda es el rótulo
+     de la columna en el teléfono. */
+  #res-cuerpo tr[data-clase] td[data-rotulo='Examen']::after {
+    display: block; margin-top: 3px; font-size: var(--u-xs); font-weight: 600;
+  }
+  #res-cuerpo tr[data-clase='calcula'] td[data-rotulo='Examen']::after { content: 'ƒ se calcula solo'; color: var(--azul); }
+  #res-cuerpo tr[data-clase='elige'] td[data-rotulo='Examen']::after { content: '▾ se elige de la lista'; color: #6b4b00; }
+  #res-cuerpo tr[data-clase='escribe'] td[data-rotulo='Examen']::after { content: '✎ lo escribe el bioanalista'; color: #15663f; }
+  #res-cuerpo tr[data-clase='calcula'] input[name='valor'] { background: var(--panel); }
+  #res-cuerpo .valor--texto { width: 100%; min-height: 88px; resize: vertical; font: inherit; }
+
   /* Fuera de rango. El borde a la izquierda y no el fondo entero: con
      doce renglones, tres fondos rojos convierten la tabla en una alarma y
      se deja de mirar lo que importa. */

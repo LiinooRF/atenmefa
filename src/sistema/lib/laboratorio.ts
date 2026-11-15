@@ -291,11 +291,12 @@ export async function guardarPlantilla(
       opciones: normalizarOpciones(f.opciones ?? ''),
       /* Un encabezado de bloque no lleva unidad ni rango aunque alguien
          los haya tecleado antes de marcarlo: si los guardara, el informe
-         lo imprimiría como un analito vacío. */
-      tipo: f.tipo === 'titulo' ? 'titulo' : 'analito',
+         lo imprimiría como un analito vacío. Lo mismo un renglón que se
+         escribe: un texto no tiene unidad, rango ni menú. */
+      tipo: f.tipo === 'titulo' ? 'titulo' as const : f.tipo === 'texto' ? 'texto' as const : 'analito' as const,
     }))
     .filter((f) => f.analito)
-    .map((f) => (f.tipo === 'titulo' ? { ...f, unidad: '', referencia: '', opciones: '' } : f));
+    .map((f) => (f.tipo === 'analito' ? f : { ...f, unidad: '', referencia: '', opciones: '' }));
 
   await bd.transaction(async (tx) => {
     await tx.delete(esquema.plantillaExamen).where(eq(esquema.plantillaExamen.examen, examen));
@@ -313,7 +314,11 @@ export async function guardarPlantilla(
 function normalizarOpciones(texto: string) {
   const vistos = new Set<string>();
   return texto
-    .split(/\s*[/\n]\s*/)
+    /* Se corta en el salto de línea o en « / » CON espacios, que es como
+       las muestra el editor. Una barra pegada es parte de la opción: el
+       VDRL se informa «REACTIVO 1/8», y cortando en cualquier barra eso
+       quedaba como dos opciones, «REACTIVO 1» y «8». */
+    .split(/\n|\s+\/\s+/)
     .map((o) => o.trim())
     .filter((o) => {
       if (!o || vistos.has(o)) return false;

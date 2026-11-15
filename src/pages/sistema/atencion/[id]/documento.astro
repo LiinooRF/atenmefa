@@ -92,6 +92,10 @@ const conValor = resultados.filter((r) => r.valor);
    
    Un subtítulo sin nada debajo tampoco se imprime: si el bioanalista cargó
    solo el primer bloque, el encabezado del segundo no tiene por qué salir. */
+/* Un texto y no un número: varias líneas, o largo, y sin unidad ni rango. */
+const esRedactado = (r: Resultado) =>
+  !r.unidad?.trim() && !r.referencia?.trim() && (r.valor.includes('\n') || r.valor.trim().length > 40);
+
 const esTitulo = (r: Resultado) =>
   Boolean(r.examen?.trim()) && !r.valor?.trim() && !r.unidad?.trim() && !r.referencia?.trim();
 
@@ -373,6 +377,14 @@ const vitales = [
                       esTitulo(r) ? (
                         <tr class="valores__seccion">
                           <th colspan="4" scope="colgroup">{r.examen}</th>
+                        </tr>
+                      ) : esRedactado(r) ? (
+                        /* Lo que redactó el bioanalista —el gram, el frotis—
+                           ocupa el ancho de la fila: apretado en la columna
+                           del número se leía como una lista de palabras. */
+                        <tr>
+                          <td>{r.examen}</td>
+                          <td colspan="3" class="valores__texto">{r.valor}</td>
                         </tr>
                       ) : (
                         <tr>
@@ -963,6 +975,7 @@ const vitales = [
       }
       .bloque dt { font-size: 8.5pt; color: var(--gris); }
       .bloque dd { margin: 0; font-size: 9.5pt; white-space: pre-wrap; }
+      .valores__texto { white-space: pre-wrap; overflow-wrap: anywhere; }
       .agregados { margin-top: 18px; }
 
       .receta { margin-top: 18px; break-inside: avoid; }

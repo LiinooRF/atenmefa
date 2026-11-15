@@ -523,23 +523,30 @@ test('las plantillas entraron, y los rangos que entraron son los de su hoja', as
      con menú de opciones —su forma de informarse, no una falta—. Antes se
      adivinaban por descarte y la pantalla contaba 51. Ver 016-titulos.sql
      y 021-orina-heces.sql. Con lo que el laboratorio contestó el
-     15-11-2026 quedaron 12 (ver 023-respuestas-laboratorio.sql). */
+     15-11-2026 quedaron 12 (ver 023-respuestas-laboratorio.sql), y 10
+     cuando el gram y el cultivo pasaron a ser texto del bioanalista
+     (028-renglon-texto.sql): un texto no lleva rango. */
   const [t] = await conBase((sql) => sql`
     SELECT COUNT(*) FILTER (WHERE tipo = 'titulo')::int AS titulos,
            COUNT(*) FILTER (WHERE tipo = 'analito' AND btrim(referencia) = ''
                              AND btrim(opciones) = '')::int AS faltan
       FROM plantilla_examen`);
   expect(t.titulos).toBe(25);
-  expect(t.faltan).toBe(12);
+  expect(t.faltan).toBe(10);
 
   /* El tipiaje y el VDRL tampoco tienen rango —se informan con una
      palabra— y son analitos igual: la regla por descarte los daba por
      encabezados y desaparecían de la cuenta. */
   const cualitativos = await conBase((sql) => sql`
     SELECT analito, tipo FROM plantilla_examen
-     WHERE analito IN ('TIPIAJE', 'VDRL', 'GRUPO SANGUINEO', 'CULTIVO', 'INR')
+     WHERE analito IN ('TIPIAJE', 'VDRL', 'GRUPO SANGUINEO', 'INR')
      ORDER BY analito`);
   expect(cualitativos.every((c) => c.tipo === 'analito')).toBe(true);
+  /* El cultivo y el gram no: el laboratorio los redacta («acá solo deja los
+     títulos y se rellenan escritos»). Son texto, ver 028-renglon-texto.sql. */
+  const redactados = await conBase((sql) => sql`
+    SELECT tipo FROM plantilla_examen WHERE examen = 'URO1' AND analito IN ('GRAM', 'CULTIVO')`);
+  expect(redactados.map((r) => r.tipo)).toEqual(['texto', 'texto']);
 
   /* La hoja de heces entró con unidades de la columna de al lado: un
      color no se mide en mg/dl. */
@@ -1086,7 +1093,7 @@ test('el bioanalista ve la lista de exámenes y cuántos rangos faltan', async (
   await expect(page.locator('.lista li')).toHaveCount(37);
   // La cifra es la de los analitos de verdad, sin los encabezados ni los
   // que ya se responden con su menú de opciones.
-  await expect(page.locator('.aviso')).toContainText('12 analitos sin rango');
+  await expect(page.locator('.aviso')).toContainText('10 analitos sin rango');
 
   // Los que tienen algo que arreglar van primero.
   const primero = page.locator('.lista li').first();
@@ -1211,7 +1218,7 @@ test('marcar un renglón como subtítulo le quita la unidad y el rango', async (
   await page.goto(`/sistema/plantillas/${encodeURIComponent(EXAMEN)}`);
 
   const bloque = page.locator('#pl-cuerpo tr').first();
-  await bloque.locator('input[name="titulo"]').check();
+  await bloque.locator('select[name="tipo"]').selectOption('titulo');
   // Los campos se apagan en el acto: se ve que deja de ser un analito.
   await expect(bloque).toHaveAttribute('data-titulo', '');
   await expect(bloque.locator('input[name="unidad"]')).toHaveValue('');
@@ -1403,4 +1410,96 @@ test('la BHCG imprime su tabla por semanas y no marca fuera de rango', async ({ 
   const ultima = page.locator('#res-cuerpo tr').last();
   await ultima.locator('input[name="valor"]').fill('25000');
   await expect(ultima).not.toHaveAttribute('data-fuera', /.+/);
+});
+
+/* ------------------------------------------------------------------
+   Lo que escribe el bioanalista.
+   ------------------------------------------------------------------
+
+   Un renglón de plantilla puede ser un resultado —número o menú—, un
+   subtítulo o un texto que redacta el bioanalista: el gram, el cultivo, el
+   frotis. El texto no lleva rango, no cuenta como falta y se escribe en un
+   cuadro de varias líneas. */
+
+test('en el editor un renglón se marca como texto del bioanalista', async ({ page }) => {
+  const EXAMEN = 'ZZ PRUEBA DE TEXTO';
+  await conBase((sql) => sql`
+    INSERT INTO plantilla_examen (examen, orden, analito, unidad, referencia) VALUES
+      (${EXAMEN}, 1, 'OBSERVACION', 'mg/dl', '1 - 2')
+    ON CONFLICT (examen, orden) DO NOTHING`);
+  try {
+    await entrar(page, 'bioanalista');
+    await page.goto(`/sistema/plantillas/${encodeURIComponent(EXAMEN)}`);
+    const fila = page.locator('#pl-cuerpo tr').first();
+    await fila.locator('select[name="tipo"]').selectOption('texto');
+    await expect(fila).toHaveAttribute('data-texto', '');
+    await expect(fila.locator('input[name="referencia"]')).toHaveValue('');
+    await page.getByRole('button', { name: 'Guardar' }).click();
+    await expect(page.locator('.msj--bien')).toBeVisible();
+
+    const [f] = await conBase((sql) => sql`
+      SELECT tipo, unidad, referencia FROM plantilla_examen WHERE examen = ${EXAMEN}`);
+    expect(f).toMatchObject({ tipo: 'texto', unidad: '', referencia: '' });
+    // Y no cuenta como «sin rango».
+    await expect(page.locator('.cab__nota')).toContainText('Todos tienen su rango');
+  } finally {
+    await conBase((sql) => sql`DELETE FROM plantilla_examen WHERE examen = ${EXAMEN}`);
+  }
+});
+
+test('cada renglón dice qué es, y el texto se escribe en varias líneas', async ({ page }) => {
+  await entrar(page, 'bioanalista');
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_COAG_HOJA)}/resultados`);
+
+  // El urocultivo: el gram y el cultivo los redacta el bioanalista.
+  await page.locator('#res-plantilla').selectOption('URO1');
+  await page.locator('#res-poner').click();
+  /* Por posición: estas líneas las pone el navegador y su atributo value
+     queda vacío. Ver renglonesDe. */
+  const filaDe = async (nombre: string) => {
+    const i = (await renglonesDe(page)).lastIndexOf(nombre);
+    return page.locator('#res-cuerpo tr').nth(i);
+  };
+
+  const gram = await filaDe('GRAM');
+  await expect(gram).toHaveAttribute('data-clase', 'escribe');
+  await expect(gram.locator('textarea[name="valor"]')).toHaveCount(1);
+  await gram.locator('textarea[name="valor"]').fill('Bacilos gramnegativos.\nEscasos leucocitos.');
+
+  // En coagulación, la actividad se calcula y el control se elige.
+  await expect(await filaDe('ACTIVIDAD')).toHaveAttribute('data-clase', 'calcula');
+  await expect(await filaDe('TIEMPO CONTROL')).toHaveAttribute('data-clase', 'elige');
+  // Con menú, el campo no pide teclado de números.
+  await expect((await filaDe('TIEMPO CONTROL')).locator('input[name="valor"]')).not.toHaveAttribute('inputmode', /.+/);
+
+  await page.getByRole('button', { name: 'Guardar y seguir después' }).click();
+  await page.waitForLoadState('networkidle');
+
+  // Guardado y vuelto a abrir, sigue siendo un cuadro de texto con sus dos líneas.
+  await page.goto(`/sistema/atencion/${await ordenDe(CEDULA_COAG_HOJA)}/resultados`);
+  const otraVez = await filaDe('GRAM');
+  await expect(otraVez.locator('textarea[name="valor"]'))
+    .toHaveValue('Bacilos gramnegativos.\nEscasos leucocitos.');
+});
+
+test('una opción con barra pegada no se parte en dos', async ({ page }) => {
+  /* El editor separa las opciones con « / ». Una barra pegada es parte de
+     la opción: el VDRL se informa «REACTIVO 1/8». */
+  const EXAMEN = 'ZZ PRUEBA DE OPCIONES';
+  await conBase((sql) => sql`
+    INSERT INTO plantilla_examen (examen, orden, analito) VALUES (${EXAMEN}, 1, 'VDRL DE PRUEBA')
+    ON CONFLICT (examen, orden) DO NOTHING`);
+  try {
+    await entrar(page, 'bioanalista');
+    await page.goto(`/sistema/plantillas/${encodeURIComponent(EXAMEN)}`);
+    await page.locator('#pl-cuerpo tr').first().locator('input[name="opciones"]')
+      .fill('NO REACTIVO / REACTIVO 1/8');
+    await page.getByRole('button', { name: 'Guardar' }).click();
+    await expect(page.locator('.msj--bien')).toBeVisible();
+    const [f] = await conBase((sql) => sql`
+      SELECT opciones FROM plantilla_examen WHERE examen = ${EXAMEN}`);
+    expect(f.opciones).toBe('NO REACTIVO\nREACTIVO 1/8');
+  } finally {
+    await conBase((sql) => sql`DELETE FROM plantilla_examen WHERE examen = ${EXAMEN}`);
+  }
 });
