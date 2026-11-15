@@ -547,6 +547,10 @@ export async function borrarPacientes(...cedulas: string[]) {
          WHERE p.cedula_busca = ${busca}`;
 
       await sql`DELETE FROM bitacora WHERE atencion_id IN (${deEsaCedula})`;
+      /* Lo agregado a una cerrada cuelga de la atención y, si eran exámenes,
+         también de la orden que los registró. */
+      await sql`DELETE FROM agregado WHERE atencion_id IN (${deEsaCedula})
+                                    OR orden_id IN (${deEsaCedula})`;
       await sql`DELETE FROM renglon  WHERE atencion_id IN (${deEsaCedula})`;
       await sql`DELETE FROM atencion WHERE paciente_id IN (
                   SELECT id FROM paciente WHERE cedula_busca = ${busca})`;

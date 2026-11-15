@@ -22,6 +22,7 @@ import { hoyEnVenezuela } from '../../sistema/lib/atenciones';
 import { enlaceDeWhatsApp, paraWhatsApp } from '../../sistema/lib/telefono';
 import { avisoDeResultados } from '../../sistema/mensajes';
 import { puedeBorrarBorrador } from '../../sistema/lib/permisos';
+import { indicacionesPendientes } from '../../sistema/lib/agregados';
 
 export const prerender = false;
 
@@ -32,6 +33,15 @@ const usuario = Astro.locals.usuario!;
 const rol = usuario.rol as string;
 const resulta = puede(rol, 'cargar_resultados');
 const registra = puede(rol, 'registrar_laboratorio');
+
+/* Lo que un médico indicó en una consulta ya cerrada y todavía no tiene
+   orden. Sin este recuadro, una indicación escrita en la historia de un
+   paciente que volvió no la ve nadie: recepción no abre consultas viejas
+   por si acaso. */
+const indicaciones = registra && Astro.url.searchParams.get('ver') !== 'entregadas' ? await indicacionesPendientes() : [];
+const cuandoIndico = (d: Date) => d.toLocaleString('es-VE', {
+  timeZone: 'America/Caracas', day: 'numeric', month: 'short', hour: 'numeric', minute: '2-digit',
+});
 
 const avisa = puede(rol, 'enviar_documento');
 
@@ -91,6 +101,27 @@ const ROTULO = {
       </a>
     )}
   </div>
+
+  {indicaciones.length > 0 && (
+    <section class="indicadas" aria-labelledby="indicadas-titulo">
+      <h2 id="indicadas-titulo">Exámenes indicados por el médico, sin registrar</h2>
+      <ul>
+        {indicaciones.map((i) => (
+          <li>
+            <div>
+              <strong>{i.paciente}</strong> <span class="cifra">{i.cedula}</span>
+              <p class="indicadas__que">{i.texto.split('\n').join(' · ')}</p>
+              <p class="indicadas__quien">{i.autor}, {cuandoIndico(i.creado)}, en la atención N° {i.numero}</p>
+            </div>
+            <a class="sis-boton sis-boton--suave"
+               href={`/sistema/atencion/nueva?tipo=laboratorio&cedula=${encodeURIComponent(i.cedula)}&doc=${i.tipoDoc}&origen=${i.atencionId}&indicacion=${i.id}`}>
+              Registrar la orden
+            </a>
+          </li>
+        ))}
+      </ul>
+    </section>
+  )}
 
   {Astro.url.searchParams.get('borrado') === '1' && (
     <p class="msj--bien">
@@ -197,6 +228,20 @@ const ROTULO = {
   .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: center; justify-content: space-between; }
   .cab h1 { font-size: var(--u-2xl); }
   .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .indicadas {
+    margin-top: 18px; padding: 14px 16px; border-radius: 10px;
+    background: #fff8e6; border: 1px solid #ecd28f;
+  }
+  .indicadas h2 { font-size: var(--u-md); }
+  .indicadas ul { list-style: none; margin: 8px 0 0; padding: 0; display: grid; gap: 1px; }
+  .indicadas li {
+    display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px;
+    padding: 10px 0; border-top: 1px solid #f0e0b0;
+  }
+  .indicadas li:first-child { border-top: 0; }
+  .indicadas__que { margin-top: 3px; overflow-wrap: anywhere; }
+  .indicadas__quien { margin-top: 2px; font-size: var(--u-sm); color: var(--tinta-suave); }
 
   .tabs { display: flex; gap: 6px; margin: 20px 0 16px; }
   .tabs__uno {

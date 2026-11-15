@@ -31,6 +31,7 @@ import { eq } from 'drizzle-orm';
 import { exigir } from '../../../../sistema/lib/guardia';
 import { anotar, esIdentificador } from '../../../../sistema/lib/atenciones';
 import { examenesPedidos } from '../../../../sistema/lib/laboratorio';
+import { ROTULO_AGREGADO, agregadosDe, lineasDeExamenes } from '../../../../sistema/lib/agregados';
 import {
   configDelCorreo, correoUsable, enviarCorreo,
 } from '../../../../sistema/lib/correo';
@@ -188,6 +189,17 @@ if (Astro.request.method === 'POST') {
         observaciones: esLab ? d.observaciones_lab : undefined,
         recipe: d.recipe,
         indicaciones: d.indicaciones,
+        agregados: esLab ? [] : (await agregadosDe(caso.id))
+          .filter((a) => !a.anuladoEn)
+          .map((a) => ({
+            rotulo: ROTULO_AGREGADO[a.tipo],
+            cuando: a.creado.toLocaleString('es-VE', {
+              timeZone: 'America/Caracas', day: 'numeric', month: 'long', year: 'numeric',
+              hour: 'numeric', minute: '2-digit',
+            }),
+            autor: `${a.autor}${a.colegiatura ? ` · C.M. ${a.colegiatura}` : ''}`,
+            texto: `${a.tipo === 'examenes' ? lineasDeExamenes(a.texto).join('\n') : a.texto}${a.codigo ? ` (${a.codigo})` : ''}`,
+          })),
         /* Con su código CIE-10 si se eligió del catálogo: el correo lo puede
            reenviar el paciente a su seguro. */
         idx: d.idx ? (d.idx_codigo ? `${d.idx} (${d.idx_codigo})` : d.idx) : undefined,

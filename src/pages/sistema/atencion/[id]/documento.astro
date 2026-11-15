@@ -12,6 +12,7 @@ import { fueraDeRango, comoSeDice } from '../../../../sistema/rangos';
 import { historia } from '../../../../sistema/historia';
 import { laboratorio, type Resultado } from '../../../../sistema/laboratorio';
 import { examenesPedidos } from '../../../../sistema/lib/laboratorio';
+import { ROTULO_AGREGADO, agregadosDe, lineasDeExamenes } from '../../../../sistema/lib/agregados';
 import { puede } from '../../../../sistema/lib/permisos';
 import { ROTULO } from '../../../../sistema/lib/documento';
 import { bd, esquema } from '../../../../sistema/lib/base';
@@ -173,6 +174,15 @@ const bloques = historia
   .filter((s) => s.campos.length > 0);
 
 const hayRecipe = !esLab && Boolean(d.recipe || d.indicaciones);
+
+/* Lo que se le sumó después de cerrar, sin lo anulado. Va DESPUÉS de la
+   firma del médico que atendió: él firmó lo de arriba, no esto, y cada
+   agregado lleva su propio autor. */
+const agregados = esLab ? [] : (await agregadosDe(caso.id)).filter((a) => !a.anuladoEn);
+const cuandoAgrego = (f: Date) => f.toLocaleString('es-VE', {
+  timeZone: 'America/Caracas', day: 'numeric', month: 'long', year: 'numeric',
+  hour: 'numeric', minute: '2-digit',
+});
 
 /* ----------------------------------------------------------------
    El sello de verificación.
@@ -571,6 +581,27 @@ const vitales = [
           <em>Firma del paciente o familiar</em>
         </div>
       </footer>
+
+      {agregados.length > 0 && (
+        <section class="bloque agregados">
+          <h2>Agregado después del cierre</h2>
+          <dl>
+            {agregados.map((a) => (
+              <div>
+                <dt>
+                  {ROTULO_AGREGADO[a.tipo]}<br />
+                  {cuandoAgrego(a.creado)}<br />
+                  {a.autor}{a.colegiatura && ` · C.M. ${a.colegiatura}`}
+                </dt>
+                <dd>
+                  {a.tipo === 'examenes' ? lineasDeExamenes(a.texto).join('\n') : a.texto}
+                  {a.codigo && ` (${a.codigo})`}
+                </dd>
+              </div>
+            ))}
+          </dl>
+        </section>
+      )}
         </td>
        </tr>
       </tbody>
@@ -932,6 +963,7 @@ const vitales = [
       }
       .bloque dt { font-size: 8.5pt; color: var(--gris); }
       .bloque dd { margin: 0; font-size: 9.5pt; white-space: pre-wrap; }
+      .agregados { margin-top: 18px; }
 
       .receta { margin-top: 18px; break-inside: avoid; }
       .receta p {

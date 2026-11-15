@@ -17,6 +17,10 @@ import { alias } from 'drizzle-orm/pg-core';
 import { examenesPedidos, ordenesDe } from '../../../sistema/lib/laboratorio';
 import { fueraDeRango, comoSeDice } from '../../../sistema/rangos';
 import { comoSeLee } from '../../../sistema/lib/documento';
+import {
+  ROTULO_AGREGADO, agregadosDe, agregar, anularAgregado, lineasDeExamenes,
+} from '../../../sistema/lib/agregados';
+import Diagnostico from '../../../components/sistema/Diagnostico.astro';
 
 export const prerender = false;
 
@@ -91,32 +95,70 @@ if (corte) return corte;
 const escrita = yaLaEscribioElMedico((caso.datos ?? {}) as Record<string, string>);
 const tomable = puedeTomarCaso(usuario, { ...caso, escrita });
 
+/* Lo que se le suma a una cerrada. Si sale mal, la pantalla se dibuja con
+   el error y con lo que se había escrito, en vez de redirigir y perderlo:
+   una nota larga que desaparece por un error es una nota que no se vuelve
+   a escribir. Las reglas las mira lib/agregados.ts, no esto. */
+let errorAgregado = '';
+let tecleado = { tipo: 'nota', texto: '', dx: '', dxCodigo: '' };
+
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
-  if (form.get('accion') === 'tomar' && tomable) {
-    const nuevos = { ...((caso.datos ?? {}) as Record<string, string>), medico: usuario.name };
-    const cambiadas = await bd
-      .update(esquema.atencion)
-      .set({ medicoId: usuario.id, datos: nuevos })
-      .where(and(
-        eq(esquema.atencion.id, caso.id),
-        /* Que siga siendo un borrador admitido y del mismo médico que
-           estaba: entre que se dibujó el botón y se tocó, el otro médico
-           pudo haber empezado a escribirla. */
-        eq(esquema.atencion.estado, 'borrador'),
-        eq(esquema.atencion.medicoId, caso.medicoId),
-      ))
-      .returning({ id: esquema.atencion.id });
+  const accion = String(form.get('accion') ?? '');
 
-    if (cambiadas.length) {
-      await anotar(usuario.id, 'tomo', caso.id, {
-        numero: caso.numero,
-        antes: caso.medico,
-      });
-      return Astro.redirect(`/sistema/atencion/${caso.id}/editar`);
+  if (accion === 'tomar') {
+    if (tomable) {
+      const nuevos = { ...((caso.datos ?? {}) as Record<string, string>), medico: usuario.name };
+      const cambiadas = await bd
+        .update(esquema.atencion)
+        .set({ medicoId: usuario.id, datos: nuevos })
+        .where(and(
+          eq(esquema.atencion.id, caso.id),
+          /* Que siga siendo un borrador admitido y del mismo médico que
+             estaba: entre que se dibujó el botón y se tocó, el otro médico
+             pudo haber empezado a escribirla. */
+          eq(esquema.atencion.estado, 'borrador'),
+          eq(esquema.atencion.medicoId, caso.medicoId),
+        ))
+        .returning({ id: esquema.atencion.id });
+
+      if (cambiadas.length) {
+        await anotar(usuario.id, 'tomo', caso.id, {
+          numero: caso.numero,
+          antes: caso.medico,
+        });
+        return Astro.redirect(`/sistema/atencion/${caso.id}/editar`);
+      }
     }
+    return Astro.redirect(`/sistema/atencion/${caso.id}`);
+  } else if (accion === 'agregar') {
+    const tipo = String(form.get('tipo') ?? '');
+    tecleado = {
+      tipo,
+      texto: String(form.get(tipo === 'examenes' ? 'examenes_texto' : 'nota_texto') ?? ''),
+      dx: String(form.get('dx_agregado') ?? ''),
+      dxCodigo: String(form.get('dx_agregado_codigo') ?? ''),
+    };
+    try {
+      await agregar(usuario, caso.id, {
+        tipo,
+        texto: tipo === 'diagnostico' ? tecleado.dx : tecleado.texto,
+        codigo: tipo === 'diagnostico' ? tecleado.dxCodigo : undefined,
+      });
+      return Astro.redirect(`/sistema/atencion/${caso.id}?agregado=1#agregados`);
+    } catch (e) {
+      errorAgregado = e instanceof Error ? e.message : 'No se pudo agregar.';
+    }
+  } else if (accion === 'anular_agregado') {
+    try {
+      await anularAgregado(usuario, String(form.get('agregado') ?? ''), String(form.get('motivo') ?? ''));
+      return Astro.redirect(`/sistema/atencion/${caso.id}?anulado=1#agregados`);
+    } catch (e) {
+      errorAgregado = e instanceof Error ? e.message : 'No se pudo anular.';
+    }
+  } else {
+    return Astro.redirect(`/sistema/atencion/${caso.id}`);
   }
-  return Astro.redirect(`/sistema/atencion/${caso.id}`);
 }
 
 await anotar(usuario.id, 'vio', caso.id);
@@ -181,6 +223,23 @@ const anteriores = previasCrudas.map((a) => ({
 }));
 
 const datos = (caso.datos ?? {}) as Record<string, string>;
+
+/* Lo agregado después del cierre. Solo en las consultas: una orden de
+   laboratorio se corrige en sus resultados. */
+const agregados = esLab ? [] : await agregadosDe(caso.id);
+const puedeAgregar = !esLab && caso.estado === 'cerrada' && puede(usuario.rol as string, 'agregar_al_caso');
+const puedeAnularAgregado = puede(usuario.rol as string, 'anular_atencion');
+const puedeRegistrarOrden = puede(usuario.rol as string, 'registrar_laboratorio');
+const avisoAgregado = Astro.url.searchParams.get('agregado') === '1'
+  ? 'Quedó agregado. Lo cerrado no cambió.'
+  : Astro.url.searchParams.get('anulado') === '1'
+    ? 'Quedó anulado. Se ve tachado acá y ya no sale en el documento.'
+    : '';
+const cuando = (d: Date) => d.toLocaleString('es-VE', {
+  timeZone: 'America/Caracas', day: 'numeric', month: 'short', year: 'numeric',
+  hour: 'numeric', minute: '2-digit',
+});
+const campoDx = { clave: 'dx_agregado', rotulo: 'Diagnóstico', tipo: 'diagnostico', ancho: 4 } as const;
 
 /* Una cuenta por moneda, como en la pantalla de cobro. Dólares y bolívares
    no se suman: el número que saldría de mezclarlos no se le puede pasar a
@@ -385,6 +444,112 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
           </dl>
         </section>
       ))}
+
+      {!esLab && (agregados.length > 0 || puedeAgregar || errorAgregado) && (
+        <section class="ficha agregados" id="agregados">
+          <h2>Agregado después del cierre</h2>
+          <p class="lado__vacio">
+            Lo de arriba es lo que se cerró y no se toca. Lo que vino después
+            va acá, con la fecha y quién lo escribió.
+          </p>
+
+          {avisoAgregado && <p class="msj--bien" role="status">{avisoAgregado}</p>}
+          {errorAgregado && <p class="sis-error" role="alert">{errorAgregado}</p>}
+
+          {agregados.length > 0 && (
+            <ol class="agregados__lista">
+              {agregados.map((a) => (
+                <li class:list={['agregado', a.anuladoEn && 'agregado--anulado']}>
+                  <p class="agregado__cabeza">
+                    <strong>{ROTULO_AGREGADO[a.tipo]}</strong>
+                    <span>{cuando(a.creado)}</span>
+                    <span>{a.autor}{a.colegiatura && ` (${a.colegiatura})`}</span>
+                  </p>
+
+                  {a.tipo === 'examenes' ? (
+                    <ul class="agregado__examenes">
+                      {lineasDeExamenes(a.texto).map((l) => <li>{l}</li>)}
+                    </ul>
+                  ) : (
+                    <p class="agregado__texto">
+                      {a.texto}
+                      {a.codigo && <span class="codigo cifra">{a.codigo}</span>}
+                    </p>
+                  )}
+
+                  {a.anuladoEn ? (
+                    <p class="agregado__anulado">
+                      Anulado{a.anuladoPor && ` por ${a.anuladoPor}`} el {cuando(a.anuladoEn)}: {a.anuladoMotivo}
+                    </p>
+                  ) : (
+                    <>
+                      {a.tipo === 'examenes' && (
+                        a.ordenId ? (
+                          <p class="agregado__orden">
+                            <a href={`/sistema/atencion/${a.ordenId}`}>Ver la orden registrada</a>
+                          </p>
+                        ) : puedeRegistrarOrden ? (
+                          <p class="agregado__orden">
+                            <a class="sis-boton sis-boton--suave"
+                               href={`/sistema/atencion/nueva?tipo=laboratorio&cedula=${encodeURIComponent(caso.cedula)}&doc=${caso.tipoDoc}&origen=${caso.id}&indicacion=${a.id}`}>
+                              <Icono nombre="laboratorio" tam={18} />
+                              Registrar la orden
+                            </a>
+                          </p>
+                        ) : (
+                          <p class="agregado__orden lado__vacio">Falta que recepción registre la orden.</p>
+                        )
+                      )}
+                      {puedeAnularAgregado && (
+                        <details class="agregado__anular">
+                          <summary>Anular</summary>
+                          <form method="post">
+                            <input type="hidden" name="accion" value="anular_agregado" />
+                            <input type="hidden" name="agregado" value={a.id} />
+                            <label for={`motivo-${a.id}`}>¿Por qué se anula?</label>
+                            <input id={`motivo-${a.id}`} name="motivo" type="text" required maxlength="1000" />
+                            <button type="submit" class="sis-boton sis-boton--suave">Anular</button>
+                          </form>
+                        </details>
+                      )}
+                    </>
+                  )}
+                </li>
+              ))}
+            </ol>
+          )}
+
+          {puedeAgregar && (
+            <form method="post" class="agregar" data-agregar>
+              <input type="hidden" name="accion" value="agregar" />
+              <fieldset class="agregar__tipo">
+                <legend>Qué va a agregar</legend>
+                {(['nota', 'diagnostico', 'examenes'] as const).map((t) => (
+                  <label>
+                    <input type="radio" name="tipo" value={t} checked={tecleado.tipo === t} />
+                    {ROTULO_AGREGADO[t]}
+                  </label>
+                ))}
+              </fieldset>
+
+              <div class="agregar__campo" data-para="nota">
+                <label for="nota_texto">Nota</label>
+                <textarea id="nota_texto" name="nota_texto" rows="4" maxlength="4000">{tecleado.tipo === 'nota' ? tecleado.texto : ''}</textarea>
+              </div>
+              <div class="agregar__campo" data-para="diagnostico">
+                <Diagnostico campo={campoDx} valor={tecleado.dx} codigo={tecleado.dxCodigo} />
+              </div>
+              <div class="agregar__campo" data-para="examenes">
+                <label for="examenes_texto">Exámenes indicados <span class="lado__vacio">· uno por línea</span></label>
+                <textarea id="examenes_texto" name="examenes_texto" rows="4" maxlength="4000">{tecleado.tipo === 'examenes' ? tecleado.texto : ''}</textarea>
+                <p class="lado__vacio">Recepción los ve en su cola y registra la orden con su precio.</p>
+              </div>
+
+              <button type="submit" class="sis-boton sis-boton--azul">Agregar</button>
+            </form>
+          )}
+        </section>
+      )}
     </div>
 
     <aside class="col__lado">
@@ -675,6 +840,33 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
   .ficha dd small { color: var(--tinta-tenue); }
 
   .lado__vacio { font-size: var(--u-sm); color: var(--tinta-tenue); }
+
+  .agregados .msj--bien {
+    margin-top: 12px; padding: 10px 13px; border-radius: 8px;
+    background: #e4f2ea; border: 1px solid #a9d5bd; color: #105433; font-size: var(--u-sm);
+  }
+  .agregados .sis-error { margin-top: 12px; }
+  .agregados__lista { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 1px; }
+  .agregado { padding: 12px 0; border-top: 1px solid var(--linea-tenue); }
+  .agregado__cabeza { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--u-sm); color: var(--tinta-suave); }
+  .agregado__cabeza strong { color: var(--tinta); }
+  .agregado__texto { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .agregado__examenes { margin: 6px 0 0; padding-left: 20px; }
+  .agregado__orden { margin-top: 9px; }
+  /* Anulado: tachado y a la vista, nunca escondido. */
+  .agregado--anulado .agregado__texto,
+  .agregado--anulado .agregado__examenes { text-decoration: line-through; color: var(--tinta-tenue); }
+  .agregado__anulado { margin-top: 6px; font-size: var(--u-sm); color: #8a1c1c; }
+  .agregado__anular { margin-top: 8px; font-size: var(--u-sm); }
+  .agregado__anular summary { cursor: pointer; color: var(--tinta-suave); }
+  .agregado__anular form { display: grid; gap: 7px; margin-top: 8px; max-width: 420px; }
+  .agregar { display: grid; gap: 12px; margin-top: 16px; padding-top: 14px; border-top: 1px solid var(--linea); }
+  .agregar__tipo { display: flex; flex-wrap: wrap; gap: 8px 16px; border: 0; padding: 0; margin: 0; }
+  .agregar__tipo legend { font-weight: 600; margin-bottom: 6px; }
+  .agregar__tipo label { display: inline-flex; align-items: center; gap: 6px; }
+  .agregar__campo { display: grid; gap: 6px; }
+  .agregar__campo textarea { width: 100%; }
+  .agregar__campo[hidden] { display: none; }
   .lado__quien { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--linea-tenue); font-size: var(--u-sm); color: var(--tinta-suave); }
 
   .renglones { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
@@ -706,3 +898,21 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
   .previas span { font-size: var(--u-sm); color: var(--tinta-suave); }
   .previas em { font-style: normal; font-size: var(--u-xs); color: var(--tinta-tenue); }
 </style>
+
+<script>
+  /* Se ve solo el campo del tipo elegido. Sin JS se ven los tres y el
+     servidor toma el que corresponde al tipo marcado. */
+  const form = document.querySelector<HTMLFormElement>('[data-agregar]');
+  if (form) {
+    const mostrar = () => {
+      const tipo = form.querySelector<HTMLInputElement>('input[name="tipo"]:checked')?.value ?? 'nota';
+      form.querySelectorAll<HTMLElement>('[data-para]').forEach((b) => {
+        b.hidden = b.dataset.para !== tipo;
+      });
+    };
+    form.addEventListener('change', (e) => {
+      if ((e.target as HTMLInputElement).name === 'tipo') mostrar();
+    });
+    mostrar();
+  }
+</script>

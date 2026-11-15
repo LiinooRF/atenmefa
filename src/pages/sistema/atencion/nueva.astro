@@ -25,13 +25,14 @@ import { exigir } from '../../../sistema/lib/guardia';
 import { bd, esquema } from '../../../sistema/lib/base';
 import {
   limpiarDatos, faltantes, pacienteDe, anotar, hoyEnVenezuela, ahoraEnVenezuela,
-  guardarBorrador, esIdentificador, soloDigitos,
+  guardarBorrador, esIdentificador, soloDigitos, normalizar,
 } from '../../../sistema/lib/atenciones';
 import {
   ROTULO, PISTA, TIPOS, alcanza, comoSeLee, esTipo, formatearInterno,
   llaveDe, numeroInterno, type TipoDocumento,
 } from '../../../sistema/lib/documento';
 import { asegurarPin } from '../../../sistema/lib/verificacion';
+import { indicacionParaOrden, lineasDeExamenes, vincularOrden } from '../../../sistema/lib/agregados';
 import { aniosCumplidos } from '../../../sistema/lib/fechas';
 import { puede } from '../../../sistema/lib/permisos';
 import ExamenesLab from '../../../components/sistema/ExamenesLab.astro';
@@ -207,6 +208,15 @@ if (esLaboratorio && esIdentificador(crudoOrigen)) {
   origen = fila ?? null;
 }
 
+/* Los exámenes que un médico indicó después del cierre de esa consulta.
+   Llega con «Registrar la orden» desde la consulta o desde la cola; solo
+   vale si es una indicación pendiente de ESA consulta. Ver
+   lib/agregados.ts. */
+const crudaIndicacion = (Astro.url.searchParams.get('indicacion') ?? '').trim();
+const indicacion = esLaboratorio && origen && crudaIndicacion
+  ? await indicacionParaOrden(crudaIndicacion, origen.id)
+  : null;
+
 const hayPaciente = alcanza(tipoDoc, cedulaPedida);
 const abrirFormulario = hayPaciente;
 
@@ -250,6 +260,20 @@ let datos: Record<string, string> = {
     : {}),
 };
 
+/* Precargada con lo indicado: lo que calza con un examen del catálogo
+   queda marcado, y lo demás va a «Otros exámenes». Recepción lo revisa y
+   recién al guardar cuenta: nada se cobra sin que lo vea marcado. */
+if (indicacion && Astro.request.method !== 'POST') {
+  const porNombre = new Map(catalogo.map((e) => [normalizar(e.nombre), e.id]));
+  const sueltos: string[] = [];
+  for (const linea of lineasDeExamenes(indicacion.texto)) {
+    const id = porNombre.get(normalizar(linea));
+    if (id) { if (!examenesMarcados.includes(id)) examenesMarcados.push(id); }
+    else sueltos.push(linea);
+  }
+  if (sueltos.length) datos = { ...datos, examenes: sueltos.join('\n') };
+}
+
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
   /* Una orden de laboratorio no se cierra desde acá: la cierra el
@@ -279,6 +303,7 @@ if (Astro.request.method === 'POST') {
           error = 'La atención cambió de estado mientras escribía. Ábrala desde los borradores.';
         } else {
           if (esLaboratorio) await sincronizarExamenes(guardada.id, examenesMarcados, datos.aseguradora);
+          if (indicacion && origen) await vincularOrden(indicacion.id, origen.id, guardada.id);
           await anotar(usuario.id, cerrar ? 'cerro' : 'edito', guardada.id, { numero: guardada.numero });
           return Astro.redirect(`/sistema/atencion/${guardada.id}`);
         }
@@ -305,6 +330,7 @@ if (Astro.request.method === 'POST') {
           .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
 
         if (esLaboratorio) await sincronizarExamenes(creada.id, examenesMarcados, datos.aseguradora);
+        if (indicacion && origen) await vincularOrden(indicacion.id, origen.id, creada.id);
         // Cerrada de una: el documento nace acá y necesita su PIN.
         if (cerrar) await asegurarPin(creada.id);
         await anotar(usuario.id, cerrar ? 'cerro' : 'creo', creada.id, { numero: creada.numero });

@@ -35,6 +35,8 @@ export interface DatosDelInforme {
   recipe?: string;
   indicaciones?: string;
   idx?: string;
+  /** Lo que se le sumó a la consulta después de cerrarla, sin lo anulado. */
+  agregados?: readonly { rotulo: string; cuando: string; autor: string; texto: string }[];
   /** Quien firma: el médico o el bioanalista. */
   firma: { nombre: string; colegiatura?: string | null; rol: string };
   verificacion: { url: string; pin: string | null; dominioCorto: string };
@@ -109,6 +111,14 @@ export function htmlDelInforme(d: DatosDelInforme): string {
     <p style="margin:0;font-size:13px;line-height:1.7">${parrafo(d.indicaciones)}</p>` : ''}`
     : '';
 
+  const agregados = !esLab && d.agregados?.length
+    ? `
+    <h2 style="margin:26px 0 8px;font-size:15px;color:${AZUL}">Agregado después del cierre</h2>
+    ${d.agregados.map((a) => `
+    <p style="margin:0 0 4px;font-size:12px;color:${GRIS}">${escapar(a.rotulo)} · ${escapar(a.cuando)} · ${escapar(a.autor)}</p>
+    <p style="margin:0 0 12px;font-size:13px;line-height:1.7">${parrafo(a.texto)}</p>`).join('')}`
+    : '';
+
   const observa = d.observaciones
     ? `
     <h2 style="margin:26px 0 8px;font-size:15px;color:${AZUL}">Observaciones</h2>
@@ -175,6 +185,7 @@ export function htmlDelInforme(d: DatosDelInforme): string {
             ${listaExamenes}
             ${tablaResultados}
             ${receta}
+            ${agregados}
             ${observa}
 
             <table role="presentation" cellpadding="0" cellspacing="0"
@@ -240,6 +251,10 @@ export function textoDelInforme(d: DatosDelInforme): string {
   if (!esLab && d.recipe) lineas.push('', 'RÉCIPE', d.recipe);
   if (!esLab && d.indicaciones) lineas.push('', 'INDICACIONES', d.indicaciones);
   if (d.observaciones) lineas.push('', 'OBSERVACIONES', d.observaciones);
+  if (!esLab && d.agregados?.length) {
+    lineas.push('', 'AGREGADO DESPUÉS DEL CIERRE');
+    for (const a of d.agregados) lineas.push(`${a.rotulo} · ${a.cuando} · ${a.autor}`, a.texto, '');
+  }
 
   lineas.push(
     '',

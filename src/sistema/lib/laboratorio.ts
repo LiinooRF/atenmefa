@@ -398,6 +398,20 @@ export async function determinacionesDelArchivo(): Promise<string[]> {
  * cargara 141, y la tarjeta de «cargar» no se iba nunca porque creía que
  * faltaban dos.
  */
+/**
+ * Los perfiles que el cargador no tiene que crear: los que ya están y los
+ * que se borraron a propósito (025-perfiles-descartados.sql). Sin los
+ * segundos, la tarjeta de «cargar» los contaba como faltantes y el primer
+ * toque los recreaba.
+ */
+async function perfilesYaConocidos() {
+  const [estan, descartados] = await Promise.all([
+    bd.select({ nombreBusca: esquema.perfil.nombreBusca }).from(esquema.perfil),
+    bd.select({ nombreBusca: esquema.perfilDescartado.nombreBusca }).from(esquema.perfilDescartado),
+  ]);
+  return new Set([...estan, ...descartados].map((p) => p.nombreBusca));
+}
+
 export async function faltanEnElCatalogo(): Promise<number> {
   const delArchivo = await determinacionesDelArchivo();
   const enCatalogo = await bd
@@ -426,10 +440,7 @@ export async function faltanEnElCatalogo(): Promise<number> {
     cuantosPorHoja.set(r.examen, (cuantosPorHoja.get(r.examen) ?? 0) + 1);
   }
   const hojas = [...cuantosPorHoja].map(([examen, cuantos]) => ({ examen, cuantos }));
-  const yaPerfiles = await bd
-    .select({ nombreBusca: esquema.perfil.nombreBusca })
-    .from(esquema.perfil);
-  const perfilesConocidos = new Set(yaPerfiles.map((p) => p.nombreBusca));
+  const perfilesConocidos = await perfilesYaConocidos();
   // Una hoja con un solo analito es un examen, no un perfil. Y las que se
   // venden enteras no generan perfil: eso lo hace el baremo.
   const perfiles = hojas.filter(
@@ -525,10 +536,7 @@ export async function cargarExamenesAlCatalogo(): Promise<{
     porHoja.set(f.examen, lista);
   }
 
-  const yaPerfiles = await bd
-    .select({ nombreBusca: esquema.perfil.nombreBusca })
-    .from(esquema.perfil);
-  const perfilesConocidos = new Set(yaPerfiles.map((p) => p.nombreBusca));
+  const perfilesConocidos = await perfilesYaConocidos();
 
   let perfilesNuevos = 0;
   for (const [hoja, miembros] of porHoja) {

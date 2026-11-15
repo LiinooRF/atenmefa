@@ -153,6 +153,12 @@ export const servicio = pgTable('servicio', {
  * Combos de exámenes. No tienen precio propio: se cobra la suma de los que
  * queden marcados. Ver 014-perfiles.sql.
  */
+/** Perfiles borrados a propósito: el cargador no los recrea. Ver 025. */
+export const perfilDescartado = pgTable('perfil_descartado', {
+  nombreBusca: text('nombre_busca').primaryKey(),
+  descartado: timestamp('descartado', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const perfil = pgTable('perfil', {
   id: uuid('id').primaryKey().defaultRandom(),
   nombre: text('nombre').notNull(),
@@ -182,6 +188,27 @@ export const renglon = pgTable('renglon', {
   paga: pagaQuien('paga').notNull().default('paciente'),
   creado: timestamp('creado', { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [index('renglon_atencion_idx').on(t.atencionId)]);
+
+/**
+ * Lo que se le suma a una atención cerrada sin editarla: notas,
+ * diagnósticos y exámenes indicados. Se anula con motivo, no se borra.
+ * Ver 024-agregados.sql.
+ */
+export const agregado = pgTable('agregado', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  atencionId: uuid('atencion_id').notNull().references(() => atencion.id),
+  tipo: text('tipo').notNull().$type<'nota' | 'diagnostico' | 'examenes'>(),
+  texto: text('texto').notNull(),
+  codigo: text('codigo'),
+  autorId: text('autor_id').notNull().references(() => user.id),
+  creado: timestamp('creado', { withTimezone: true }).notNull().defaultNow(),
+  ordenId: uuid('orden_id').references((): AnyPgColumn => atencion.id),
+  anuladoPor: text('anulado_por').references(() => user.id),
+  anuladoMotivo: text('anulado_motivo'),
+  anuladoEn: timestamp('anulado_en', { withTimezone: true }),
+}, (t) => [
+  index('agregado_atencion_idx').on(t.atencionId, t.creado),
+]);
 
 export const bitacora = pgTable('bitacora', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),

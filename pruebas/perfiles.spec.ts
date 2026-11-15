@@ -35,6 +35,7 @@ test.afterAll(async () => {
   await conBase(async (sql) => {
     await sql`DELETE FROM perfil_examen`;
     await sql`DELETE FROM perfil`;
+    await sql`DELETE FROM perfil_descartado WHERE nombre_busca = 'quimica rutina'`;
   });
 });
 
@@ -243,4 +244,27 @@ test('el médico no administra los perfiles', async ({ page }) => {
   await entrar(page, 'medico');
   await page.goto('/sistema/perfiles');
   await expect(page).toHaveURL(/\/sistema\/sin-permiso/);
+});
+
+test('un perfil descartado no vuelve con la carga del archivo', async ({ page }) => {
+  /* Los perfiles del Excel se borraron en Atenmefa porque confundían
+     (025-perfiles-descartados.sql). Si la carga los siguiera contando como
+     faltantes, la tarjeta de «cargar» volvería a aparecer y el primer toque
+     los recrearía prendidos. */
+  await conBase(async (sql) => {
+    await sql`INSERT INTO perfil_descartado (nombre_busca) VALUES ('quimica rutina')
+              ON CONFLICT DO NOTHING`;
+    await sql`DELETE FROM perfil WHERE nombre_busca = 'quimica rutina'`;
+  });
+  /* Otro perfil sí falta a propósito: «COAG.» se renombró más arriba, así
+     que la tarjeta aparece y el botón se puede tocar. Es la prueba buena:
+     se carga, y el descartado no vuelve. */
+  await entrar(page, 'administracion');
+  await page.goto('/sistema/servicios');
+  await page.getByRole('button', { name: /Cargar los exámenes y los perfiles/ }).click();
+  await expect(page.locator('.msj--bien')).toBeVisible();
+
+  const [n] = await conBase((sql) => sql`
+    SELECT COUNT(*)::int AS n FROM perfil WHERE nombre_busca = 'quimica rutina'`);
+  expect(n.n).toBe(0);
 });

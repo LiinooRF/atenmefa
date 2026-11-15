@@ -49,6 +49,7 @@ export type Permiso =
   | 'escribir_historia'    // crear y editar atenciones
   | 'abrir_consulta'       // admitir el caso en el mesón para que el médico lo escriba
   | 'cerrar_atencion'      // firmar y cerrar
+  | 'agregar_al_caso'      // sumarle notas, diagnósticos o exámenes a una cerrada, sin editarla
   | 'anular_atencion'      // dejar sin efecto una cerrada, con motivo
   | 'imprimir_documento'   // el "2 en 1"
   | 'cargar_cobro'         // renglones de una atención
@@ -82,6 +83,10 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
     'ver_historia',
     'escribir_historia',
     'cerrar_atencion',
+    /* Cualquier médico, no solo el que atendió: el que ve al paciente la
+       segunda vez puede ser otro. Agrega debajo de lo cerrado y no lo
+       edita; anularlo es de administración. Ver 024-agregados.sql. */
+    'agregar_al_caso',
     'imprimir_documento',
     'enviar_documento',
     'cargar_cobro',
@@ -330,6 +335,7 @@ export const porQueNo: Record<Permiso, string> = {
   abrir_consulta: 'Su usuario no puede admitir casos.',
   cerrar_atencion: 'Solo el personal médico cierra y firma una atención.',
   anular_atencion: 'Solo administración puede anular una atención cerrada.',
+  agregar_al_caso: 'Solo el personal médico le agrega notas a una atención cerrada.',
   imprimir_documento: 'Su usuario no puede imprimir el documento.',
   cargar_cobro: 'El cobro lo carga administración.',
   editar_catalogo: 'El catálogo de servicios lo maneja administración.',
