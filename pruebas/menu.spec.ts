@@ -38,23 +38,32 @@ test('al médico le queda el menú plano, sin desplegables', async ({ page }) =>
   await expect(page.locator('.sis__grupo')).toHaveCount(0);
 });
 
-test('administración ve ocho entradas en vez de dieciséis sueltas', async ({ page }) => {
+test('administración ve seis entradas en vez de diecinueve sueltas, y entran en la tablet', async ({ page }) => {
   await entrar(page, 'administracion');
 
   expect(await deLaBarra(page)).toEqual([
-    'Casos', 'Borradores', 'Laboratorio', 'Derivaciones', 'Pacientes', 'Cobros', 'Reportes', 'Administración',
+    'Casos', 'Laboratorio', 'Derivaciones', 'Pacientes', 'Cobros y reportes', 'Administración',
   ]);
+  // En la tablet se ven todas sin deslizar la barra (antes «Administración»
+  // quedaba fuera de la pantalla a 1024 px).
+  await page.setViewportSize({ width: 1024, height: 900 });
+  const derecha = await page.locator('.sis__nav > a, .sis__nav > details > summary')
+    .evaluateAll((n) => Math.max(...n.map((x) => x.getBoundingClientRect().right)));
+  expect(derecha).toBeLessThanOrEqual(1024);
 
   const dentro = async (grupo: string) =>
     page.locator('.sis__grupo').filter({ hasText: grupo }).locator('.sis__menu a')
       .evaluateAll((a) => a.map((x) => (x.textContent ?? '').trim()));
 
-  expect(await dentro('Cobros')).toEqual([
-    'Cierre del mes', 'Servicios y precios', 'Perfiles del laboratorio', 'Especialistas de afuera',
-  ]);
-  expect(await dentro('Reportes')).toEqual(['Tablero', 'Marketing del sitio']);
+  /* Cada cosa en su área (revisión del 16-11): los perfiles son del
+     laboratorio, la libreta de especialistas es de las derivaciones, y en
+     Cobros queda solo la plata. */
+  expect(await dentro('Laboratorio')).toEqual(['Laboratorio', 'Valores de referencia', 'Fórmulas', 'Perfiles']);
+  expect(await dentro('Derivaciones')).toEqual(['Derivaciones', 'Especialistas de afuera']);
+  expect(await dentro('Casos')).toEqual(['Casos', 'Borradores']);
+  expect(await dentro('Cobros y reportes')).toEqual(['Cierre del mes', 'Servicios y precios', 'Tablero', 'Marketing del sitio']);
   expect(await dentro('Administración')).toEqual([
-    'Cuentas', 'Diagnósticos frecuentes', 'Bitácora de accesos', 'Ajustes del centro',
+    'Ajustes del centro', 'Cuentas', 'Diagnósticos frecuentes', 'Bitácora de accesos',
   ]);
 });
 
@@ -90,13 +99,19 @@ test('el grupo se marca cuando estás en una de sus pantallas', async ({ page })
   };
 
   await page.goto('/sistema/cierre');
-  expect(await marcado()).toBe('Cobros');
+  expect(await marcado()).toBe('Cobros y reportes');
 
   await page.goto('/sistema/marketing');
-  expect(await marcado()).toBe('Reportes');
+  expect(await marcado()).toBe('Cobros y reportes');
 
   await page.goto('/sistema/bitacora');
   expect(await marcado()).toBe('Administración');
+
+  await page.goto('/sistema/perfiles');
+  expect(await marcado()).toBe('Laboratorio');
+
+  await page.goto('/sistema/especialistas');
+  expect(await marcado()).toBe('Derivaciones');
 
   /* /sistema es la lista de casos y calza exacta. Con prefijo se marcaría
      como actual en TODAS las pantallas, porque todas cuelgan de ahí. */
@@ -115,7 +130,7 @@ test('el desplegable se porta como un desplegable', async ({ page }) => {
   await page.goto('/sistema');
 
   const cobros = page.locator('.sis__grupo').filter({ hasText: 'Cobros' });
-  const reportes = page.locator('.sis__grupo').filter({ hasText: 'Reportes' });
+  const reportes = page.locator('.sis__grupo').filter({ hasText: 'Administración' });
 
   await cobros.locator('summary').click();
   await expect(cobros).toHaveJSProperty('open', true);
@@ -146,7 +161,7 @@ test('el desplegable cabe en la pantalla y no se mete bajo la barra', async ({ p
     await page.setViewportSize({ width: ancho, height: 844 });
     await page.goto('/sistema');
 
-    for (const grupo of ['Cobros', 'Reportes', 'Administración']) {
+    for (const grupo of ['Casos', 'Laboratorio', 'Derivaciones', 'Cobros y reportes', 'Administración']) {
       const g = page.locator('.sis__grupo').filter({ hasText: grupo });
       await g.locator('summary').scrollIntoViewIfNeeded();
       await g.locator('summary').click();

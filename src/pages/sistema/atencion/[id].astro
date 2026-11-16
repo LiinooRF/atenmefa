@@ -14,7 +14,7 @@ import {
 } from '../../../sistema/lib/permisos';
 import { yaLaEscribioElMedico } from '../../../sistema/historia';
 import { alias } from 'drizzle-orm/pg-core';
-import { examenesPedidos, ordenesDe } from '../../../sistema/lib/laboratorio';
+import { componentesDePerfiles, examenesPedidos, ordenesDe } from '../../../sistema/lib/laboratorio';
 import { fueraDeRango, comoSeDice } from '../../../sistema/rangos';
 import { comoSeLee } from '../../../sistema/lib/documento';
 import {
@@ -204,6 +204,12 @@ const renglones = await renglonesDe(caso.id);
    Ver 009-roles.sql. */
 const ordenes = esLab ? [] : await ordenesDe(caso.id);
 const pedidos = esLab ? await examenesPedidos(caso.id) : [];
+/* Lo que trae cada perfil pedido, para que la ficha diga qué se va a hacer
+   y no solo «Perfil Lípido». Solo lo que quedó marcado. */
+const conPerfil = pedidos.filter((p) => p.incluye?.length).map((p) => p.servicioId!);
+const dePerfiles = conPerfil.length ? await componentesDePerfiles(conPerfil) : new Map();
+const quedaron = (p: (typeof pedidos)[number]) =>
+  (dePerfiles.get(p.servicioId) ?? []).filter((c: { id: string }) => p.incluye?.includes(c.id)).map((c: { nombre: string }) => c.nombre);
 const resultados = (caso.resultados ?? []) as Resultado[];
 
 const [origenCrudo] = caso.origenId
@@ -456,7 +462,12 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
         <section class="ficha">
           <h2>Exámenes pedidos</h2>
           <ul class="pedidos">
-            {pedidos.map((p) => <li>{p.nombre}</li>)}
+            {pedidos.map((p) => (
+              <li>
+                {p.nombre}
+                {quedaron(p).length > 0 && <small class="pedidos__trae">{quedaron(p).join(' · ')}</small>}
+              </li>
+            ))}
           </ul>
         </section>
       )}
@@ -995,6 +1006,10 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
 
   .cab { display: flex; flex-wrap: wrap; gap: 14px; align-items: flex-start; justify-content: space-between; }
   .cab__linea { display: flex; flex-wrap: wrap; align-items: center; gap: 11px; }
+  /* En fila y centrados: «Borrar», sin ícono, quedaba más abajo que los
+     botones con ícono. */
+  .cab__acciones { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+  .pedidos__trae { display: block; margin-top: 2px; font-size: var(--u-xs); color: var(--tinta-tenue); }
   .cab__meta { margin-top: 7px; font-size: var(--u-sm); color: var(--tinta-tenue); }
   .cab__meta strong { color: var(--tinta-suave); }
 

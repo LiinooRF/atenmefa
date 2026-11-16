@@ -102,6 +102,10 @@ const hojas = await examenesDelArchivo();
 const esDeLaboratorio = servicio.categoria === 'laboratorio';
 const paraComponer = esDeLaboratorio ? await examenesParaComponer(servicio.id) : [];
 const trae = esDeLaboratorio ? (await componentesDePerfiles([servicio.id])).get(servicio.id) ?? [] : [];
+/* Recién creado desde Perfiles, o ya con exámenes adentro: se vuelve a
+   Perfiles, no a la lista de precios. */
+const perfilNuevo = Astro.url.searchParams.get('perfil') === 'nuevo';
+const esPerfil = perfilNuevo || trae.length > 0;
 const yaTrae = new Set(trae.map((c) => c.id));
 const avisoComponentes = Astro.url.searchParams.get('componentes');
 const nombreHoja = await nombresDeHojas();
@@ -111,7 +115,9 @@ const plantillaVista = tecleado?.plantilla ?? servicio.plantilla ?? '';
 <Sistema titulo={servicio.nombre}>
   <nav class="miga">
     <a href="/sistema">Casos</a> <span>/</span>
-    <a href="/sistema/servicios">Servicios</a> <span>/</span>
+    {esPerfil
+      ? <><a href="/sistema/laboratorio">Laboratorio</a> <span>/</span> <a href="/sistema/perfiles">Perfiles</a> <span>/</span></>
+      : <><a href="/sistema/servicios">Servicios</a> <span>/</span></>}
     {servicio.nombre}
   </nav>
 
@@ -217,6 +223,9 @@ const plantillaVista = tecleado?.plantilla ?? servicio.plantilla ?? '';
         perfil menos el precio suelto de lo quitado; lo que no se vende suelto no
         descuenta. Al laboratorio le llegan solo los que quedaron.
       </p>
+      {perfilNuevo && avisoComponentes === null && (
+        <p class="componentes__ok" role="status">Perfil creado. Marque abajo los exámenes que trae y guarde.</p>
+      )}
       {avisoComponentes !== null && (
         <p class="componentes__ok" role="status">Guardado: trae {avisoComponentes} exámenes.</p>
       )}

@@ -39,9 +39,17 @@ export function limpiarDatos(form: FormData) {
   const datos: Record<string, string> = {};
   for (const [k, v] of form.entries()) {
     if (!CLAVES.has(k)) continue;
-    const valor = String(v).trim();
-    if (valor) datos[k] = valor;
+    /* Un cuadro de texto llega con «\r\n» —así lo manda el navegador—;
+       se guarda con «\n» para que una lista de uno por línea se lea igual
+       en todas partes. */
+    const valor = String(v).replace(/\r\n?/g, '\n').trim();
+    if (!valor) continue;
+    /* Un campo de varias opciones manda una casilla por cada una marcada:
+       se juntan, «Parenteral, Enteral». Antes quedaba solo la última. */
+    datos[k] = datos[k] ? `${datos[k]}, ${valor}` : valor;
   }
+  /* El bloque de derivar no es un dato de la historia. */
+  delete datos.derivar;
   return datos;
 }
 

@@ -28,7 +28,15 @@ export type TipoCampo =
   | 'correo'
   /* Buscador del catálogo CIE-10 que además deja escribir a mano. Guarda
      dos valores: el nombre en su clave y el código en `<clave>_codigo`. */
-  | 'diagnostico';
+  | 'diagnostico'
+  /* Una lista de diagnósticos más, del catálogo o escritos: uno por línea,
+     «I10 · Hipertensión esencial». Ver DiagnosticosOtros.astro. */
+  | 'diagnosticos'
+  /* Varias opciones a la vez, en casillas. Se guarda «Parenteral, Enteral». */
+  | 'varias'
+  /* No es un dato de la historia: el bloque para derivar al paciente desde
+     adentro de la atención. Ver DerivarEnLaAtencion.astro. */
+  | 'derivaciones';
 
 export interface Campo {
   clave: string;
@@ -176,14 +184,25 @@ export const historia: readonly Seccion[] = [
          expresamente— y cuando elige del catálogo, el código viaja con el
          nombre. Ver components/sistema/Diagnostico.astro. */
       { clave: 'idx', rotulo: 'Diagnóstico', tipo: 'diagnostico', exigido: true, ancho: 4 },
-      { clave: 'via', rotulo: 'Vía del tratamiento aplicado', tipo: 'opcion',
+      /* El principal va arriba con su código; los demás, acá. «No puedo
+         seleccionar más de un diagnóstico o que el médico escriba uno a
+         mano extra.» */
+      { clave: 'idx_otros', rotulo: 'Otros diagnósticos', tipo: 'diagnosticos', ancho: 4 },
+      /* Varias a la vez: a un paciente se le pone algo por vena y se le
+         nebuliza en la misma consulta. */
+      { clave: 'via', rotulo: 'Vía del tratamiento aplicado', tipo: 'varias',
         opciones: ['Parenteral', 'Enteral', 'Sublingual', 'Tópico', 'Nebulización', 'Sutura', 'Sondaje', 'Otro'],
-        ancho: 2 },
+        ancho: 4 },
       { clave: 'tratamiento_aplicado', rotulo: 'Tratamiento aplicado', tipo: 'parrafo', ancho: 4 },
-      { clave: 'ambulatorio', rotulo: '¿Tratamiento ambulatorio?', tipo: 'si-no', ancho: 1 },
       { clave: 'laboratorio', rotulo: 'Exámenes de laboratorio', tipo: 'texto', ancho: 2 },
       { clave: 'radiologico', rotulo: 'Exámenes radiológicos', tipo: 'texto', ancho: 2 },
-      { clave: 'referido', rotulo: 'Referido a', tipo: 'texto', ancho: 2 },
+      { clave: 'ambulatorio', rotulo: '¿Tratamiento ambulatorio?', tipo: 'si-no', ancho: 1 },
+      /* «Referido a» era un texto suelto, y la derivación de verdad vivía
+         afuera de la atención, en la ficha. Ahora se deriva desde acá: al
+         especialista del centro, al de afuera o un traslado. El texto queda
+         para las historias de antes. */
+      { clave: 'referido', rotulo: 'Referido a', tipo: 'texto', ancho: 2, legado: true },
+      { clave: 'derivar', rotulo: 'Derivar al paciente', tipo: 'derivaciones', ancho: 4 },
     ],
   },
   {

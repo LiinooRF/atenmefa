@@ -6,6 +6,8 @@
  */
 import type { Campo } from '../../sistema/historia';
 import Diagnostico from './Diagnostico.astro';
+import DiagnosticosOtros from './DiagnosticosOtros.astro';
+import DerivarEnLaAtencion from './DerivarEnLaAtencion.astro';
 
 interface Props {
   campo: Campo;
@@ -29,6 +31,26 @@ const comun = {
     valor. Vive en su componente para no llenar éste de excepciones. */}
 {c.tipo === 'diagnostico' ? (
   <Diagnostico campo={c} valor={valor} codigo={codigo} />
+) : c.tipo === 'diagnosticos' ? (
+  <DiagnosticosOtros campo={c} valor={valor} />
+) : c.tipo === 'derivaciones' ? (
+  <DerivarEnLaAtencion campo={c} />
+) : c.tipo === 'varias' ? (
+  /* Varias a la vez: una casilla por opción, todas con el mismo nombre.
+     limpiarDatos las junta, «Parenteral, Enteral». */
+  <fieldset class:list={['campo', 'campo--varias', `campo--${c.ancho ?? 2}`]} id={id}>
+    <legend>{c.rotulo}</legend>
+    <div class="varias">
+      {c.opciones?.map((o) => (
+        <label class="varias__una">
+          <input type="checkbox" name={c.clave} value={o}
+                 checked={valor.split(',').map((v) => v.trim()).includes(o)} />
+          {o}
+        </label>
+      ))}
+    </div>
+    {c.pista && <span class="pista" id={pistaId}>{c.pista}</span>}
+  </fieldset>
 ) : (
 <div class:list={['campo', `campo--${c.ancho ?? 2}`]}>
   <label for={id}>
@@ -122,6 +144,16 @@ const comun = {
     border-color: var(--rojo);
   }
   .pista { font-size: var(--u-xs); color: var(--tinta-tenue); }
+  .campo--varias { border: 0; margin: 0; padding: 0; }
+  .campo--varias legend { font-size: var(--u-sm); font-weight: 600; color: var(--tinta-suave); margin-bottom: 6px; padding: 0; }
+  .varias { display: flex; flex-wrap: wrap; gap: 6px 8px; }
+  .varias__una {
+    display: inline-flex; align-items: center; gap: 8px; min-height: 44px; padding: 0 14px;
+    border: 1px solid var(--linea); border-radius: 999px; background: var(--papel);
+    font-weight: 400; color: var(--tinta); cursor: pointer;
+  }
+  .varias__una input { width: 18px; height: 18px; min-height: 0; margin: 0; }
+  .varias__una:has(input:checked) { border-color: var(--azul); background: var(--azul-tenue); }
 </style>
 
 <script>

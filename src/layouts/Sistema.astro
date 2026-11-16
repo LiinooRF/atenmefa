@@ -44,6 +44,12 @@ interface Bloque { texto: string; icono: Icono; entradas: Entrada[] }
 const MENU: Bloque[] = [
   { texto: 'Casos', icono: 'estetoscopio', entradas: [
     { href: '/sistema', texto: 'Casos', permiso: 'ver_casos' },
+    /* Administración entra a los borradores solo para borrar los que
+       quedaron colgados: va dentro de Casos y no ocupa un lugar en la barra,
+       que en la tablet ya no le alcanzaba («Administración» quedaba fuera de
+       la pantalla). Ningún otro rol tiene este permiso, así que al médico y
+       a recepción Casos les sigue quedando suelto. */
+    { href: '/sistema/borradores', texto: 'Borradores', permiso: 'anular_atencion' },
   ] },
   { texto: 'Nueva atención', icono: 'mas', entradas: [
     { href: '/sistema/atencion/nueva', texto: 'Nueva atención', permiso: 'escribir_historia' },
@@ -58,7 +64,7 @@ const MENU: Bloque[] = [
     /* El médico porque los escribe, administración porque los borra y
        recepción porque es donde ve si ya pasaron a los que admitió. */
     { href: '/sistema/borradores', texto: 'Borradores',
-      permiso: ['escribir_historia', 'anular_atencion', 'abrir_consulta'] },
+      permiso: ['escribir_historia', 'abrir_consulta'] },
   ] },
   { texto: 'Laboratorio', icono: 'laboratorio', entradas: [
     { href: '/sistema/laboratorio', texto: 'Laboratorio', permiso: 'cola_laboratorio' },
@@ -67,6 +73,10 @@ const MENU: Bloque[] = [
        quien mide. */
     { href: '/sistema/plantillas', texto: 'Valores de referencia', permiso: 'editar_plantillas' },
     { href: '/sistema/formulas', texto: 'Fórmulas', permiso: 'editar_plantillas' },
+    /* Acá y no en Cobros: un perfil es qué exámenes se hacen juntos. El
+       precio se le pone, pero es lo de menos (revisión del 16-11: «¿por
+       qué perfiles está dentro de cobros?»). */
+    { href: '/sistema/perfiles', texto: 'Perfiles', permiso: 'editar_catalogo' },
   ] },
   /* Entrada propia y no dentro de Casos: con dos entradas, Casos se
      volvía un desplegable y el médico perdía su menú plano. */
@@ -75,27 +85,31 @@ const MENU: Bloque[] = [
        mesón, cada médico las suyas. */
     { href: '/sistema/derivaciones', texto: 'Derivaciones',
       permiso: ['gestionar_interconsultas', 'derivaciones_recepcion', 'pedir_interconsulta'] },
+    /* La libreta de a quién se deriva. Estaba en Cobros, que no tiene nada
+       que ver. Solo administración la ve, así que el médico y recepción
+       siguen con «Derivaciones» suelto. */
+    { href: '/sistema/especialistas', texto: 'Especialistas de afuera', permiso: 'editar_catalogo' },
   ] },
   { texto: 'Pacientes', icono: 'latido', entradas: [
     { href: '/sistema/pacientes', texto: 'Pacientes', permiso: 'ver_pacientes' },
   ] },
-  { texto: 'Cobros', icono: 'recibo', entradas: [
+  /* La plata y los números, juntos: el cierre del mes, cuánto vale cada
+     cosa, el tablero y las visitas del sitio. Eran dos grupos y la barra
+     no entraba en la tablet. */
+  { texto: 'Cobros y reportes', icono: 'recibo', entradas: [
     { href: '/sistema/cierre', texto: 'Cierre del mes', permiso: 'ver_cierre' },
     { href: '/sistema/servicios', texto: 'Servicios y precios', permiso: 'editar_catalogo' },
-    { href: '/sistema/perfiles', texto: 'Perfiles del laboratorio', permiso: 'editar_catalogo' },
-    { href: '/sistema/especialistas', texto: 'Especialistas de afuera', permiso: 'editar_catalogo' },
-  ] },
-  { texto: 'Reportes', icono: 'latido', entradas: [
     { href: '/sistema/tablero', texto: 'Tablero', permiso: 'ver_cierre' },
     { href: '/sistema/marketing', texto: 'Marketing del sitio', permiso: 'ver_marketing' },
   ] },
+  /* Cómo funciona el centro: quién entra, qué se ofrece en la consulta y
+     el registro de lo que se hizo. Lo que más se toca, primero. */
   { texto: 'Administración', icono: 'escudo', entradas: [
+    { href: '/sistema/ajustes', texto: 'Ajustes del centro', permiso: 'administrar_usuarios' },
     { href: '/sistema/usuarios', texto: 'Cuentas', permiso: 'administrar_usuarios' },
-    /* Acá y no en Cobros: es mantenimiento de un catálogo clínico, no
-       tiene nada que ver con la plata. */
+    /* Es la lista de la consulta del médico, no plata. */
     { href: '/sistema/diagnosticos', texto: 'Diagnósticos frecuentes', permiso: 'editar_catalogo' },
     { href: '/sistema/bitacora', texto: 'Bitácora de accesos', permiso: 'ver_bitacora' },
-    { href: '/sistema/ajustes', texto: 'Ajustes del centro', permiso: 'administrar_usuarios' },
   ] },
 ];
 

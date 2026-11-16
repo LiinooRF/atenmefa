@@ -1,0 +1,187 @@
+---
+/**
+ * Derivar al paciente, desde adentro de la atención.
+ *
+ * «Lo de referido está afuera de la atención, debe estar dentro.» La
+ * derivación vivía en la ficha, después de guardar. Ahora el médico deriva
+ * mientras escribe el diagnóstico: al especialista del centro, al de
+ * afuera o un traslado, con la casilla de «pasa por recepción» que cada
+ * centro configura en sus ajustes.
+ *
+ * Este bloque está adentro del formulario de la historia y no puede ser
+ * otro <form>: sus campos no tienen nombre —salvo la elección del tipo,
+ * que limpiarDatos descarta— y habla con /sistema/api/derivaciones. Lo
+ * que ya se derivó se ve acá y en la ficha.
+ */
+import type { Campo } from '../../sistema/historia';
+interface Props { campo: Campo }
+const { campo: c } = Astro.props;
+---
+
+<div class="campo campo--4 der" data-derivar>
+  <span class="der__rotulo">{c.rotulo}</span>
+  <ul class="der__lista" data-lista></ul>
+  <p class="der__nada" data-nada>Todavía no se derivó a ningún lado.</p>
+
+  <details class="der__nueva">
+    <summary>Derivar</summary>
+    <div class="der__form">
+      <fieldset class="der__tipo">
+        <legend>A dónde</legend>
+        <label><input type="radio" name="der_tipo" value="interna" /> Especialista del centro</label>
+        <label><input type="radio" name="der_tipo" value="externa" checked /> Especialista de afuera</label>
+        <label><input type="radio" name="der_tipo" value="traslado" /> Traslado a otro centro</label>
+      </fieldset>
+
+      <label data-para="interna">Especialista del centro
+        <select data-campo="medico"><option value="">Elija uno</option></select>
+      </label>
+      <label data-para="externa">Especialidad
+        <select data-campo="especialidad"><option value="">Elija una</option><option value="__otra">Otra, que no está en la lista</option></select>
+      </label>
+      <label data-para="externa" data-otra>¿Cuál?
+        <input type="text" data-campo="otra" maxlength="120" placeholder="Oftalmología, nefrología…" />
+      </label>
+      <label data-para="traslado">A qué centro u hospital
+        <input type="text" data-campo="centro" maxlength="160" />
+      </label>
+      <label data-para="traslado">¿En ambulancia?
+        <select data-campo="ambulancia"><option value="si">Sí</option><option value="no">No</option></select>
+      </label>
+      <label data-para="traslado">Paramédico <small>si ya se sabe</small>
+        <input type="text" data-campo="paramedico" maxlength="120" />
+      </label>
+      <label>Para qué <small>lo que tiene que saber quien lo recibe</small>
+        <textarea data-campo="motivo" rows="2" maxlength="2000"></textarea>
+      </label>
+      <label class="der__recepcion" data-recepcion hidden>
+        <input type="checkbox" data-campo="por_recepcion" /> Que pase por recepción
+        <small>para admitirlo, cobrar o coordinar la ambulancia</small>
+      </label>
+      <p class="sis-error" data-error hidden></p>
+      <button type="button" class="sis-boton sis-boton--azul" data-enviar>Derivar</button>
+    </div>
+  </details>
+</div>
+
+<script>
+  const caja = document.querySelector<HTMLElement>('[data-derivar]');
+  if (caja) {
+    const idAtencion = () => (document.getElementById('atencion-id') as HTMLInputElement | null)?.value ?? '';
+    const campo = <T extends HTMLElement>(n: string) => caja.querySelector<T>(`[data-campo="${n}"]`)!;
+    const lista = caja.querySelector<HTMLUListElement>('[data-lista]')!;
+    const nada = caja.querySelector<HTMLElement>('[data-nada]')!;
+    const error = caja.querySelector<HTMLElement>('[data-error]')!;
+    const recepcionCaja = caja.querySelector<HTMLElement>('[data-recepcion]')!;
+    const recepcion = campo<HTMLInputElement>('por_recepcion');
+    let porDefecto: Record<string, boolean> | null = null;
+    let tocada = false;          // la casilla de recepción
+    let eligioTipo = false;      // el tipo de derivación
+    recepcion.addEventListener('change', () => { tocada = true; });
+
+    const tipo = () => caja.querySelector<HTMLInputElement>('input[name="der_tipo"]:checked')?.value ?? 'externa';
+    const ver = () => {
+      const t = tipo();
+      caja.querySelectorAll<HTMLElement>('[data-para]').forEach((b) => {
+        b.hidden = b.dataset.para !== t
+          || (b.hasAttribute('data-otra') && campo<HTMLSelectElement>('especialidad').value !== '__otra');
+      });
+      if (porDefecto && !tocada) recepcion.checked = Boolean(porDefecto[t]);
+    };
+    caja.addEventListener('change', (e) => {
+      const el = e.target as HTMLElement;
+      if ((el as HTMLInputElement).name === 'der_tipo') eligioTipo = true;
+      if ((el as HTMLInputElement).name === 'der_tipo' || el.dataset.campo === 'especialidad') ver();
+    });
+
+    const cargar = async () => {
+      const r = await fetch(`/sistema/api/derivaciones?atencion=${encodeURIComponent(idAtencion())}`);
+      if (!r.ok) return;
+      const d = await r.json();
+      lista.replaceChildren(...d.derivaciones.map((x: { destino: string; tipo: string; estado: string; porRecepcion: boolean }) => {
+        const li = document.createElement('li');
+        li.textContent = `${x.destino} · ${x.tipo}${x.porRecepcion ? ' · pasa por recepción' : ''} · ${x.estado}`;
+        return li;
+      }));
+      nada.hidden = d.derivaciones.length > 0;
+
+      const medico = campo<HTMLSelectElement>('medico');
+      if (medico.options.length === 1) {
+        for (const m of d.delCentro) medico.add(new Option(`${m.especialidad} · ${m.nombre}`, m.id));
+        const interna = caja.querySelector<HTMLInputElement>('input[value="interna"]')!;
+        interna.disabled = d.delCentro.length === 0;
+        /* Si hay especialistas en el centro, se propone derivar a ellos;
+           pero si el médico ya eligió otra cosa mientras esto cargaba, no
+           se le cambia. */
+        if (d.delCentro.length && !eligioTipo) interna.checked = true;
+        if (!d.delCentro.length && interna.checked) {
+          caja.querySelector<HTMLInputElement>('input[value="externa"]')!.checked = true;
+        }
+      }
+      const esp = campo<HTMLSelectElement>('especialidad');
+      if (esp.options.length === 2) {
+        for (const e of d.especialidades) esp.add(new Option(e, e), esp.options[1]);
+      }
+      porDefecto = d.recepcion;
+      recepcionCaja.hidden = !d.recepcion;
+      ver();
+    };
+
+    caja.querySelector('[data-enviar]')!.addEventListener('click', async () => {
+      error.hidden = true;
+      const id = idAtencion();
+      if (!id) {
+        error.textContent = 'La atención todavía no se guardó: escriba algo arriba, espere un segundo y vuelva a intentar.';
+        error.hidden = false;
+        return;
+      }
+      const datos = new FormData();
+      datos.set('atencion', id);
+      datos.set('tipo', tipo());
+      for (const n of ['medico', 'especialidad', 'otra', 'centro', 'ambulancia', 'paramedico', 'motivo']) {
+        datos.set(n, (campo<HTMLInputElement>(n).value ?? '').trim());
+      }
+      if (!recepcionCaja.hidden && recepcion.checked) datos.set('por_recepcion', 'si');
+      const r = await fetch('/sistema/api/derivaciones', { method: 'POST', body: datos });
+      const d = await r.json().catch(() => ({}));
+      if (!r.ok) {
+        error.textContent = d.error ?? 'No se pudo derivar.';
+        error.hidden = false;
+        return;
+      }
+      for (const n of ['otra', 'centro', 'paramedico', 'motivo']) campo<HTMLInputElement>(n).value = '';
+      caja.querySelector<HTMLDetailsElement>('.der__nueva')!.open = false;
+      tocada = false;
+      await cargar();
+    });
+
+    cargar();
+  }
+</script>
+
+<style>
+  .der { display: flex; flex-direction: column; gap: 8px; grid-column: span 4; min-width: 0; }
+  .der__rotulo { font-size: var(--u-sm); font-weight: 600; color: var(--tinta-suave); }
+  .der__lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .der__lista:empty { display: none; }
+  .der__lista li { padding: 10px 12px; border: 1px solid var(--linea); border-radius: 8px; background: var(--azul-tenue); font-size: var(--u-sm); }
+  .der__nada { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .der__nada[hidden] { display: none; }
+  .der__nueva summary {
+    display: inline-flex; align-items: center; min-height: 44px; padding: 0 16px; cursor: pointer;
+    border: 1px solid var(--linea); border-radius: 8px; background: var(--papel); font-weight: 600;
+  }
+  .der__form { display: grid; gap: 10px; margin-top: 10px; }
+  .der__form label { display: grid; gap: 4px; font-size: var(--u-sm); font-weight: 600; color: var(--tinta-suave); }
+  .der__form label[hidden] { display: none; }
+  .der__form small { font-weight: 400; color: var(--tinta-tenue); }
+  .der__form input[type='text'], .der__form select, .der__form textarea {
+    width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid var(--linea);
+    border-radius: 8px; background: var(--papel); color: var(--tinta); font: inherit; font-weight: 400;
+  }
+  .der__tipo { border: 0; padding: 0; margin: 0; display: flex; flex-wrap: wrap; gap: 6px 14px; }
+  .der__tipo legend { font-size: var(--u-sm); font-weight: 600; color: var(--tinta-suave); margin-bottom: 4px; }
+  .der__tipo label, .der__recepcion { display: flex !important; flex-direction: row; align-items: center; gap: 8px; min-height: 44px; font-weight: 400 !important; }
+  .der__recepcion { flex-wrap: wrap; }
+  .der__form button { justify-self: start; }
+</style>

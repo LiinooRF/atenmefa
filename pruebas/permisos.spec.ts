@@ -68,7 +68,8 @@ test('administración ve lo suyo y no la puerta de escribir historias', async ({
      cliente le dio el borrado de borradores, así que ahora tiene trabajo
      en esa pantalla. */
   await expect(menu.getByRole('link', { name: 'Nueva atención' })).toHaveCount(0);
-  await expect(menu.getByRole('link', { name: 'Borradores' })).toHaveCount(1);
+  // Dentro del grupo «Casos», que viene cerrado: se cuenta el enlace.
+  await expect(menu.locator('a[href="/sistema/borradores"]')).toHaveCount(1);
 });
 
 /* ---------------------------------------------------------------

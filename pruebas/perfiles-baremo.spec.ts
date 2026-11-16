@@ -184,3 +184,10 @@ test('un ítem con hoja trae los renglones de su hoja y se le quita uno', async 
     });
   }
 });
+
+test('la ficha de la orden dice qué trae el perfil', async ({ page }) => {
+  await entrar(page, 'recepcionista');
+  await page.goto(`/sistema/atencion/${orden}`);
+  const pedido = page.locator('.pedidos li', { hasText: PERFIL });
+  await expect(pedido.locator('.pedidos__trae')).toHaveText(`${A} · ${C}`);
+});

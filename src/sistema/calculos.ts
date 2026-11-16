@@ -165,15 +165,16 @@ export const CALCULOS: readonly Calculo[] = [
     decimales: 4,
     comoSeLee: 'volumen de 24 horas ÷ 1440',
   },
-  {
-    /* =(AA22*AA15)/AA21: creatinina en orina × volumen de 24 horas, sobre
-       la creatinina sérica. Es la suya, tal cual. */
-    resultado: 'Depuración de creatinina',
-    insumos: ['Creatinina en Orina', 'Volumen de Orina/ 24 hrs:', 'Creatinina Sérica'],
-    operacion: { tipo: 'productoSobre' },
-    decimales: 2,
-    comoSeLee: '(creatinina en orina × volumen de 24 h) ÷ creatinina sérica',
-  },
+  /* LA DEPURACIÓN DE CREATININA NO SE CALCULA, por ahora.
+
+     Su celda es =(AA22*AA15)/AA21: creatinina en orina × volumen de 24 h,
+     sobre la creatinina sérica. Con el ejemplo de su hoja (4,38) da 83,77,
+     razonable, pero solo si el volumen se escribe en LITROS, y la hoja dice
+     «ml/24 hrs»: con 1440 ml daba 27.540. La cuenta de libro usa además el
+     volumen por minuto. El laboratorio dijo «debo repasar ese tema,
+     omítelo mientras» (15-11), así que se escribe a mano hasta que lo
+     confirmen. Un número mal calculado en un informe es peor que un campo
+     vacío. La operación 'productoSobre' queda para cuando vuelva. */
   {
     /* =(U14-7.2)/(T15-7.2)*100. El control va arriba y el del paciente
        abajo: así está en su celda y así se deja.

@@ -20,6 +20,7 @@ import { anotar } from '../../../../sistema/lib/atenciones';
 import { clinica } from '../../../../data/clinica';
 import { eq } from 'drizzle-orm';
 import { exigir } from '../../../../sistema/lib/guardia';
+import { ROTULO_TIPO, destinoDe, interconsultasDe } from '../../../../sistema/lib/interconsultas';
 import { entorno } from '../../../../sistema/lib/entorno';
 
 export const prerender = false;
@@ -170,6 +171,15 @@ const formatear = (clave: string, valor: string) => {
   if (clave === 'idx' && d.idx_codigo) return `${valor} (${d.idx_codigo})`;
   return valor;
 };
+
+/* «Referido a» en el papel sale de las derivaciones que se hicieron desde
+   la atención, sin las anuladas. Lo que una historia vieja traía escrito a
+   mano en ese campo se conserva arriba. Solo en esta vista: no se guarda. */
+if (!esLab) {
+  const derivadas = (await interconsultasDe(caso.id)).filter((x) => x.estado !== 'anulada');
+  const lineas = derivadas.map((x) => `${destinoDe(x)} (${ROTULO_TIPO[x.tipo].toLowerCase()})`);
+  if (lineas.length) d.referido = [d.referido, ...lineas].filter(Boolean).join('\n');
+}
 
 /* El récipe es la segunda página: no se repite en el informe. */
 const bloques = historia

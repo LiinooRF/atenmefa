@@ -36,6 +36,7 @@ test.afterAll(async () => {
     await sql`DELETE FROM perfil_examen`;
     await sql`DELETE FROM perfil`;
     await sql`DELETE FROM perfil_descartado WHERE nombre_busca = 'quimica rutina'`;
+    await sql`DELETE FROM servicio WHERE nombre = 'Control prenatal' AND categoria = 'laboratorio'`;
   });
 });
 
@@ -164,39 +165,43 @@ test('el filtro no esconde lo que ya está marcado', async ({ page }) => {
    Armar uno a mano.
    ------------------------------------------------------------------ */
 
-test('administración crea un perfil y le elige los exámenes', async ({ page }) => {
+test('administración crea un perfil con precio y le elige los exámenes', async ({ page }) => {
   /* Él nombró cinco y tres no existen como hoja en su archivo: el control
-     prenatal lo arma él, no se inventa qué lleva. */
+     prenatal lo arma él, no se inventa qué lleva. Un perfil nuevo es un
+     ítem con precio; lo que trae se elige en su ficha. */
   await entrar(page, 'administracion');
   await page.goto('/sistema/perfiles');
 
-  await expect(page.locator('.suelto--nota').first()).toContainText('Control prenatal');
-
   await page.getByLabel('Un perfil nuevo').fill('Control prenatal');
+  await page.getByLabel('Precio en USD').fill('25');
   await page.getByRole('button', { name: 'Crear' }).click();
-  await expect(page).toHaveURL(/\?editar=[0-9a-f-]{36}&nuevo=1$/);
+  await expect(page).toHaveURL(/\/sistema\/servicios\/[0-9a-f-]{36}\?perfil=nuevo#componentes$/);
+  await expect(page.locator('.componentes__ok')).toContainText('Perfil creado');
+  await expect(page.locator('.miga')).toContainText('Perfiles');
 
+  const caja = page.locator('#componentes');
   for (const examen of ['GLICEMIA', 'UREA', 'TOXOPLASMA (IgG)']) {
-    await page.locator('.examenes li', { hasText: examen }).first()
-      .locator('input[type="checkbox"]').check();
+    await caja.locator('#filtro-componentes').fill(examen);
+    await caja.locator('li', { hasText: examen }).first().locator('input[name="componente"]').check();
   }
-  await page.getByRole('button', { name: 'Guardar el perfil' }).click();
-  /* `.first()`: al guardar quedan dos avisos, el de «perfil creado» de la
-     redirección y el del guardado. */
-  await expect(page.locator('.msj--bien').first()).toContainText('3 exámenes');
+  await caja.getByRole('button', { name: 'Guardar los exámenes del perfil' }).click();
+  await expect(page.locator('.componentes__ok')).toContainText('trae 3 exámenes');
 
-  const suyos = await conBase((sql) => sql`
-    SELECT s.nombre FROM perfil p
-      JOIN perfil_examen pe ON pe.perfil_id = p.id
-      JOIN servicio s ON s.id = pe.servicio_id
-     WHERE p.nombre_busca = 'control prenatal' ORDER BY s.nombre`);
-  expect(suyos.length).toBe(3);
+  const [n] = await conBase((sql) => sql`
+    SELECT count(*)::int AS n FROM servicio_componente sc JOIN servicio s ON s.id = sc.servicio_id
+     WHERE s.nombre = 'Control prenatal'`);
+  expect(n.n).toBe(3);
+
+  // Y sale en la lista de perfiles, con su precio y lo que trae.
+  await page.goto('/sistema/perfiles');
+  await expect(page.locator('#con-precio .lista li', { hasText: 'Control prenatal' })).toContainText('3 exámenes');
 });
 
 test('el nombre de un perfil no se repite', async ({ page }) => {
   await entrar(page, 'administracion');
   await page.goto('/sistema/perfiles');
   await page.getByLabel('Un perfil nuevo').fill('control PRENATAL');
+  await page.getByLabel('Precio en USD').fill('25');
   await page.getByRole('button', { name: 'Crear' }).click();
   await expect(page.locator('.sis-error')).toContainText('Ya hay un perfil');
 });

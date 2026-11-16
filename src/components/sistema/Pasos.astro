@@ -284,7 +284,9 @@ const {
     };
 
     // Las secciones plegables estorban cuando se ve una a la vez.
-    caja.querySelectorAll('details').forEach((d) => { (d as HTMLDetailsElement).open = true; });
+    /* Solo las de las secciones: un desplegable de adentro —«Derivar»— tiene
+       que seguir cerrado, si no tocarlo lo cerraba. */
+    caja.querySelectorAll('section.bloque > details').forEach((d) => { (d as HTMLDetailsElement).open = true; });
     guia.hidden = false;
     barra.hidden = false;
     mostrar(actual, false);

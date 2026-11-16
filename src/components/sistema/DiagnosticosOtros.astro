@@ -1,0 +1,151 @@
+---
+/**
+ * Otros diagnósticos, además del principal.
+ *
+ * «No puedo seleccionar más de un diagnóstico o que el médico escriba uno
+ * a mano extra.» El principal sigue arriba, con su código y todo lo que ya
+ * hacía. Acá se suman los demás, cuantos hagan falta: elegidos del
+ * catálogo CIE-10 —quedan «I10 · Hipertensión esencial (primaria)»— o
+ * escritos a mano.
+ *
+ * Se guardan uno por línea en una sola clave. Sin JavaScript es un cuadro
+ * de texto, uno por línea; con JavaScript, una lista con buscador. Lo que
+ * se guarda es lo mismo.
+ */
+import type { Campo } from '../../sistema/historia';
+
+interface Props { campo: Campo; valor?: string }
+const { campo: c, valor = '' } = Astro.props;
+const id = `c-${c.clave}`;
+const lineas = valor.split('\n').map((t) => t.trim()).filter(Boolean);
+---
+
+<div class="campo campo--4 dxo" data-dxo>
+  <label class="dxo__rotulo" for={id}>{c.rotulo}</label>
+  <ul class="dxo__lista" data-lista>
+    {lineas.map((l) => (
+      <li><span>{l}</span><button type="button" class="dxo__quitar" data-quitar aria-label={`Quitar ${l}`}>×</button></li>
+    ))}
+  </ul>
+  {/* Lo que se guarda. Visible solo sin JavaScript: uno por línea. */}
+  <textarea id={id} name={c.clave} rows="3" class="dxo__crudo">{valor}</textarea>
+
+  <div class="dxo__agregar" data-con-js hidden>
+    <label for={`${id}-buscar`}>Agregar uno del catálogo CIE-10</label>
+    <input id={`${id}-buscar`} type="search" autocomplete="off" placeholder="Escriba al menos tres letras" />
+    <ul class="dxo__resultados" role="listbox" aria-label="Diagnósticos encontrados"></ul>
+    <label for={`${id}-mano`}>O escribirlo a mano</label>
+    <div class="dxo__mano">
+      <input id={`${id}-mano`} type="text" autocomplete="off" />
+      <button type="button" class="sis-boton sis-boton--suave" data-agregar>Agregar</button>
+    </div>
+  </div>
+</div>
+
+<script>
+  document.querySelectorAll<HTMLElement>('[data-dxo]').forEach((caja) => {
+    const crudo = caja.querySelector<HTMLTextAreaElement>('textarea')!;
+    const lista = caja.querySelector<HTMLUListElement>('[data-lista]')!;
+    const agregar = caja.querySelector<HTMLElement>('[data-con-js]')!;
+    const busca = caja.querySelector<HTMLInputElement>('input[type="search"]')!;
+    const resultados = caja.querySelector<HTMLUListElement>('.dxo__resultados')!;
+    const mano = caja.querySelector<HTMLInputElement>('.dxo__mano input')!;
+    const boton = caja.querySelector<HTMLButtonElement>('[data-agregar]')!;
+
+    // Con JavaScript, la lista reemplaza al cuadro de texto.
+    crudo.hidden = true;
+    agregar.hidden = false;
+    let lineas = crudo.value.split('\n').map((t) => t.trim()).filter(Boolean);
+
+    const guardar = () => {
+      crudo.value = lineas.join('\n');
+      // El guardado automático del formulario se entera por este evento.
+      crudo.dispatchEvent(new Event('input', { bubbles: true }));
+    };
+    const dibujar = () => {
+      lista.replaceChildren(...lineas.map((l, i) => {
+        const li = document.createElement('li');
+        const texto = document.createElement('span');
+        texto.textContent = l;
+        const quitar = document.createElement('button');
+        quitar.type = 'button';
+        quitar.className = 'dxo__quitar';
+        quitar.textContent = '×';
+        quitar.setAttribute('aria-label', `Quitar ${l}`);
+        quitar.addEventListener('click', () => { lineas.splice(i, 1); dibujar(); guardar(); });
+        li.append(texto, quitar);
+        return li;
+      }));
+    };
+    const sumar = (l: string) => {
+      const limpio = l.replace(/\s+/g, ' ').trim();
+      if (!limpio || lineas.includes(limpio)) return;
+      lineas.push(limpio);
+      dibujar(); guardar();
+    };
+    dibujar();
+
+    let pedido = 0;
+    let espera: ReturnType<typeof setTimeout> | undefined;
+    busca.addEventListener('input', () => {
+      clearTimeout(espera);
+      const q = busca.value.trim();
+      if (q.length < 3) { resultados.replaceChildren(); return; }
+      espera = setTimeout(async () => {
+        const mio = ++pedido;
+        try {
+          const r = await fetch(`/sistema/api/diagnosticos?q=${encodeURIComponent(q)}`);
+          if (!r.ok || mio !== pedido) return;
+          const d = await r.json();
+          const encontrados: { codigo: string; nombre: string }[] = (d.diagnosticos ?? []).slice(0, 8);
+          resultados.replaceChildren(...encontrados.map((x) => {
+            const li = document.createElement('li');
+            const b = document.createElement('button');
+            b.type = 'button';
+            b.textContent = `${x.codigo} · ${x.nombre}`;
+            b.addEventListener('click', () => {
+              sumar(`${x.codigo} · ${x.nombre}`);
+              busca.value = '';
+              resultados.replaceChildren();
+              busca.focus();
+            });
+            li.append(b);
+            return li;
+          }));
+        } catch { /* sin conexión: se puede escribir a mano */ }
+      }, 220);
+    });
+
+    const desdeMano = () => { sumar(mano.value); mano.value = ''; mano.focus(); };
+    boton.addEventListener('click', desdeMano);
+    // Enter agrega y no manda el formulario entero.
+    mano.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); desdeMano(); } });
+    busca.addEventListener('keydown', (e) => { if (e.key === 'Enter') e.preventDefault(); });
+  });
+</script>
+
+<style>
+  .dxo { display: flex; flex-direction: column; gap: 8px; grid-column: span 4; min-width: 0; }
+  .dxo__rotulo, .dxo__agregar label { font-size: var(--u-sm); font-weight: 600; color: var(--tinta-suave); }
+  .dxo__lista { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+  .dxo__lista:empty { display: none; }
+  .dxo__lista li {
+    display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    min-height: 44px; padding: 0 6px 0 12px; border: 1px solid var(--linea); border-radius: 8px; background: var(--azul-tenue);
+  }
+  .dxo__quitar { min-width: 44px; min-height: 44px; border: 0; background: none; font-size: 1.3rem; cursor: pointer; color: var(--tinta-suave); }
+  .dxo__agregar { display: grid; gap: 6px; }
+  .dxo__agregar[hidden] { display: none; }
+  .dxo__crudo[hidden] { display: none; }
+  .dxo input, .dxo textarea {
+    width: 100%; min-height: 44px; padding: 9px 12px; border: 1px solid var(--linea);
+    border-radius: 8px; background: var(--papel); color: var(--tinta); font: inherit;
+  }
+  .dxo__mano { display: flex; gap: 8px; }
+  .dxo__resultados { list-style: none; margin: 0; padding: 0; display: grid; gap: 2px; }
+  .dxo__resultados button {
+    width: 100%; min-height: 44px; padding: 8px 12px; text-align: left; font: inherit;
+    border: 1px solid var(--linea-tenue); border-radius: 8px; background: var(--papel); cursor: pointer;
+  }
+  .dxo__resultados button:hover { border-color: var(--azul); }
+</style>

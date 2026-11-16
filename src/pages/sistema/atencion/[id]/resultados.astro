@@ -1167,7 +1167,10 @@ const fechaLarga = (f: string) =>
   }
   .res input:hover { border-color: var(--linea); }
   .res input:focus { outline: 2px solid var(--azul-medio); border-color: var(--azul-medio); background: var(--papel); }
-  .res input[name='valor'] { font-weight: 600; }
+  /* La casilla del resultado se ve siempre, con borde: vacía y sin borde,
+     en la tablet no se sabía dónde escribir (revisión del 16-11). El
+     nombre del examen sí queda como planilla: casi nunca se toca. */
+  .res input[name='valor'] { font-weight: 600; border-color: var(--linea); background: var(--papel); }
   /* Un valor que puso la cuenta se ve distinto de uno tecleado: si no, el
      bioanalista no sabe qué firmó él y qué firmó la fórmula. */
   .res input[data-calculado] {

@@ -76,7 +76,7 @@ test('en el teléfono el menú muestra todas sus entradas, sin esconder ninguna'
   const ancho = await page.evaluate(() => document.documentElement.clientWidth);
   const cajas = await page.locator('.sis__nav > a, .sis__nav > details > summary')
     .evaluateAll((n) => n.map((x) => { const b = x.getBoundingClientRect(); return { izq: b.left, der: b.right }; }));
-  expect(cajas.length).toBe(8);
+  expect(cajas.length).toBe(6);
   for (const c of cajas) {
     expect(c.izq).toBeGreaterThanOrEqual(0);
     expect(c.der).toBeLessThanOrEqual(ancho + 1);

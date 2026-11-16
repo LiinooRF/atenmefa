@@ -16,10 +16,10 @@ const deFabrica = () => conBase((sql) => sql`DELETE FROM formula_constante`);
 test.beforeAll(deFabrica);
 test.afterAll(deFabrica);
 
-test('la pantalla muestra las catorce cuentas en palabras', async ({ page }) => {
+test('la pantalla muestra las trece cuentas en palabras (la depuración se escribe a mano)', async ({ page }) => {
   await entrar(page, 'bioanalista');
   await page.goto('/sistema/formulas');
-  await expect(page.locator('.formula')).toHaveCount(14);
+  await expect(page.locator('.formula')).toHaveCount(13);
   await expect(page.locator('.formula', { hasText: 'INR' }))
     .toContainText('(tiempo del paciente ÷ tiempo control) elevado a 1,17');
   // Solo tres se ajustan: lo demás es conversión de unidades.
