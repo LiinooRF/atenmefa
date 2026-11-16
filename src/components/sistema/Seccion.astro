@@ -26,7 +26,9 @@ const cuantosExigidos = s.campos.filter((c) => c.exigido).length;
     <div class="bloque__rejilla">
       {/* `codigo` solo lo usa el campo del diagnóstico, que guarda el
           nombre y su código CIE-10 en dos claves. Los demás lo ignoran. */}
-      {s.campos.map((c) => (
+      {/* Un campo retirado (legado) no se pregunta más; solo se dibuja si
+          esta historia ya lo traía escrito, para no perderlo al guardar. */}
+      {s.campos.filter((c) => !c.legado || datos[c.clave]).map((c) => (
         <Campo campo={c} valor={datos[c.clave] ?? ''} codigo={datos[`${c.clave}_codigo`] ?? ''} />
       ))}
     </div>

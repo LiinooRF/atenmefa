@@ -288,6 +288,7 @@ const delCentro = puedePedirInterconsulta
 const config = puedePedirInterconsulta ? await ajustes() : null;
 const tipoInicial = pedido.tipo || (delCentro.length ? 'interna' : 'externa');
 const recepcionDe = { interna: config?.recepcion_interna, externa: config?.recepcion_externa, traslado: config?.recepcion_traslado };
+const abiertasAca = interconsultas.filter((i) => i.estado === 'pendiente' || i.estado === 'contactada').length;
 const avisoInterconsulta = Astro.url.searchParams.get('interconsulta') === '1'
   ? 'Derivación pedida. Queda en el panel de derivaciones de quien la tiene que mover.'
   : '';
@@ -425,6 +426,30 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
     <p class="sis-error anulada"><Icono nombre="escudo" tam={18} />Anulada: {caso.anuladaMotivo}</p>
   )}
 
+  {/* El índice de la consulta. La ficha fue creciendo —la historia, lo
+      agregado después del cierre, las derivaciones, el cobro— y en una
+      tablet ya eran siete tarjetas en fila: lo de abajo no se veía y no
+      había nada que dijera que estaba. Salta a cada parte y dice cuánto
+      trae. Enlaces y no pestañas: no esconde nada, se imprime entero y
+      anda sin JavaScript. */}
+  {!esLab && (
+    <nav class="indice" aria-label="Partes de la atención">
+      <a href="#historia">Historia</a>
+      {(agregados.length > 0 || puedeAgregar) && (
+        <a href="#agregados">
+          Agregados {agregados.length > 0 && <span class="indice__n cifra">{agregados.length}</span>}
+        </a>
+      )}
+      {(interconsultas.length > 0 || puedePedirInterconsulta) && (
+        <a href="#interconsultas">
+          Derivaciones
+          {abiertasAca > 0 && <span class="indice__n indice__n--abiertas cifra" title="Abiertas">{abiertasAca}</span>}
+        </a>
+      )}
+      <a href="#cobro">Cobro {cuentas.length > 0 && <span class="indice__n cifra">{renglones.length}</span>}</a>
+    </nav>
+  )}
+
   <div class="col">
     <div class="col__principal">
       {esLab && pedidos.length > 0 && (
@@ -474,8 +499,8 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
         </section>
       )}
 
-      {conContenido.map((s) => (
-        <section class="ficha">
+      {conContenido.map((s, i) => (
+        <section class="ficha" id={i === 0 ? 'historia' : undefined}>
           <h2>{s.titulo}</h2>
           <dl>
             {s.campos.map((c) => (
@@ -720,7 +745,7 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
     </div>
 
     <aside class="col__lado">
-      <section class="ficha">
+      <section class="ficha" id="cobro">
         <h2>Cobro</h2>
         {cuentas.length === 0 ? (
           <p class="lado__vacio">Todavía no se cargó nada que cobrar.</p>
@@ -988,6 +1013,25 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
   .anulada { margin-top: 16px; }
 
   .col { display: grid; grid-template-columns: minmax(0, 1fr); gap: 14px; margin-top: 20px; }
+
+  /* El índice queda pegado debajo de la barra mientras se baja por la
+     ficha. En el teléfono la barra no es fija, así que va arriba del todo. */
+  .indice {
+    position: sticky; top: var(--alto-barra, 0px); z-index: 20;
+    display: flex; flex-wrap: wrap; gap: 6px; margin-top: 16px; padding: 8px 0;
+    background: var(--bruma);
+  }
+  @media (max-width: 560px) { .indice { top: 0; } }
+  .indice a {
+    display: inline-flex; align-items: center; gap: 6px; min-height: 44px; padding: 0 14px;
+    border: 1px solid var(--linea); border-radius: 999px; background: var(--papel);
+    color: var(--tinta-suave); text-decoration: none; font-size: var(--u-sm);
+  }
+  .indice a:hover { color: var(--tinta); border-color: var(--tinta-tenue); }
+  .indice__n { min-width: 20px; padding: 0 6px; border-radius: 999px; background: var(--azul-tenue); font-size: var(--u-xs); text-align: center; }
+  .indice__n--abiertas { background: #fff1cc; color: #6b4b00; }
+  /* Que el salto no deje el título tapado por la barra y el índice. */
+  .ficha[id] { scroll-margin-top: calc(var(--alto-barra, 0px) + 72px); }
   @media (min-width: 1000px) { .col { grid-template-columns: minmax(0, 1fr) 340px; align-items: start; } }
   /* La columna declarada evita que un hijo ancho —una tabla con su propio
      min-width— estire la rejilla más allá del teléfono. */

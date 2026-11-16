@@ -206,7 +206,30 @@ export async function plantillasDeExamen() {
     porExamen.set(f.examen, lista);
   }
 
-  return [...porExamen.entries()].map(([examen, analitos]) => ({ examen, analitos }));
+  const nombres = await nombresDeHojas();
+  return [...porExamen.entries()].map(([examen, analitos]) => ({
+    examen, nombre: nombres.get(examen) ?? examen, analitos,
+  }));
+}
+
+/**
+ * Cómo se llama cada hoja para mostrarla: «Urocultivo» y no «URO1». La
+ * llave sigue siendo el nombre de la pestaña del Excel; esto es solo lo
+ * que se lee. Ver 030-nombres-de-hojas.sql.
+ */
+export async function nombresDeHojas(): Promise<Map<string, string>> {
+  const filas = await bd.select().from(esquema.hojaNombre);
+  return new Map(filas.map((f) => [f.examen, f.nombre]));
+}
+
+/** Le pone (o le cambia) el nombre a una hoja. Lanza con el motivo. */
+export async function cambiarNombreDeHoja(examen: string, crudo: unknown) {
+  const nombre = String(crudo ?? '').replace(/\s+/g, ' ').trim();
+  if (!nombre) throw new Error('El nombre no puede quedar vacío.');
+  if (nombre.length > 120) throw new Error('El nombre es demasiado largo: hasta 120 letras.');
+  await bd.insert(esquema.hojaNombre).values({ examen, nombre })
+    .onConflictDoUpdate({ target: esquema.hojaNombre.examen, set: { nombre } });
+  return nombre;
 }
 
 /**
@@ -236,8 +259,10 @@ export async function resumenDePlantillas() {
     .groupBy(esquema.plantillaExamen.examen)
     .orderBy(asc(esquema.plantillaExamen.examen));
 
+  const nombres = await nombresDeHojas();
   return filas.map((f) => ({
     examen: f.examen,
+    nombre: nombres.get(f.examen) ?? f.examen,
     renglones: Number(f.analitos),
     analitos: Number(f.analitosDeVerdad),
     sinRango: Number(f.sinRango),

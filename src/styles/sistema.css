@@ -313,7 +313,16 @@
 
   /* Va al final para caer en la segunda fila: en el HTML está antes de
      quién entró, que tiene que quedar arriba a la derecha. */
-  .sis__nav { order: 3; width: 100%; margin-right: 0; padding-bottom: 6px; }
+  /* Las entradas se parten en dos líneas en vez de desplazarse de lado:
+     con ocho destinos (administración), la mitad quedaba escondida a la
+     derecha y no había nada que dijera que estaba ahí. */
+  .sis__nav {
+    order: 3; width: 100%; margin-right: 0; padding-bottom: 6px;
+    flex-wrap: wrap; overflow-x: visible; gap: 2px 4px;
+  }
+  /* Con dos líneas de menú la barra es alta: fija arriba se comía un
+     cuarto de la pantalla. En el teléfono se va con la página. */
+  .sis__barra { position: static; }
   /* OJO con el alcance: "> a" y "summary", no "a" a secas. Los enlaces de
      adentro de un desplegable también son .sis__nav a, y con la regla
      suelta salían centrados y sin su relleno, como si fueran botones de la

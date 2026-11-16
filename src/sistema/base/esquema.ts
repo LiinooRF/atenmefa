@@ -267,6 +267,12 @@ export const ajuste = pgTable('ajuste', {
   cambiado: timestamp('cambiado', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Cómo se muestra cada hoja de plantillas. Ver 030-nombres-de-hojas.sql. */
+export const hojaNombre = pgTable('hoja_nombre', {
+  examen: text('examen').primaryKey(),
+  nombre: text('nombre').notNull(),
+});
+
 export const bitacora = pgTable('bitacora', {
   id: bigserial('id', { mode: 'number' }).primaryKey(),
   usuarioId: text('usuario_id').references(() => user.id),

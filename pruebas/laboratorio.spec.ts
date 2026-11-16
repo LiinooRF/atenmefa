@@ -671,9 +671,10 @@ test('poner una plantilla llena los renglones, y ponerla dos veces no los duplic
   );
   expect(new Set(nombres).size).toBe(nombres.length);
   expect(nombres).toContain('GLICEMIA');
-  // Y cada examen encabeza los suyos.
-  expect(nombres).toContain('PERFIL LIPIDICO');
-  expect(nombres).toContain('QUIMICA RUTINA');
+  /* Y cada examen encabeza los suyos, con el nombre que se lee y no con
+     el de la pestaña del Excel (030-nombres-de-hojas.sql). */
+  expect(nombres).toContain('Perfil lipídico');
+  expect(nombres).toContain('Química de rutina');
 
   // Lo cargado se guarda con su referencia.
   const filaHdl = page.locator('#res-cuerpo tr').nth(

@@ -101,7 +101,10 @@ const ordenados = [...examenes].sort(
     {ordenados.map((e) => (
       <li>
         <a href={`/sistema/plantillas/${encodeURIComponent(e.examen)}`}>
-          <span class="lista__nombre">{e.examen}</span>
+          <span class="lista__nombre">
+            {e.nombre}
+            {e.nombre !== e.examen && <small class="lista__hoja">{e.examen}</small>}
+          </span>
           <span class="lista__cuenta">
             {e.analitos} {e.analitos === 1 ? 'analito' : 'analitos'}
           </span>
@@ -181,6 +184,9 @@ const ordenados = [...examenes].sort(
   }
   .lista a:hover { border-color: var(--azul-medio); background: var(--bruma); }
   .lista__nombre { flex: 1; min-width: 0; font-weight: 600; font-size: var(--u-sm); }
+  /* El nombre de la pestaña del Excel, chico: es la llave y el que la
+     conoce la sigue encontrando. */
+  .lista__hoja { display: block; font-size: var(--u-xs); color: var(--tinta-tenue); font-weight: 400; }
   .lista__cuenta { flex: none; font-size: var(--u-xs); color: var(--tinta-tenue); }
   .lista__falta {
     flex: none;

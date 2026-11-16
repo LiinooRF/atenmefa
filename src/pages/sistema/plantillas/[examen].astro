@@ -12,7 +12,7 @@ import Sistema from '../../../layouts/Sistema.astro';
 import Icono from '../../../components/Icono.astro';
 import { anotar } from '../../../sistema/lib/atenciones';
 import { exigir } from '../../../sistema/lib/guardia';
-import { plantillaDe, guardarPlantilla } from '../../../sistema/lib/laboratorio';
+import { plantillaDe, guardarPlantilla, cambiarNombreDeHoja, nombresDeHojas } from '../../../sistema/lib/laboratorio';
 import { enLlaves, llaveDeAnalito } from '../../../sistema/calculos';
 import { calculosVigentes } from '../../../sistema/lib/formulas';
 
@@ -27,8 +27,27 @@ const examen = decodeURIComponent(Astro.params.examen ?? '');
 let aviso = '';
 let error = '';
 
-if (Astro.request.method === 'POST') {
-  const form = await Astro.request.formData();
+/* El cuerpo de la petición se lee una sola vez y sirve a los dos
+   formularios de la pantalla. */
+const formulario = Astro.request.method === 'POST' ? await Astro.request.formData() : null;
+
+if (formulario?.has('nombre_hoja')) {
+  const form = formulario;
+  /* Cambiar el nombre que se muestra va en su propio formulario: no toca
+     los renglones, que son el otro. */
+  {
+    try {
+      const nuevo = await cambiarNombreDeHoja(examen, form.get('nombre_hoja'));
+      await anotar(usuario.id, 'plantilla', undefined, { examen, nombre: nuevo });
+      return Astro.redirect(`/sistema/plantillas/${encodeURIComponent(examen)}?nombre=1`);
+    } catch (e) {
+      error = e instanceof Error ? e.message : 'No se pudo cambiar el nombre.';
+    }
+  }
+}
+
+if (formulario && !formulario.has('nombre_hoja')) {
+  const form = formulario;
   const analitos = form.getAll('analito').map(String);
   const unidades = form.getAll('unidad').map(String);
   const referencias = form.getAll('referencia').map(String);
@@ -61,6 +80,8 @@ if (Astro.request.method === 'POST') {
 }
 
 const filas = await plantillaDe(examen);
+const nombre = (await nombresDeHojas()).get(examen) ?? examen;
+if (Astro.url.searchParams.get('nombre') === '1') aviso = 'Nombre guardado.';
 if (filas.length === 0 && !aviso) return Astro.redirect('/sistema/plantillas');
 
 /* Un subtítulo —«TIEMPO DE PROTROMBINA:», «ANALISIS QUIMICO:»— no es un
@@ -93,14 +114,24 @@ const formulaDe = new Map(enLlaves(await calculosVigentes()).map((c) => [c.resul
 const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito));
 ---
 
-<Sistema titulo={`Referencia · ${examen}`}>
+<Sistema titulo={`Referencia · ${nombre}`}>
   <nav class="miga">
     <a href="/sistema/laboratorio">Laboratorio</a> <span>/</span>
-    <a href="/sistema/plantillas">Valores de referencia</a> <span>/</span> {examen}
+    <a href="/sistema/plantillas">Valores de referencia</a> <span>/</span> {nombre}
   </nav>
 
   <header class="cab">
-    <h1>{examen}</h1>
+    <h1>{nombre}</h1>
+    {/* El nombre de la pestaña del Excel queda a la vista: es la llave, y
+        el que conoce el archivo la sigue reconociendo. */}
+    <details class="renombrar">
+      <summary>Hoja «{examen}» del archivo · cambiar el nombre</summary>
+      <form method="post" class="renombrar__form sis-campo">
+        <label for="nombre_hoja">Cómo se muestra</label>
+        <input id="nombre_hoja" name="nombre_hoja" type="text" required maxlength="120" value={nombre} />
+        <button type="submit" class="sis-boton sis-boton--suave">Guardar el nombre</button>
+      </form>
+    </details>
     <p class="cab__nota">
       {analitos.length} {analitos.length === 1 ? 'analito' : 'analitos'}
       {filas.length !== analitos.length &&
@@ -416,4 +447,7 @@ const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito)
     .pl__quitar { position: absolute; top: 10px; right: 12px; width: auto; }
     .pl__quitar::before { content: none; }
   }
+  .renombrar { margin-top: 6px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .renombrar summary { cursor: pointer; min-height: 44px; display: inline-flex; align-items: center; }
+  .renombrar__form { display: grid; gap: 7px; max-width: 420px; margin-top: 6px; }
 </style>

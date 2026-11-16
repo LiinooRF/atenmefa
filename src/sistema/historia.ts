@@ -43,6 +43,12 @@ export interface Campo {
   pista?: string;
   /** Ancho relativo dentro de su fila, de 1 a 4. */
   ancho?: 1 | 2 | 3 | 4;
+  /**
+   * Ya no se pregunta, pero las historias viejas lo tienen escrito: se
+   * muestra en la ficha y en el documento si trae algo, y el formulario no
+   * lo dibuja. Así se retira un campo sin borrarle un dato a nadie.
+   */
+  legado?: boolean;
 }
 
 export interface Seccion {
@@ -197,9 +203,12 @@ export const historia: readonly Seccion[] = [
       { clave: 'medico', rotulo: 'Médico que atiende', tipo: 'texto', exigido: true, ancho: 2,
         pista: 'Se completa solo con el usuario que firma.' },
       { clave: 'hora_fin', rotulo: 'Hora de cierre', tipo: 'hora', exigido: true, ancho: 1 },
-      { clave: 'traslado', rotulo: '¿Hubo traslado?', tipo: 'si-no', ancho: 1 },
+      /* El traslado ahora es una derivación (029-derivaciones.sql): adónde,
+         en ambulancia o no, y recepción la coordina si hace falta. Estos dos
+         quedan para leer lo que dicen las historias de antes. */
+      { clave: 'traslado', rotulo: '¿Hubo traslado?', tipo: 'si-no', ancho: 1, legado: true },
       { clave: 'paramedico', rotulo: 'Paramédico', tipo: 'texto', ancho: 2,
-        pista: 'Solo si hubo traslado.' },
+        pista: 'Solo si hubo traslado.', legado: true },
     ],
   },
 ] as const;

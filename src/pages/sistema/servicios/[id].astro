@@ -13,7 +13,7 @@ import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
 import {
   CATEGORIAS, MONEDAS, activarServicio, dinero, guardarServicio, rotuloCategoria,
 } from '../../../sistema/lib/cobro';
-import { examenesDelArchivo } from '../../../sistema/lib/laboratorio';
+import { examenesDelArchivo, nombresDeHojas } from '../../../sistema/lib/laboratorio';
 import { eq, sql } from 'drizzle-orm';
 import { exigir } from '../../../sistema/lib/guardia';
 
@@ -90,6 +90,7 @@ const precioVista = tecleado?.precio ?? dinero(servicio.precio);
    alguien la borre deja el informe como estaba, con una línea con su
    nombre. */
 const hojas = await examenesDelArchivo();
+const nombreHoja = await nombresDeHojas();
 const plantillaVista = tecleado?.plantilla ?? servicio.plantilla ?? '';
 ---
 
@@ -163,7 +164,7 @@ const plantillaVista = tecleado?.plantilla ?? servicio.plantilla ?? '';
           <select id="plantilla" name="plantilla">
             <option value="" selected={!plantillaVista}>Una línea con su nombre</option>
             {hojas.map((h) => (
-              <option value={h} selected={plantillaVista === h}>{h}</option>
+              <option value={h} selected={plantillaVista === h}>{nombreHoja.get(h) ?? h}</option>
             ))}
           </select>
           <span class="pista">

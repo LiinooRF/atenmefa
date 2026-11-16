@@ -436,7 +436,7 @@ const fechaLarga = (f: string) =>
             <select id="res-plantilla" data-plantillas={JSON.stringify(plantillas)}>
               <option value="">un examen…</option>
               {plantillas.map((p) => (
-                <option value={p.examen}>{p.examen} ({p.analitos.length})</option>
+                <option value={p.examen}>{p.nombre} ({p.analitos.length})</option>
               ))}
             </select>
             <button type="button" class="sis-boton sis-boton--azul" id="res-poner">Poner</button>
@@ -514,6 +514,7 @@ const fechaLarga = (f: string) =>
        «Poner»: es el mismo dato y no se manda dos veces. */
     type Plantilla = {
       examen: string;
+      nombre?: string;
       analitos: { analito: string; unidad: string; referencia: string; opciones: string; tipo?: string }[];
     };
     const eligePlantilla = document.getElementById('res-plantilla') as HTMLSelectElement | null;
@@ -975,7 +976,7 @@ const fechaLarga = (f: string) =>
 
            Va como renglón sin valor, sin unidad y sin rango, que es la
            forma en que el informe reconoce un subtítulo. */
-        poneFila(p.examen);
+        poneFila(p.nombre ?? p.examen);
 
         let primera: HTMLInputElement | null = null;
         for (const a of faltan) {
