@@ -30,7 +30,8 @@
 import Sistema from '../../../../layouts/Sistema.astro';
 import Icono from '../../../../components/Icono.astro';
 import { exigir } from '../../../../sistema/lib/guardia';
-import { puedeCargarResultados } from '../../../../sistema/lib/permisos';
+import { puedeCargarResultados, puedeCorregir } from '../../../../sistema/lib/permisos';
+import { corregirResultados } from '../../../../sistema/lib/correcciones';
 import { anotar, atencionPara } from '../../../../sistema/lib/atenciones';
 import {
   examenesPedidos, guardarResultados, leerResultados, plantillasDeExamen, sinNombre,
@@ -57,6 +58,12 @@ if (!caso) return Astro.redirect('/sistema/laboratorio');
 if (caso.tipo !== 'laboratorio') return Astro.redirect(`/sistema/atencion/${caso.id}`);
 
 const abierta = puedeCargarResultados(usuario, caso);
+/* Una orden entregada se corrige con motivo, y solo quien firmó los
+   resultados o administración (16-11). Ver lib/correcciones.ts. */
+const puedeCorregirla = puedeCorregir(usuario, caso);
+const corrigiendo = !abierta && puedeCorregirla && Astro.url.searchParams.get('corregir') === '1';
+const editable = abierta || corrigiendo;
+let motivo = '';
 
 let error = '';
 let aviso = '';
@@ -64,7 +71,20 @@ let aviso = '';
    lista de mediciones y `datos` es plano. */
 let cargados = (caso.resultados ?? []) as Resultado[];
 
-if (Astro.request.method === 'POST' && abierta) {
+if (Astro.request.method === 'POST' && corrigiendo) {
+  const form = await Astro.request.formData();
+  motivo = String(form.get('motivo_correccion') ?? '');
+  const mandados = leerResultados(form);
+  try {
+    if (sinNombre(mandados) > 0) throw new Error('Hay una línea con resultado y sin decir de qué examen es.');
+    const hecha = await corregirResultados(usuario, caso.id, mandados, motivo);
+    await anotar(usuario.id, 'corrigio', caso.id, { numero: hecha.numero, resultados: hecha.cambios.length });
+    return Astro.redirect(`/sistema/atencion/${caso.id}?corregida=1#correcciones`);
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo guardar la corrección.';
+    cargados = mandados;
+  }
+} else if (Astro.request.method === 'POST' && abierta) {
   const form = await Astro.request.formData();
   const entregar = form.get('accion') === 'entregar';
   const mandados = leerResultados(form);
@@ -159,7 +179,9 @@ const SIN_NADA: Fuente = { unidad: '', referencia: '', opciones: '' };
    Lo que sí se evita es repetir un analito entre DOS exámenes pedidos: si
    dos hojas traen el colesterol, aparece una vez. Dentro de una misma hoja
    no se toca nada. */
-const plan: { examen: string; fuente?: Fuente }[] = [];
+/* `titulo`: el nombre del examen o una parte de su hoja —«EXAMEN
+   MACROSCOPICO»—. Se dibuja como título, sin casilla de resultado. */
+const plan: { examen: string; fuente?: Fuente; titulo?: boolean }[] = [];
 const puestos = new Set<string>();
 /* Los perfiles pedidos: lo que trae cada uno, en su orden. */
 const deCadaPerfil = await componentesDePerfiles(
@@ -176,7 +198,7 @@ for (const p of pedidos) {
   /* Un perfil sin hoja —el que se arma a mano en Servicios—: su nombre y
      debajo los exámenes que quedaron. */
   if (quedaron && !hojaEntera) {
-    plan.push({ examen: p.nombre, fuente: SIN_NADA });
+    plan.push({ examen: p.nombre, fuente: SIN_NADA, titulo: true });
     for (const c of suyos) {
       if (puestos.has(c.nombre)) continue;
       puestos.add(c.nombre);
@@ -198,8 +220,15 @@ for (const p of pedidos) {
     }
     continue;
   }
+  /* Repetido es el MISMO análisis: mismo nombre, misma unidad y mismo
+     rango —el colesterol del perfil lipídico y el de la química—. Por el
+     nombre solo, una orden con hematología y orina perdía la hemoglobina y
+     los leucocitos de la orina, que son otra medición (tira y campo, no
+     g/dL ni mm³) (16-11). */
+  const llave = (a: { analito: string; unidad: string; referencia: string }) =>
+    `${a.analito.trim().toUpperCase()}|${a.unidad.trim()}|${a.referencia.trim()}`;
   const propios = hoja.filter(
-    (a) => a.analito.trim() && (a.tipo === 'titulo' || !puestos.has(a.analito)),
+    (a) => a.analito.trim() && (a.tipo === 'titulo' || !puestos.has(llave(a))),
   );
   // Si todos sus analitos ya los trajo otro examen, no queda nada que poner.
   if (!propios.some((a) => a.tipo !== 'titulo')) continue;
@@ -208,17 +237,18 @@ for (const p of pedidos) {
      GRUESA» es el examen y es su único renglón—: ahí sería una línea
      repetida que confunde. */
   if (!hoja.some((a) => mismo(a.analito) === mismo(p.nombre))) {
-    plan.push({ examen: p.nombre, fuente: SIN_NADA });
+    plan.push({ examen: p.nombre, fuente: SIN_NADA, titulo: true });
   }
   for (const a of propios) {
     plan.push({
       examen: a.analito,
+      titulo: a.tipo === 'titulo',
       fuente: a.tipo === 'titulo'
         ? SIN_NADA
         : { unidad: a.unidad, referencia: a.referencia, opciones: a.opciones, tipo: a.tipo },
     });
   }
-  for (const a of propios) if (a.tipo !== 'titulo') puestos.add(a.analito);
+  for (const a of propios) if (a.tipo !== 'titulo') puestos.add(llave(a));
 }
 for (const escrito of (registro.examenes ?? '').split('\n').map((t) => t.trim()).filter(Boolean)) {
   if (puestos.has(escrito)) continue;
@@ -302,8 +332,10 @@ const opcionesDeLinea: string[] = [];
 /* Si la línea la escribe el bioanalista —el gram, el frotis—: va en un
    cuadro de varias líneas y no en el campo corto de un número. */
 const esTextoDeLinea: boolean[] = [];
+const esTituloDeLinea: boolean[] = [];
 const tipoDe = (analito: string) => deLaPlantilla.get(analito)?.tipo ?? '';
-for (const { examen, fuente } of plan) {
+for (const { examen, fuente, titulo } of plan) {
+  esTituloDeLinea.push(Boolean(titulo));
   lineas.push(conFuente(tomar(examen) ?? vacia(examen), fuente));
   opcionesDeLinea.push(fuente ? fuente.opciones : opcionesDe(examen));
   esTextoDeLinea.push((fuente ? fuente.tipo : tipoDe(examen)) === 'texto');
@@ -311,11 +343,13 @@ for (const { examen, fuente } of plan) {
 // Lo cargado que no calza con ningún examen pedido: líneas agregadas a mano.
 cargados.forEach((r, j) => {
   if (usados.has(j)) return;
+  esTituloDeLinea.push(false);
   lineas.push(conPlantilla(r));
   opcionesDeLinea.push(opcionesDe(r.examen));
   esTextoDeLinea.push(tipoDe(r.examen) === 'texto' || r.valor.includes('\n'));
 });
 if (lineas.length === 0) {
+  esTituloDeLinea.push(false);
   lineas.push(vacia(''));
   opcionesDeLinea.push('');
   esTextoDeLinea.push(false);
@@ -331,15 +365,20 @@ const fechaLarga = (f: string) =>
     Orden {caso.numero}
   </nav>
 
-  {!abierta ? (
+  {!editable ? (
     <section class="sis-tarjeta trabada">
       <h1>Esta orden ya está entregada</h1>
       <p>
         Los resultados de la orden N° {caso.numero} de {caso.paciente} se dieron
-        por listos y quedaron firmados: no se modifican. Si hay que corregir un
-        valor, administración la anula y se registra una nueva.
+        por listos y quedaron firmados.
+        {puedeCorregirla
+          ? ' Si un valor quedó mal, se corrige con su motivo y queda en el historial lo que decía antes.'
+          : ' Si un valor quedó mal, lo corrige quien firmó los resultados o administración.'}
       </p>
       <div class="trabada__acciones">
+        {puedeCorregirla && (
+          <a class="sis-boton sis-boton--primario" href={`/sistema/atencion/${caso.id}/resultados?corregir=1`}>Corregir resultados</a>
+        )}
         <a class="sis-boton sis-boton--azul" href={`/sistema/atencion/${caso.id}`}>Ver la orden</a>
         <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}/documento`}
            target="_blank" rel="noopener">Imprimir el informe</a>
@@ -352,7 +391,7 @@ const fechaLarga = (f: string) =>
         <div>
           <div class="form__linea">
             <h1>Resultados · orden N° <span class="cifra">{caso.numero}</span></h1>
-            <span class="chapa">Abierta</span>
+            <span class="chapa">{corrigiendo ? "Corrigiendo" : "Abierta"}</span>
           </div>
           <p class="form__nota">
             <strong>{caso.paciente}</strong> · {caso.cedula}
@@ -405,7 +444,7 @@ const fechaLarga = (f: string) =>
           <tbody id="res-cuerpo">
             {lineas.map((l, i) => (
               <tr data-opciones={opcionesDeLinea[i] || undefined}
-                  data-clase={esTextoDeLinea[i] ? 'escribe' : opcionesDeLinea[i] ? 'elige' : undefined}>
+                  data-clase={esTituloDeLinea[i] ? 'titulo' : esTextoDeLinea[i] ? 'escribe' : opcionesDeLinea[i] ? 'elige' : undefined}>
                 <td data-rotulo="Examen">
                   <input type="text" name="examen" value={l.examen}
                          aria-label={`Examen de la línea ${i + 1}`} autocomplete="off" />
@@ -506,9 +545,23 @@ const fechaLarga = (f: string) =>
       <div class="pie">
         <div class="pie__int">
           <span class="pie__estado" data-contador>
-            {lineas.filter((l) => l.valor.trim()).length} de {lineas.length}
-            {lineas.length === 1 ? ' línea' : ' líneas'} con resultado
+            {lineas.filter((l, i) => !esTituloDeLinea[i] && l.valor.trim()).length} de {lineas.filter((_, i) => !esTituloDeLinea[i]).length}
+            {lineas.filter((_, i) => !esTituloDeLinea[i]).length === 1 ? ' línea' : ' líneas'} con resultado
           </span>
+          {corrigiendo ? (
+            <div class="pie__botones pie__botones--corrige">
+              <label class="pie__motivo">
+                <span>Motivo de la corrección *</span>
+                <input type="text" name="motivo_correccion" value={motivo} maxlength="2000" autocomplete="off"
+                       placeholder="La glicemia se transcribió mal: era 98." />
+              </label>
+              <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}`}>Dejar como está</a>
+              <button type="submit" name="accion" value="corregir" class="sis-boton sis-boton--primario">
+                <Icono nombre="escudo" tam={17} />
+                Guardar la corrección
+              </button>
+            </div>
+          ) : (
           <div class="pie__botones">
             <button type="submit" name="accion" value="guardar" class="sis-boton sis-boton--suave">
               Guardar y seguir después
@@ -518,6 +571,7 @@ const fechaLarga = (f: string) =>
               Dar por listos
             </button>
           </div>
+          )}
         </div>
       </div>
     </form>
@@ -759,7 +813,9 @@ const fechaLarga = (f: string) =>
          contaba solo lo guardado y decía «0 de 13» con la tabla llena. */
       const contador = document.querySelector<HTMLElement>('[data-contador]');
       if (contador) {
-        const campos = [...cuerpo.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[name="valor"]')];
+        // Los títulos no llevan resultado: no cuentan.
+        const campos = [...cuerpo.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[name="valor"]')]
+          .filter((c) => c.closest('tr')?.dataset.clase !== 'titulo');
         const llenos = campos.filter((c) => c.value.trim()).length;
         contador.textContent = `${llenos} de ${campos.length} ${campos.length === 1 ? 'línea' : 'líneas'} con resultado`;
       }
@@ -1046,6 +1102,14 @@ const fechaLarga = (f: string) =>
   #res-cuerpo tr[data-clase='elige'] td[data-rotulo='Examen']::after { content: '▾ se elige de la lista'; color: #6b4b00; }
   #res-cuerpo tr[data-clase='escribe'] td[data-rotulo='Examen']::after { content: '✎ lo escribe el bioanalista'; color: #15663f; }
   #res-cuerpo tr[data-clase='calcula'] input[name='valor'] { background: var(--panel); }
+  /* Un título —el nombre del examen o una parte de su hoja— no lleva
+     resultado: se ve como título y su casilla no está (16-11). Las casillas
+     siguen en el formulario, vacías, para que las columnas no se corran. */
+  #res-cuerpo tr[data-clase='titulo'] { background: var(--bruma, #f3f5f9); }
+  #res-cuerpo tr[data-clase='titulo'] input[name='examen'] { font-weight: 700; text-transform: uppercase; letter-spacing: 0.02em; }
+  #res-cuerpo tr[data-clase='titulo'] td[data-rotulo='Resultado'] > *,
+  #res-cuerpo tr[data-clase='titulo'] td[data-rotulo='Unidad'] > *,
+  #res-cuerpo tr[data-clase='titulo'] td[data-rotulo='Valor de referencia'] > * { visibility: hidden; }
   #res-cuerpo .valor--texto { width: 100%; min-height: 88px; resize: vertical; font: inherit; }
 
   /* Fuera de rango. El borde a la izquierda y no el fondo entero: con
@@ -1254,4 +1318,7 @@ const fechaLarga = (f: string) =>
     .res__quitar { grid-column: 2; grid-row: 1; align-self: end; }
     .res input { border-color: var(--linea); background: var(--papel); }
   }
+  .pie__botones--corrige { align-items: flex-end; }
+  .pie__motivo { display: grid; gap: 3px; font-size: var(--u-xs); font-weight: 600; color: var(--tinta-suave); min-width: min(360px, 100%); }
+  .pie__motivo input { min-height: 44px; padding: 8px 10px; border: 1px solid #e8c66a; border-radius: 8px; background: #fffaf0; font: inherit; font-weight: 400; color: var(--tinta); }
 </style>

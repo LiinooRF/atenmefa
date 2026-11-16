@@ -336,6 +336,30 @@ export function puedeCargarResultados(
   return atencion.estado === 'borrador';
 }
 
+/**
+ * Corregir una atención ya cerrada (16-11).
+ *
+ * La corrige quien la firmó: el médico su consulta, el bioanalista los
+ * resultados de su orden. Y administración cualquiera —la cédula mal
+ * escrita la suele ver el mesón, no el médico—. Nadie corrige lo que firmó
+ * otro médico. Una anulada no se corrige: quedó fuera de juego.
+ *
+ * Administración se reconoce por 'anular_atencion', que es suyo y solo
+ * suyo: es el mismo poder sobre lo ya firmado, pero dejándolo vivo.
+ */
+export function puedeCorregir(
+  usuario: { id: string; rol?: string | null } | null,
+  atencion: { tipo: string; estado: string; medicoId: string; resultadosPor?: string | null },
+): boolean {
+  if (!usuario) return false;
+  if (atencion.estado !== 'cerrada') return false;
+  if (puede(usuario.rol, 'anular_atencion')) return true;
+  if (atencion.tipo === 'laboratorio') {
+    return puede(usuario.rol, 'cargar_resultados') && atencion.resultadosPor === usuario.id;
+  }
+  return puede(usuario.rol, 'escribir_historia') && atencion.medicoId === usuario.id;
+}
+
 export const nombreDelRol = (rol: string | null | undefined) =>
   NOMBRES[rol as Rol] ?? 'Sin rol';
 

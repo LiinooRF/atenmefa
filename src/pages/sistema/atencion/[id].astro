@@ -10,8 +10,9 @@ import { eq, desc, and, ne } from 'drizzle-orm';
 import { exigir } from '../../../sistema/lib/guardia';
 import {
   puede, puedeBorrarBorrador, puedeCargarResultados, puedeEditarAtencion, puedeEditarOrden,
-  puedeTomarCaso,
+  puedeTomarCaso, puedeCorregir,
 } from '../../../sistema/lib/permisos';
+import { correccionesDe } from '../../../sistema/lib/correcciones';
 import { yaLaEscribioElMedico } from '../../../sistema/historia';
 import { alias } from 'drizzle-orm/pg-core';
 import { componentesDePerfiles, examenesPedidos, ordenesDe } from '../../../sistema/lib/laboratorio';
@@ -69,6 +70,7 @@ const [caso] = await bd
     tipoDoc: esquema.paciente.tipoDoc,
     telefono: esquema.paciente.telefono,
     medicoId: esquema.atencion.medicoId,
+    resultadosPor: esquema.atencion.resultadosPor,
     medico: esquema.user.name,
     colegiatura: esquema.user.colegiatura,
     /* Quién la admitió en el mesón. Nulo = la abrió el propio médico, que es
@@ -267,6 +269,13 @@ const datos = (caso.datos ?? {}) as Record<string, string>;
 /* Lo agregado después del cierre. Solo en las consultas: una orden de
    laboratorio se corrige en sus resultados. */
 const agregados = esLab ? [] : await agregadosDe(caso.id);
+/* Las correcciones de lo ya cerrado, con lo que decía antes (16-11). */
+const correcciones = await correccionesDe(caso.id);
+const corregible = puedeCorregir(usuario, caso);
+const recienCorregida = Astro.url.searchParams.get('corregida') === '1';
+const cuandoCorrigio = (f: Date) => f.toLocaleString('es-VE', {
+  timeZone: 'America/Caracas', day: 'numeric', month: 'long', year: 'numeric', hour: 'numeric', minute: '2-digit',
+});
 const puedeAgregar = !esLab && caso.estado === 'cerrada' && puede(usuario.rol as string, 'agregar_al_caso');
 const puedeAnularAgregado = puede(usuario.rol as string, 'anular_atencion');
 const puedeRegistrarOrden = puede(usuario.rol as string, 'registrar_laboratorio');
@@ -403,6 +412,18 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
           Cargar cobro
         </a>
       )}
+      {/* Corregir lo cerrado: quien lo firmó o administración, con motivo.
+          De una orden, el registro acá y los resultados en su pantalla. */}
+      {corregible && (
+        <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}/corregir`}>
+          {esLab ? 'Corregir el registro' : 'Corregir'}
+        </a>
+      )}
+      {corregible && esLab && (
+        <a class="sis-boton sis-boton--suave" href={`/sistema/atencion/${caso.id}/resultados?corregir=1`}>
+          Corregir resultados
+        </a>
+      )}
       {caso.estado === 'cerrada' && puede(usuario.rol as string, 'anular_atencion') && (
         <a class="sis-boton sis-boton--suave anular" href={`/sistema/atencion/${caso.id}/anular`}>
           Anular
@@ -441,6 +462,9 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
   {!esLab && (
     <nav class="indice" aria-label="Partes de la atención">
       <a href="#historia">Historia</a>
+      {correcciones.length > 0 && (
+        <a href="#correcciones">Correcciones <span class="indice__n cifra">{correcciones.length}</span></a>
+      )}
       {(agregados.length > 0 || puedeAgregar) && (
         <a href="#agregados">
           Agregados {agregados.length > 0 && <span class="indice__n cifra">{agregados.length}</span>}
@@ -537,12 +561,46 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
         </section>
       ))}
 
+      {(correcciones.length > 0 || recienCorregida) && (
+        <section class="ficha correcciones" id="correcciones">
+          <h2>Correcciones</h2>
+          {recienCorregida && <p class="msj--bien correcciones__ok" role="status">Corrección guardada. Arriba se ve como quedó; acá, lo que decía antes.</p>}
+          <p class="lado__vacio">
+            Lo de arriba es como quedó. Cada corrección dice quién la hizo, cuándo,
+            por qué, y qué decía antes cada campo.
+          </p>
+          <ol class="correcciones__lista">
+            {[...correcciones].reverse().map((c) => (
+              <li class="correccion">
+                <p class="correccion__cabeza">
+                  <strong>{c.autor}</strong> · {cuandoCorrigio(c.creado)}
+                  {c.cambioDePaciente && <span class="correccion__marca">la atención pasó a otro paciente</span>}
+                </p>
+                <p class="correccion__motivo">{c.motivo}</p>
+                <table class="correccion__tabla">
+                  <thead><tr><th scope="col">Campo</th><th scope="col">Decía</th><th scope="col">Dice ahora</th></tr></thead>
+                  <tbody>
+                    {c.cambios.map((x) => (
+                      <tr>
+                        <th scope="row">{x.rotulo}</th>
+                        <td class="correccion__antes">{x.antes || '—'}</td>
+                        <td>{x.despues || '—'}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </li>
+            ))}
+          </ol>
+        </section>
+      )}
+
       {!esLab && (agregados.length > 0 || puedeAgregar || errorAgregado) && (
         <section class="ficha agregados" id="agregados">
           <h2>Agregado después del cierre</h2>
           <p class="lado__vacio">
-            Lo de arriba es lo que se cerró y no se toca. Lo que vino después
-            va acá, con la fecha y quién lo escribió.
+            Lo de arriba es lo que se firmó. Lo que vino después va acá, con la
+            fecha y quién lo escribió.
           </p>
 
           {avisoAgregado && <p class="msj--bien" role="status">{avisoAgregado}</p>}
@@ -1076,6 +1134,18 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
   }
   .agregados .sis-error { margin-top: 12px; }
   .agregados__lista { list-style: none; margin: 14px 0 0; padding: 0; display: grid; gap: 1px; }
+  .correcciones__ok { margin: 10px 0; padding: 10px 13px; border-radius: 8px; background: #e4f2ea; border: 1px solid #a9d5bd; color: #105433; font-size: var(--u-sm); }
+  .correcciones__lista { list-style: none; margin: 10px 0 0; padding: 0; }
+  .correccion { padding: 12px 0; border-top: 1px solid var(--linea-tenue); }
+  .correccion__cabeza { display: flex; flex-wrap: wrap; gap: 4px 10px; font-size: var(--u-sm); color: var(--tinta-suave); }
+  .correccion__cabeza strong { color: var(--tinta); }
+  .correccion__marca { font-size: var(--u-xs); font-weight: 600; padding: 2px 8px; border-radius: 999px; background: #fdf0d9; color: #7a5200; }
+  .correccion__motivo { margin-top: 6px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .correccion__tabla { width: 100%; margin-top: 8px; border-collapse: collapse; font-size: var(--u-sm); }
+  .correccion__tabla th, .correccion__tabla td { text-align: left; vertical-align: top; padding: 6px 8px; border-bottom: 1px solid var(--linea-tenue); overflow-wrap: anywhere; white-space: pre-wrap; }
+  .correccion__tabla thead th { font-size: var(--u-xs); color: var(--tinta-tenue); font-weight: 600; }
+  .correccion__tabla tbody th { font-weight: 600; color: var(--tinta-suave); width: 28%; }
+  .correccion__antes { color: var(--tinta-tenue); text-decoration: line-through; text-decoration-color: rgba(0, 0, 0, 0.25); }
   .agregado { padding: 12px 0; border-top: 1px solid var(--linea-tenue); }
   .agregado__cabeza { display: flex; flex-wrap: wrap; gap: 4px 12px; font-size: var(--u-sm); color: var(--tinta-suave); }
   .agregado__cabeza strong { color: var(--tinta); }

@@ -46,16 +46,21 @@ interface Props {
      persona distinta cada vez. */
   tipoAtencion?: 'general' | 'laboratorio';
   tipoDoc?: string;
+  /* Corregir una atención ya cerrada (corregir.astro). Sin guardado
+     automático —nada cambia hasta que se confirma con su motivo— y con un
+     solo botón, visible en todos los pasos: para arreglar una cédula no
+     hace falta recorrer los nueve. */
+  corrige?: boolean;
 }
 const {
   datos = {}, atencionId = '', numero, pasoInicial = 0,
   previos = {}, paciente = '', ultima = null, modelo = historia,
   cierra = true, rotuloSalir = 'Guardar y salir', extraEn = '',
-  tipoAtencion = 'general', tipoDoc = 'cedula',
+  tipoAtencion = 'general', tipoDoc = 'cedula', corrige = false,
 } = Astro.props;
 ---
 
-<div class="pasos" data-atencion={atencionId} data-inicial={pasoInicial}>
+<div class="pasos" data-atencion={atencionId} data-inicial={pasoInicial} data-corrige={corrige ? '' : undefined}>
   <input type="hidden" name="tipo_atencion" value={tipoAtencion} />
   <input type="hidden" name="tipo_doc" value={tipoDoc} />
   <ol class="pasos__guia" id="pasos-guia" hidden>
@@ -90,7 +95,9 @@ const {
   <div class="pasos__pie">
     <div class="pasos__pie-int">
       <span class="pasos__estado" id="pasos-estado" aria-live="polite">
-        {numero ? `Atención N° ${numero}` : 'Se guarda solo mientras escribe.'}
+        {corrige
+          ? 'Corrección: nada cambia hasta que la guarde.'
+          : numero ? `Atención N° ${numero}` : 'Se guarda solo mientras escribe.'}
       </span>
 
       <div class="pasos__botones">
@@ -101,12 +108,22 @@ const {
           Siguiente
           <Icono nombre="flecha" tam={17} />
         </button>
+        {corrige ? (
+          /* formnovalidate: los pasos ocultos no se pueden enfocar, y el
+             servidor revisa el motivo y lo que no puede quedar vacío. */
+          <button type="submit" name="accion" value="corregir" formnovalidate
+                  class="sis-boton sis-boton--primario" id="pasos-corregir">
+            <Icono nombre="escudo" tam={17} />
+            Guardar la corrección
+          </button>
+        ) : (
         <button type="submit" name="accion" value="borrador" formnovalidate
                 class:list={['sis-boton', cierra ? 'sis-boton--suave' : 'sis-boton--primario']}
                 id="pasos-salir">
           {rotuloSalir}
         </button>
-        {cierra && (
+        )}
+        {cierra && !corrige && (
           <button type="submit" name="accion" value="cerrar" class="sis-boton sis-boton--primario" id="pasos-cerrar">
             <Icono nombre="escudo" tam={17} />
             Cerrar atención
@@ -319,8 +336,11 @@ const {
       if (marca) estado.dataset[marca] = '';
     };
 
+    /* Corrigiendo no hay guardado automático: ver la prop `corrige`. */
+    const corrige = caja.hasAttribute('data-corrige');
+
     const guardar = async () => {
-      if (guardando || !sucio) return;
+      if (corrige || guardando || !sucio) return;
       enVuelo = hacerGuardado();
       await enVuelo;
     };
@@ -388,7 +408,7 @@ const {
 
     // Y antes de irse de la página.
     window.addEventListener('pagehide', () => {
-      if (!sucio || !campoId.value) return;
+      if (corrige || !sucio || !campoId.value) return;
       const datos = new FormData(form);
       datos.set('id', campoId.value);
       navigator.sendBeacon('/sistema/api/borrador', datos);

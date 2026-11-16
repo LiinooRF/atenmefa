@@ -21,6 +21,7 @@ import { clinica } from '../../../../data/clinica';
 import { eq } from 'drizzle-orm';
 import { exigir } from '../../../../sistema/lib/guardia';
 import { ROTULO_TIPO, destinoDe, interconsultasDe } from '../../../../sistema/lib/interconsultas';
+import { correccionesDe } from '../../../../sistema/lib/correcciones';
 import { entorno } from '../../../../sistema/lib/entorno';
 
 export const prerender = false;
@@ -97,19 +98,81 @@ const conValor = resultados.filter((r) => r.valor);
 const esRedactado = (r: Resultado) =>
   !r.unidad?.trim() && !r.referencia?.trim() && (r.valor.includes('\n') || r.valor.trim().length > 40);
 
-const esTitulo = (r: Resultado) =>
-  Boolean(r.examen?.trim()) && !r.valor?.trim() && !r.unidad?.trim() && !r.referencia?.trim();
 
-const aImprimir = resultados.filter((r, i) => {
-  if (r.valor?.trim()) return true;
-  if (!esTitulo(r)) return false;
-  for (let j = i + 1; j < resultados.length; j++) {
-    if (esTitulo(resultados[j])) return false;
-    if (resultados[j].valor?.trim()) return true;
-  }
-  return false;
-});
 const pedidos = esLab ? await examenesPedidos(caso.id) : [];
+
+/* Un examen por bloque (16-11).
+
+   «Que esté más clasificado… que diga examen general de orina y diga
+   examen químico, microscópico, macroscópico, titulado de qué es ese
+   examen… y una separación, dos dedos, para que sepa que es otro examen.»
+
+   Los resultados son una lista plana. Un renglón sin valor, unidad ni rango
+   es un título, pero hay dos clases: el NOMBRE DEL EXAMEN pedido («Examen
+   de Orina», que el plan de resultados.astro pone arriba de su hoja) y las
+   PARTES de su hoja («EXAMEN MACROSCOPICO», «ANALISIS QUIMICO»). Se
+   distinguen porque el primero se llama como un examen de la orden.
+
+   Antes se trataban igual, y la regla que no imprime un subtítulo vacío
+   borraba el nombre del examen: debajo de «Examen de Orina» viene otro
+   título, no un valor. Por eso la hematología —sin partes— salía titulada
+   y la orina y las heces no.
+
+   Un examen suelto, sin hoja —una glicemia—, es su propio renglón y no
+   lleva título encima: va en su bloque, separado del examen anterior. */
+const comoNombre = (t: string) =>
+  t.normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim().toUpperCase();
+const nombresDeExamen = new Set(pedidos.map((p) => comoNombre(p.nombre)));
+const sueltos = new Set([
+  ...pedidos.filter((p) => !p.plantilla && !p.incluye?.length).map((p) => comoNombre(p.nombre)),
+  ...(d.examenes ?? '').split('\n').map((t) => comoNombre(t)).filter(Boolean),
+]);
+/* Qué es un título: el nombre de un examen pedido o un subtítulo de una
+   hoja. NO cualquier renglón vacío: en la orina casi nada trae unidad ni
+   rango, y un renglón sin llenar —«ASPECTO»— se imprimía como subtítulo y
+   se comía el «EXAMEN MACROSCOPICO» de arriba (16-11). */
+const titulosDeHoja = esLab
+  ? new Set((await bd.selectDistinct({ a: esquema.plantillaExamen.analito })
+      .from(esquema.plantillaExamen)
+      .where(eq(esquema.plantillaExamen.tipo, 'titulo'))).map((x) => comoNombre(x.a)))
+  : new Set<string>();
+const esTitulo = (r: Resultado) => {
+  if (!r.examen?.trim() || r.valor?.trim() || r.unidad?.trim() || r.referencia?.trim()) return false;
+  const n = comoNombre(r.examen);
+  return titulosDeHoja.has(n) || nombresDeExamen.has(n);
+};
+type Grupo = { titulo: string | null; filas: Resultado[] };
+const grupos: Grupo[] = [];
+for (const r of resultados) {
+  const nombre = comoNombre(r.examen ?? '');
+  const actual = grupos.at(-1);
+  if (esTitulo(r) && nombresDeExamen.has(nombre)) {
+    grupos.push({ titulo: r.examen.trim(), filas: [] });
+  } else if (!esTitulo(r) && sueltos.has(nombre) && (!actual || actual.titulo !== null)) {
+    grupos.push({ titulo: null, filas: [r] });
+  } else if (actual) {
+    actual.filas.push(r);
+  } else {
+    grupos.push({ titulo: null, filas: [r] });
+  }
+}
+/* Dentro de cada examen, una parte sin ningún valor debajo no se imprime
+   —un subtítulo vacío en un informe firmado es un hueco—, y un examen sin
+   ningún valor, tampoco. */
+const gruposAImprimir = grupos
+  .map((g) => ({
+    ...g,
+    filas: g.filas.filter((r, i) => {
+      if (r.valor?.trim()) return true;
+      if (!esTitulo(r)) return false;
+      for (let j = i + 1; j < g.filas.length; j++) {
+        if (esTitulo(g.filas[j])) return false;
+        if (g.filas[j].valor?.trim()) return true;
+      }
+      return false;
+    }),
+  }))
+  .filter((g) => g.filas.some((r) => r.valor?.trim()));
 
 const examenesPedidosTexto = esLab
   ? [
@@ -180,6 +243,13 @@ if (!esLab) {
   const lineas = derivadas.map((x) => `${destinoDe(x)} (${ROTULO_TIPO[x.tipo].toLowerCase()})`);
   if (lineas.length) d.referido = [d.referido, ...lineas].filter(Boolean).join('\n');
 }
+
+/* Si se corrigió después de firmada, el papel lo dice al pie: así uno
+   viejo y uno nuevo no se confunden (16-11). La última corrección. */
+const ultimaCorreccion = (await correccionesDe(caso.id)).at(-1) ?? null;
+const lineaDeCorreccion = ultimaCorreccion
+  ? `Corregido el ${ultimaCorreccion.creado.toLocaleDateString('es-VE', { timeZone: 'America/Caracas', day: '2-digit', month: '2-digit', year: 'numeric' })} por ${ultimaCorreccion.autor}.`
+  : '';
 
 /* El récipe es la segunda página: no se repite en el informe. */
 const bloques = historia
@@ -382,11 +452,22 @@ const vitales = [
                       <th>Valor de referencia</th>
                     </tr>
                   </thead>
-                  <tbody>
-                    {aImprimir.map((r) => (
+                  {gruposAImprimir.map((g, gi) => (
+                  <tbody class:list={['valores__grupo', g.titulo && 'valores__grupo--titulado']}>
+                    {/* Dos dedos de aire y una línea antes de cada examen que no
+                        es el primero: que se vea que empieza otro. */}
+                    {gi > 0 && (
+                      <tr class="valores__aire" aria-hidden="true"><td colspan="4"></td></tr>
+                    )}
+                    {g.titulo && (
+                      <tr class="valores__examen">
+                        <th colspan="4" scope="rowgroup">{g.titulo}</th>
+                      </tr>
+                    )}
+                    {g.filas.map((r) => (
                       esTitulo(r) ? (
                         <tr class="valores__seccion">
-                          <th colspan="4" scope="colgroup">{r.examen}</th>
+                          <th colspan="4" scope="colgroup">{r.examen.trim()}</th>
                         </tr>
                       ) : esRedactado(r) ? (
                         /* Lo que redactó el bioanalista —el gram, el frotis—
@@ -423,6 +504,7 @@ const vitales = [
                       )
                     ))}
                   </tbody>
+                  ))}
                 </table>
               </section>
             ) : (
@@ -466,6 +548,7 @@ const vitales = [
                 <em>Bioanalista · sello y firma</em>
               </div>
             </footer>
+            {lineaDeCorreccion && <p class="corregido">{lineaDeCorreccion}</p>}
           </td>
          </tr>
         </tbody>
@@ -603,6 +686,7 @@ const vitales = [
           <em>Firma del paciente o familiar</em>
         </div>
       </footer>
+      {lineaDeCorreccion && <p class="corregido">{lineaDeCorreccion}</p>}
 
       {agregados.length > 0 && (
         <section class="bloque agregados">
@@ -819,6 +903,30 @@ const vitales = [
         color: var(--tinta);
       }
       .valores__seccion:first-child th { padding-top: 3px; }
+
+      /* Cada examen, su bloque (16-11). El nombre del examen pedido va
+         grande, en banda, y sus partes —macroscópico, químico,
+         microscópico— debajo, como subtítulos. Entre un examen y el
+         siguiente, aire y una línea: «dos dedos». */
+      .valores__grupo { break-inside: avoid; }
+      .valores__aire td { height: 7mm; padding: 0; border: 0; }
+      .valores__examen th {
+        padding: 5px 7px;
+        border-top: 1.5px solid var(--tinta);
+        border-bottom: 1px solid var(--tinta);
+        background: #eef1f6;
+        -webkit-print-color-adjust: exact; print-color-adjust: exact;
+        text-align: left;
+        text-transform: uppercase;
+        letter-spacing: 0.04em;
+        font-size: 11pt;
+        font-weight: 700;
+        color: var(--tinta);
+        break-after: avoid;
+      }
+      .valores__grupo--titulado .valores__seccion th { padding-left: 10px; font-size: 9.5pt; }
+      .valores__grupo--titulado td:first-child { padding-left: 14px; }
+      .valores__grupo:not(.valores__grupo--titulado) + .valores__grupo:not(.valores__grupo--titulado) .valores__aire td { height: 3mm; }
 
       .suelto { margin: 4px 0 0; font-size: 10pt; line-height: 1.5; }
       .suelto--ojo { margin-top: 8px; color: var(--gris); font-size: 9pt; }
@@ -1097,7 +1205,8 @@ const vitales = [
          CSS empaquetado, el id desaparece y el script no encuentra nada.
          El valor de acá es el que vale si el navegador no corre JavaScript:
          carta, que es el caso normal. -->
-    <style id="papel" is:inline>@page { size: letter; margin: 13mm 14mm; }</style>
+    <style id="papel" is:inline>@page { size: letter; margin: 13mm 14mm; }  .corregido { margin-top: 8px; font-size: 8pt; font-style: italic; color: #555; text-align: right; }
+</style>
 
     <script>
       /* Carta u oficio. En Venezuela el oficio es de 21,6 × 33 cm, que no es

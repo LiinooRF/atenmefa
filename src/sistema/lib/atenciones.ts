@@ -222,6 +222,8 @@ export async function atencionPara(id: string) {
       tipo: esquema.atencion.tipo,
       origenId: esquema.atencion.origenId,
       resultados: esquema.atencion.resultados,
+      /* Quién firmó los resultados: es quien puede corregirlos. */
+      resultadosPor: esquema.atencion.resultadosPor,
       fecha: esquema.atencion.fecha,
       datos: esquema.atencion.datos,
       creada: esquema.atencion.creada,

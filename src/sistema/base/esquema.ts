@@ -203,6 +203,19 @@ export const servicioComponente = pgTable('servicio_componente', {
  * diagnósticos y exámenes indicados. Se anula con motivo, no se borra.
  * Ver 024-agregados.sql.
  */
+/** Una corrección de una atención cerrada. Ver 033-correcciones.sql. */
+export interface CambioDeCampo { campo: string; rotulo: string; antes: string; despues: string }
+export const correccion = pgTable('correccion', {
+  id: uuid('id').primaryKey().defaultRandom(),
+  atencionId: uuid('atencion_id').notNull().references(() => atencion.id),
+  autorId: text('autor_id').notNull().references(() => user.id),
+  motivo: text('motivo').notNull(),
+  cambios: jsonb('cambios').$type<CambioDeCampo[]>().notNull(),
+  pacienteAntes: uuid('paciente_antes').references(() => paciente.id),
+  pacienteDespues: uuid('paciente_despues').references(() => paciente.id),
+  creado: timestamp('creado', { withTimezone: true }).notNull().defaultNow(),
+});
+
 export const agregado = pgTable('agregado', {
   id: uuid('id').primaryKey().defaultRandom(),
   atencionId: uuid('atencion_id').notNull().references(() => atencion.id),

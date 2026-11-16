@@ -552,6 +552,11 @@ export async function borrarPacientes(...cedulas: string[]) {
       await sql`DELETE FROM agregado WHERE atencion_id IN (${deEsaCedula})
                                     OR orden_id IN (${deEsaCedula})`;
       await sql`DELETE FROM interconsulta WHERE atencion_id IN (${deEsaCedula})`;
+      /* Las correcciones cuelgan de la atención y, si la cambiaron de
+         paciente, también de los dos pacientes. */
+      await sql`DELETE FROM correccion WHERE atencion_id IN (${deEsaCedula})
+                   OR paciente_antes IN (SELECT id FROM paciente WHERE cedula_busca = ${busca})
+                   OR paciente_despues IN (SELECT id FROM paciente WHERE cedula_busca = ${busca})`;
       await sql`DELETE FROM renglon  WHERE atencion_id IN (${deEsaCedula})`;
       await sql`DELETE FROM atencion WHERE paciente_id IN (
                   SELECT id FROM paciente WHERE cedula_busca = ${busca})`;
