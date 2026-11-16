@@ -90,7 +90,11 @@ const fechaTasa = tasa
         la lista completa para marcar a mano. Antes los perfiles eran una
         fila de pastillas encima de la lista y con nueve o diez se iban a
         tres renglones, empujando los exámenes fuera de la pantalla. */}
-    <div class="ex__dos">
+    {/* Sin perfiles armados, la columna no aparece para recepción: era un
+        bloque de texto que explicaba algo que no había, encima de la lista
+        que de verdad se usa. Al que los arma sí se le dice dónde. */}
+    <div class:list={['ex__dos', perfiles.length === 0 && !puedeEditarCatalogo && 'ex__dos--uno']}>
+      {(perfiles.length > 0 || puedeEditarCatalogo) && (
       <div class="ex__col ex__col--perfiles">
         <h3 class="ex__rotulo">Perfiles</h3>
 
@@ -119,6 +123,7 @@ const fechaTasa = tasa
           derecha lo que no haga falta: se cobra lo que quede marcado.
         </p>
       </div>
+      )}
 
       <div class="ex__col ex__col--lista">
         <h3 class="ex__rotulo">Todos los exámenes</h3>
@@ -335,6 +340,7 @@ const fechaTasa = tasa
   .ex__dos { display: grid; gap: 18px; }
   @media (min-width: 900px) {
     .ex__dos { grid-template-columns: minmax(200px, 270px) 1fr; gap: 22px; }
+    .ex__dos--uno { grid-template-columns: 1fr; }
     .ex__col--perfiles {
       padding-right: 22px;
       border-right: 1px solid var(--linea-tenue);

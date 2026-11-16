@@ -154,7 +154,7 @@ const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito)
                 <input type="text" name="opciones"
                        value={f.opciones ? f.opciones.split('\n').join(' / ') : ''}
                        aria-label={`Opciones de ${f.analito}`}
-                       placeholder="NEGATIVO / POSITIVO" autocomplete="off" />
+                       placeholder={i === 0 ? 'Ej.: NEGATIVO / POSITIVO' : undefined} autocomplete="off" />
               </td>
               <td class="pl__es" data-rotulo="Tipo">
                 <select name="tipo" aria-label={`Tipo de ${f.analito || `el renglón ${i + 1}`}`}>
@@ -196,11 +196,13 @@ const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito)
       mano. El que queda vacío se escribe libre.
     </p>
     <p class="nota">
-      Marcar <strong>subtítulo</strong> convierte el renglón en un encabezado
-      de bloque del informe —así separa la hoja de coagulación el tiempo de
-      protrombina del PTT—: no lleva unidad ni rango y no cuenta entre los que
-      faltan. Lo contrario también: el tipiaje y el VDRL no tienen rango
-      porque se informan con una palabra, y son analitos igual.
+      El <strong>tipo</strong> dice qué es cada renglón. <em>Resultado</em> es lo
+      que se mide: un número con su rango, o una palabra de su menú.
+      <em>Lo escribe el bioanalista</em> es lo que se redacta según lo que se ve
+      —el gram, el cultivo, el frotis—: se escribe en un cuadro de varias líneas
+      y no lleva unidad ni rango. <em>Subtítulo</em> es un encabezado de bloque
+      del informe —así separa la hoja de coagulación el tiempo de protrombina
+      del PTT—. Ni el texto ni el subtítulo cuentan entre los que faltan.
     </p>
 
     <div class="pie">
@@ -327,7 +329,10 @@ const comoSeCalcula = (analito: string) => formulaDe.get(llaveDeAnalito(analito)
   .pl__que { width: 34%; }
   .pl__opc { width: 22%; }
   .pl__es { width: 190px; }
-  .pl__es select { width: 100%; }
+  .pl__es select {
+    width: 100%; min-height: 44px; padding: 0 10px;
+    border: 1px solid var(--linea); border-radius: 8px; background: var(--papel); color: var(--tinta); font: inherit;
+  }
   .pl__quitar { width: 44px; text-align: center; }
 
   /* El subtítulo se ve como lo que es: un encabezado, no un renglón al que

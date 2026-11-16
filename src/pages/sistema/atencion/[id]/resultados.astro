@@ -115,7 +115,9 @@ const plantillas = await plantillasDeExamen();
 /* Los encabezados de bloque no se cuentan: nunca van a tener rango. Tampoco
    cuenta el que se responde con menú —NEGATIVO, los colores de la orina—:
    esa es su forma de informarse, no un rango que le falte. */
-const renglones = plantillas.flatMap((p) => p.analitos).filter((a) => a.tipo !== 'titulo');
+/* Ni los subtítulos ni lo que redacta el bioanalista: ninguno de los dos
+   lleva rango, así que no se cuentan como «sin rango». */
+const renglones = plantillas.flatMap((p) => p.analitos).filter((a) => a.tipo === 'analito');
 const sinRango = renglones.filter(
   (a) => !a.referencia.trim() && !a.opciones.trim(),
 ).length;
@@ -475,8 +477,8 @@ const fechaLarga = (f: string) =>
 
       <div class="pie">
         <div class="pie__int">
-          <span class="pie__estado">
-            {cargados.filter((r) => r.valor).length} de {lineas.length}
+          <span class="pie__estado" data-contador>
+            {lineas.filter((l) => l.valor.trim()).length} de {lineas.length}
             {lineas.length === 1 ? ' línea' : ' líneas'} con resultado
           </span>
           <div class="pie__botones">
@@ -723,6 +725,15 @@ const fechaLarga = (f: string) =>
 
       revisarDiferencial(filas, dame, llaves);
       marcarFueraDeRango(filas, dame);
+
+      /* El contador del pie, al día con lo que se va escribiendo: antes
+         contaba solo lo guardado y decía «0 de 13» con la tabla llena. */
+      const contador = document.querySelector<HTMLElement>('[data-contador]');
+      if (contador) {
+        const campos = [...cuerpo.querySelectorAll<HTMLInputElement | HTMLTextAreaElement>('[name="valor"]')];
+        const llenos = campos.filter((c) => c.value.trim()).length;
+        contador.textContent = `${llenos} de ${campos.length} ${campos.length === 1 ? 'línea' : 'líneas'} con resultado`;
+      }
     };
 
     /* ---------- fuera de rango ---------- */

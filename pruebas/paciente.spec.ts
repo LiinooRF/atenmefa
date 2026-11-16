@@ -61,7 +61,7 @@ test('la misma cédula escrita distinto es el mismo paciente', async ({ page }) 
   /* Y se nota donde importa: la ficha nueva muestra la atención anterior,
      que es lo que el médico necesita ver antes de tocar al paciente. */
   const previas = page.locator('section.ficha', {
-    has: page.getByRole('heading', { name: 'Atenciones anteriores' }),
+    has: page.getByRole('heading', { name: 'Otras atenciones' }),
   });
   await expect(previas).toContainText(`N° ${numeroPrimera}`);
   await expect(previas).toContainText(IDX_PRIMERA);

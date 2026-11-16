@@ -482,7 +482,12 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
               <div class="ficha__fila">
                 <dt>{c.rotulo}</dt>
                 <dd>
-                  {datos[c.clave]}
+                  {/* Una fecha se lee como fecha, igual que en la cabecera:
+                      «2026-11-15» abajo y «15 de noviembre» arriba parecían
+                      dos datos distintos. */}
+                  {c.tipo === 'fecha' && /^\d{4}-\d{2}-\d{2}$/.test(datos[c.clave] ?? '')
+                    ? fechaLarga(datos[c.clave])
+                    : datos[c.clave]}
                   {/* El código CIE-10, cuando el diagnóstico se eligió del
                       catálogo. Escrito a mano va el texto solo. */}
                   {c.clave === 'idx' && datos.idx_codigo && (
@@ -835,7 +840,10 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
 
       {anteriores.length > 0 && (
         <section class="ficha">
-          <h2>{esLab ? 'Otras atenciones' : 'Atenciones anteriores'}</h2>
+          {/* «Otras» y no «anteriores»: la lista trae también las que
+              vinieron después, como la orden de laboratorio de esa misma
+              consulta. */}
+          <h2>Otras atenciones</h2>
           <ul class="previas">
             {anteriores.map((a) => (
               <li>
