@@ -1,0 +1,107 @@
+---
+/**
+ * Ajustes del centro.
+ *
+ * Lo que cambia de un centro a otro y no se decide en el código: el mismo
+ * sistema corre para Atenmefa, para la demo y para el que venga después, y
+ * cada uno trabaja a su manera. Ver lib/ajustes.ts.
+ */
+import Sistema from '../../layouts/Sistema.astro';
+import { exigir } from '../../sistema/lib/guardia';
+import { AJUSTES, ajustes, guardarAjustes, type ClaveAjuste } from '../../sistema/lib/ajustes';
+
+export const prerender = false;
+
+const corte = exigir(Astro, 'administrar_usuarios');
+if (corte) return corte;
+const usuario = Astro.locals.usuario!;
+
+let error = '';
+if (Astro.request.method === 'POST') {
+  const form = await Astro.request.formData();
+  try {
+    const cambiados = await guardarAjustes(usuario, new Set(form.getAll('ajuste').map(String)));
+    return Astro.redirect(`/sistema/ajustes?guardado=${cambiados.length}`);
+  } catch (e) {
+    error = e instanceof Error ? e.message : 'No se pudo guardar.';
+  }
+}
+
+const vigentes = await ajustes();
+const guardado = Astro.url.searchParams.get('guardado');
+const claves = Object.keys(AJUSTES) as ClaveAjuste[];
+const [principal, ...porTipo] = claves;
+---
+
+<Sistema titulo="Ajustes del centro">
+  <div class="cab">
+    <h1>Ajustes del centro</h1>
+    <p class="cab__nota">Cómo trabaja este centro. Los cambios valen desde el próximo caso.</p>
+  </div>
+
+  {guardado !== null && (
+    <p class="msj--bien" role="status">
+      {guardado === '0' ? 'No había nada que cambiar.' : 'Guardado. Quedó en la bitácora.'}
+    </p>
+  )}
+  {error && <p class="sis-error" role="alert">{error}</p>}
+
+  <form method="post" class="sis-tarjeta ajustes" data-ajustes>
+    <h2>Derivaciones</h2>
+    <label class="ajuste ajuste--principal">
+      <input type="checkbox" name="ajuste" value={principal} checked={vigentes[principal]} />
+      <span>
+        <strong>{AJUSTES[principal].rotulo}</strong>
+        <small>{AJUSTES[principal].pista}</small>
+      </span>
+    </label>
+
+    <fieldset class="ajustes__tipos" data-dependen>
+      <legend>Qué viene marcado cuando el médico deriva</legend>
+      {porTipo.map((c) => (
+        <label class="ajuste">
+          <input type="checkbox" name="ajuste" value={c} checked={vigentes[c]} />
+          <span>
+            <strong>{AJUSTES[c].rotulo}</strong>
+            <small>{AJUSTES[c].pista}</small>
+          </span>
+        </label>
+      ))}
+      <p class="ajustes__nota">El médico lo puede cambiar en cada derivación.</p>
+    </fieldset>
+
+    <button type="submit" class="sis-boton sis-boton--primario">Guardar</button>
+  </form>
+</Sistema>
+
+<script>
+  /* Con el paso por recepción apagado, lo que viene marcado no importa: se
+     atenúa para que se vea que no aplica. */
+  const f = document.querySelector<HTMLFormElement>('[data-ajustes]');
+  const principal = f?.querySelector<HTMLInputElement>('.ajuste--principal input');
+  const dependen = f?.querySelector<HTMLElement>('[data-dependen]');
+  const ver = () => { if (dependen && principal) dependen.toggleAttribute('data-apagado', !principal.checked); };
+  principal?.addEventListener('change', ver);
+  ver();
+</script>
+
+<style>
+  .cab h1 { font-size: var(--u-2xl); }
+  .cab__nota { margin-top: 5px; font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .msj--bien {
+    margin-top: 16px; padding: 11px 14px; border-radius: 8px;
+    background: #e4f2ea; border: 1px solid #a9d5bd; color: #105433; font-size: var(--u-sm);
+  }
+  .sis-error { margin-top: 16px; }
+  .ajustes { display: grid; gap: 14px; margin-top: 20px; padding: 18px; max-width: 720px; }
+  .ajustes h2 { font-size: var(--u-md); }
+  .ajuste { display: flex; align-items: flex-start; gap: 10px; min-height: 44px; cursor: pointer; }
+  .ajuste input { margin-top: 3px; width: 20px; height: 20px; flex: none; }
+  .ajuste span { display: grid; gap: 2px; }
+  .ajuste small { color: var(--tinta-tenue); font-size: var(--u-sm); }
+  .ajustes__tipos { display: grid; gap: 10px; border: 1px solid var(--linea-tenue); border-radius: 8px; padding: 12px 14px; margin: 0; }
+  .ajustes__tipos legend { font-weight: 600; padding: 0 4px; }
+  .ajustes__tipos[data-apagado] { opacity: 0.45; }
+  .ajustes__nota { font-size: var(--u-sm); color: var(--tinta-tenue); }
+  .ajustes button { justify-self: start; }
+</style>

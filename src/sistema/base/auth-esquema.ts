@@ -21,6 +21,8 @@ export const user = pgTable("user", {
    */
   firma: text("firma"),
   msds: text("msds"),
+  /** La especialidad del médico, para derivarle pacientes. Ver 029-derivaciones.sql. */
+  especialidad: text("especialidad"),
   activo: boolean("activo").default(true),
   /** Lo prende cada uno desde Mi cuenta. Ver 018-dos-factores.sql. */
   twoFactorEnabled: boolean("two_factor_enabled").default(false).notNull(),

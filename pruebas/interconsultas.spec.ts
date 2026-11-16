@@ -63,45 +63,51 @@ test('el médico pide una interconsulta eligiendo la especialidad', async ({ pag
   await page.goto(`/sistema/atencion/${consulta}`);
 
   const seccion = page.locator('#interconsultas');
+  await seccion.locator('input[name="tipo_derivacion"][value="externa"]').check();
   await seccion.locator('#especialidad').selectOption('Oftalmología');
   await seccion.locator('#motivo_interconsulta').fill('Ojo rojo con baja de visión, descartar glaucoma.');
-  await seccion.getByRole('button', { name: 'Pedir la interconsulta' }).click();
+  await seccion.getByRole('button', { name: 'Derivar' }).click();
 
-  await expect(page.locator('#interconsultas .msj--bien')).toContainText('Interconsulta pedida');
+  await expect(page.locator('#interconsultas .msj--bien')).toContainText('Derivación pedida');
   await expect(page.locator('#interconsultas .ic')).toContainText('Pendiente');
 
   // Dos veces la misma, abierta, no: es casi siempre un doble clic.
+  await seccion.locator('input[name="tipo_derivacion"][value="externa"]').check();
   await seccion.locator('#especialidad').selectOption('Oftalmología');
-  await seccion.getByRole('button', { name: 'Pedir la interconsulta' }).click();
-  await expect(page.locator('#interconsultas .sis-error')).toContainText('Ya hay una interconsulta de Oftalmología');
+  await seccion.getByRole('button', { name: 'Derivar' }).click();
+  await expect(page.locator('#interconsultas .sis-error')).toContainText('Ya hay una derivación a Oftalmología');
 });
 
 test('y una de un área que todavía no tiene especialista cargado', async ({ page }) => {
   await entrar(page, 'medico');
   await page.goto(`/sistema/atencion/${consulta}`);
   const seccion = page.locator('#interconsultas');
+  await seccion.locator('input[name="tipo_derivacion"][value="externa"]').check();
   await seccion.locator('#especialidad').selectOption('__otra');
   await seccion.locator('#otra').fill('Nefrología');
-  await seccion.getByRole('button', { name: 'Pedir la interconsulta' }).click();
+  await seccion.getByRole('button', { name: 'Derivar' }).click();
   await expect(page.locator('#interconsultas .ic')).toHaveCount(2);
 });
 
-test('recepción no pide interconsultas ni entra a la lista', async ({ page }) => {
+test('recepción no pide derivaciones ni ve las que no pasan por ella', async ({ page }) => {
   await entrar(page, 'recepcionista');
   await page.goto(`/sistema/atencion/${consulta}`);
   await expect(page.locator('[data-interconsulta]')).toHaveCount(0);
   const html = await postearAMano(page, `/sistema/atencion/${consulta}`, {
-    accion: 'pedir_interconsulta', especialidad: 'Cardiología', motivo_interconsulta: 'x',
+    accion: 'pedir_interconsulta', tipo_derivacion: 'externa', especialidad: 'Cardiología', motivo_interconsulta: 'x',
   });
-  expect(html).toContain('Las interconsultas las pide el médico');
+  expect(html).toContain('Las derivaciones las pide el médico');
 
-  await page.goto('/sistema/interconsultas');
-  await expect(page).toHaveURL(/\/sistema\/sin-permiso/);
+  /* Su panel solo trae las que el médico mandó a pasar por recepción: estas
+     dos van directas a administración. */
+  await page.goto('/sistema/derivaciones');
+  await expect(page.locator('h1')).toContainText('Derivaciones para recepción');
+  await expect(page.locator('.ic', { hasText: PACIENTE })).toHaveCount(0);
 });
 
 test('administración contacta al especialista por WhatsApp y queda anotado', async ({ page }) => {
   await entrar(page, 'administracion');
-  await page.goto('/sistema/interconsultas');
+  await page.goto('/sistema/derivaciones');
 
   const oftalmo = page.locator('.ic', { hasText: 'Oftalmología' });
   await expect(oftalmo).toContainText(PACIENTE);
@@ -120,7 +126,7 @@ test('administración contacta al especialista por WhatsApp y queda anotado', as
     (i) => i.map((x) => [(x as HTMLInputElement).name, (x as HTMLInputElement).value]),
   ));
   const base = new URL(page.url()).origin;
-  const r = await page.request.post('/sistema/interconsultas', {
+  const r = await page.request.post('/sistema/derivaciones', {
     form: campos, headers: { origin: base }, maxRedirects: 0,
   });
   expect(r.status()).toBe(303);
@@ -142,16 +148,16 @@ test('administración contacta al especialista por WhatsApp y queda anotado', as
 
 test('se da por atendida y se anula la otra con motivo', async ({ page }) => {
   await entrar(page, 'administracion');
-  await page.goto('/sistema/interconsultas');
+  await page.goto('/sistema/derivaciones');
 
   await page.locator('.ic', { hasText: 'Oftalmología' }).getByRole('button', { name: 'Ya lo atendió' }).click();
-  await expect(page.locator('.msj--bien')).toContainText('atendida');
+  await expect(page.locator('.msj--bien')).toContainText('Quedó cerrada');
 
   const nefro = page.locator('.ic', { hasText: 'Nefrología' });
   await nefro.locator('summary', { hasText: 'Anular' }).click();
   await nefro.getByLabel('¿Por qué se anula?').fill('La familia lo lleva a otro centro');
   await nefro.getByRole('button', { name: 'Anular' }).click();
-  await expect(page.locator('.vacio')).toContainText('No hay interconsultas abiertas');
+  await expect(page.locator('.ic', { hasText: PACIENTE })).toHaveCount(0);
 
   // El médico ve cómo terminó cada una en su consulta.
   await page.goto(`/sistema/atencion/${consulta}`);

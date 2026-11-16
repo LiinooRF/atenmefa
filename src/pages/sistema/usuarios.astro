@@ -69,6 +69,7 @@ if (Astro.request.method === 'POST') {
         nombre,
         colegiatura: String(form.get('colegiatura') ?? '').trim(),
         msds: String(form.get('msds') ?? '').trim(),
+        especialidad: quien.rol === 'medico' ? String(form.get('especialidad') ?? '') : undefined,
       });
       await anotar(yo.id, 'corrigio_usuario', undefined, { usuario: id });
       aviso = `Datos de ${nombre} corregidos.`;
@@ -139,7 +140,7 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
               <strong>{u.nombre}{u.id === yo.id ? ' · usted' : ''}</strong>
               <small>{u.correo}</small>
               <small>
-                {nombreDelRol(u.rol)}{u.colegiatura ? ` · ${u.colegiatura}` : ''}
+                {nombreDelRol(u.rol)}{u.especialidad ? ` · ${u.especialidad}` : ''}{u.colegiatura ? ` · ${u.colegiatura}` : ''}
                 {u.dosFactores && <span class="conclave"> · con código</span>}
               </small>
             </div>
@@ -202,6 +203,15 @@ const activos = usuarios.filter((u) => u.activo !== false).length;
                   <input type="text" name="msds" value={u.msds ?? ''}
                          aria-label={`M.P.P.S. de ${u.nombre}`} autocomplete="off" />
                 </label>
+                {u.rol === 'medico' && (
+                  <label>
+                    <span>Especialidad</span>
+                    <input type="text" name="especialidad" value={u.especialidad ?? ''}
+                           placeholder="Cardiología" maxlength="120"
+                           aria-label={`Especialidad de ${u.nombre}`} autocomplete="off" />
+                    <small>Con ella aparece para recibir derivaciones. En blanco si es médico general.</small>
+                  </label>
+                )}
                 <button type="submit" class="sis-boton sis-boton--azul">Guardar</button>
               </form>
             </details>

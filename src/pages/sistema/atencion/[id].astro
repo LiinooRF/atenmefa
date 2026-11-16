@@ -21,8 +21,10 @@ import {
   ROTULO_AGREGADO, agregadosDe, agregar, anularAgregado, lineasDeExamenes,
 } from '../../../sistema/lib/agregados';
 import Diagnostico from '../../../components/sistema/Diagnostico.astro';
+import { ajustes } from '../../../sistema/lib/ajustes';
 import {
-  ROTULO_ESTADO, especialidades, interconsultasDe, pedirInterconsulta,
+  ROTULO_TIPO, destinoDe, especialidades, especialistasDelCentro, interconsultasDe,
+  pedirInterconsulta, rotuloEstado,
 } from '../../../sistema/lib/interconsultas';
 
 export const prerender = false;
@@ -105,7 +107,10 @@ const tomable = puedeTomarCaso(usuario, { ...caso, escrita });
 let errorAgregado = '';
 let tecleado = { tipo: 'nota', texto: '', dx: '', dxCodigo: '' };
 let errorInterconsulta = '';
-let pedido = { especialidad: '', otra: '', motivo: '' };
+let pedido = {
+  tipo: '', especialidad: '', otra: '', medico: '', centro: '', ambulancia: '', paramedico: '',
+  motivo: '', porRecepcion: '',
+};
 
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
@@ -155,17 +160,24 @@ if (Astro.request.method === 'POST') {
       errorAgregado = e instanceof Error ? e.message : 'No se pudo agregar.';
     }
   } else if (accion === 'pedir_interconsulta') {
+    const campo = (k: string) => String(form.get(k) ?? '');
     pedido = {
-      especialidad: String(form.get('especialidad') ?? ''),
-      otra: String(form.get('otra') ?? ''),
-      motivo: String(form.get('motivo_interconsulta') ?? ''),
+      tipo: campo('tipo_derivacion'), especialidad: campo('especialidad'), otra: campo('otra'),
+      medico: campo('medico_destino'), centro: campo('centro'), ambulancia: campo('ambulancia'),
+      paramedico: campo('paramedico'), motivo: campo('motivo_interconsulta'), porRecepcion: campo('por_recepcion'),
     };
     try {
       await pedirInterconsulta(usuario, caso.id, {
+        tipo: pedido.tipo,
         /* «Otra» es para la especialidad que todavía no tiene especialista
            cargado: el médico no tiene por qué saber quién está en la lista. */
         especialidad: pedido.especialidad === '__otra' ? pedido.otra : pedido.especialidad,
+        medicoId: pedido.medico,
+        centro: pedido.centro,
+        ambulancia: pedido.ambulancia,
+        paramedico: pedido.paramedico,
         motivo: pedido.motivo,
+        porRecepcion: pedido.porRecepcion === 'si',
       });
       return Astro.redirect(`/sistema/atencion/${caso.id}?interconsulta=1#interconsultas`);
     } catch (e) {
@@ -269,8 +281,15 @@ const interconsultas = esLab ? [] : await interconsultasDe(caso.id);
 const puedePedirInterconsulta = !esLab && caso.estado !== 'anulada'
   && puede(usuario.rol as string, 'pedir_interconsulta');
 const lasEspecialidades = puedePedirInterconsulta ? await especialidades() : [];
+const delCentro = puedePedirInterconsulta
+  ? (await especialistasDelCentro()).filter((m) => m.id !== usuario.id) : [];
+/* Si existe el paso por recepción y qué viene marcado en cada tipo: lo
+   decide cada centro en sus ajustes. */
+const config = puedePedirInterconsulta ? await ajustes() : null;
+const tipoInicial = pedido.tipo || (delCentro.length ? 'interna' : 'externa');
+const recepcionDe = { interna: config?.recepcion_interna, externa: config?.recepcion_externa, traslado: config?.recepcion_traslado };
 const avisoInterconsulta = Astro.url.searchParams.get('interconsulta') === '1'
-  ? 'Interconsulta pedida. Administración la ve en su lista y contacta al especialista.'
+  ? 'Derivación pedida. Queda en el panel de derivaciones de quien la tiene que mover.'
   : '';
 
 /* Una cuenta por moneda, como en la pantalla de cobro. Dólares y bolívares
@@ -585,7 +604,7 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
 
       {!esLab && (interconsultas.length > 0 || puedePedirInterconsulta || errorInterconsulta) && (
         <section class="ficha interconsultas" id="interconsultas">
-          <h2>Interconsultas</h2>
+          <h2>Derivaciones</h2>
           {avisoInterconsulta && <p class="msj--bien" role="status">{avisoInterconsulta}</p>}
           {errorInterconsulta && <p class="sis-error" role="alert">{errorInterconsulta}</p>}
 
@@ -594,13 +613,15 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
               {interconsultas.map((ic) => (
                 <li class:list={['ic', `ic--${ic.estado}`]}>
                   <p class="ic__cabeza">
-                    <strong>{ic.especialidad}</strong>
-                    <span class="ic__estado">{ROTULO_ESTADO[ic.estado]}</span>
+                    <strong>{destinoDe(ic)}</strong>
+                    <span class="ic__estado">{rotuloEstado(ic.estado, ic.tipo)}</span>
                   </p>
+                  <p class="lado__vacio">{ROTULO_TIPO[ic.tipo]}{ic.porRecepcion && ' · pasa por recepción'}</p>
                   {ic.motivo && <p class="ic__motivo">{ic.motivo}</p>}
                   <p class="lado__vacio">
                     Pedida por {ic.medico}, {cuando(ic.pedida)}
                     {ic.especialista && <> · se le escribió a {ic.especialista}</>}
+                    {ic.atencionDestinoId && <> · <a href={`/sistema/atencion/${ic.atencionDestinoId}`}>ver la consulta del especialista</a></>}
                     {ic.anuladaMotivo && <> · anulada: {ic.anuladaMotivo}</>}
                   </p>
                 </li>
@@ -609,11 +630,39 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
           )}
 
           {puedePedirInterconsulta && (
-            <form method="post" class="ic__pedir" data-interconsulta>
+            <form method="post" class="ic__pedir" data-interconsulta
+                  data-recepcion={JSON.stringify(recepcionDe)}
+                  data-tocada={pedido.tipo ? '' : undefined}>
               <input type="hidden" name="accion" value="pedir_interconsulta" />
-              <div class="agregar__campo sis-campo">
+              <fieldset class="agregar__tipo">
+                <legend>A dónde se deriva</legend>
+                {(['interna', 'externa', 'traslado'] as const).map((t) => (
+                  <label>
+                    <input type="radio" name="tipo_derivacion" value={t} checked={tipoInicial === t}
+                           disabled={t === 'interna' && delCentro.length === 0} />
+                    {ROTULO_TIPO[t]}
+                  </label>
+                ))}
+              </fieldset>
+              {delCentro.length === 0 && (
+                <p class="lado__vacio">
+                  No hay especialistas del centro cargados: administración les pone la especialidad en Cuentas.
+                </p>
+              )}
+
+              <div class="agregar__campo sis-campo" data-para-d="interna">
+                <label for="medico_destino">Especialista del centro</label>
+                <select id="medico_destino" name="medico_destino">
+                  <option value="" disabled selected={!pedido.medico}>Elija uno</option>
+                  {delCentro.map((m) => (
+                    <option value={m.id} selected={pedido.medico === m.id}>{m.especialidad} · {m.nombre}</option>
+                  ))}
+                </select>
+              </div>
+
+              <div class="agregar__campo sis-campo" data-para-d="externa">
                 <label for="especialidad">Especialidad</label>
-                <select id="especialidad" name="especialidad" required>
+                <select id="especialidad" name="especialidad">
                   <option value="" disabled selected={!pedido.especialidad}>Elija una</option>
                   {lasEspecialidades.map((e) => (
                     <option value={e} selected={pedido.especialidad === e}>{e}</option>
@@ -623,16 +672,42 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
                   </option>
                 </select>
               </div>
-              <div class="agregar__campo sis-campo" data-otra>
+              <div class="agregar__campo sis-campo" data-para-d="externa" data-otra>
                 <label for="otra">¿Cuál?</label>
                 <input id="otra" name="otra" type="text" maxlength="120" value={pedido.otra}
                        placeholder="Oftalmología, nefrología…" />
               </div>
+
+              <div class="agregar__campo sis-campo" data-para-d="traslado">
+                <label for="centro">A qué centro u hospital</label>
+                <input id="centro" name="centro" type="text" maxlength="160" value={pedido.centro} />
+              </div>
+              <div class="agregar__campo sis-campo" data-para-d="traslado">
+                <label for="ambulancia">¿En ambulancia?</label>
+                <select id="ambulancia" name="ambulancia">
+                  <option value="si" selected={pedido.ambulancia !== 'no'}>Sí</option>
+                  <option value="no" selected={pedido.ambulancia === 'no'}>No</option>
+                </select>
+              </div>
+              <div class="agregar__campo sis-campo" data-para-d="traslado">
+                <label for="paramedico">Paramédico <span class="lado__vacio">· si ya se sabe</span></label>
+                <input id="paramedico" name="paramedico" type="text" maxlength="120" value={pedido.paramedico} />
+              </div>
+
               <div class="agregar__campo sis-campo">
-                <label for="motivo_interconsulta">Para qué <span class="lado__vacio">· lo que tiene que mirar el especialista</span></label>
+                <label for="motivo_interconsulta">Para qué <span class="lado__vacio">· lo que tiene que saber quien lo recibe</span></label>
                 <textarea id="motivo_interconsulta" name="motivo_interconsulta" rows="3" maxlength="2000">{pedido.motivo}</textarea>
               </div>
-              <button type="submit" class="sis-boton sis-boton--azul">Pedir la interconsulta</button>
+
+              {config?.recepcion_derivaciones && (
+                <label class="ic__recepcion">
+                  <input type="checkbox" name="por_recepcion" value="si"
+                         checked={pedido.tipo ? pedido.porRecepcion === 'si' : Boolean(recepcionDe[tipoInicial as 'interna'])} />
+                  Que pase por recepción <span class="lado__vacio">· para admitirlo, cobrar o coordinar la ambulancia</span>
+                </label>
+              )}
+
+              <button type="submit" class="sis-boton sis-boton--azul">Derivar</button>
             </form>
           )}
         </section>
@@ -970,6 +1045,8 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
   .ic__pedir { display: grid; gap: 12px; margin-top: 14px; padding-top: 14px; border-top: 1px solid var(--linea); }
   .ic__pedir select, .ic__pedir input, .ic__pedir textarea { width: 100%; }
   [data-otra][hidden] { display: none; }
+  [data-para-d][hidden] { display: none; }
+  .ic__recepcion { display: flex; align-items: center; gap: 8px; min-height: 44px; flex-wrap: wrap; }
   .lado__quien { margin-top: 14px; padding-top: 13px; border-top: 1px solid var(--linea-tenue); font-size: var(--u-sm); color: var(--tinta-suave); }
 
   .renglones { list-style: none; margin: 0; padding: 0; display: grid; gap: 1px; }
@@ -1019,13 +1096,29 @@ const comoSeLlama = esLab ? 'Orden' : 'Atención';
     mostrar();
   }
 
-  /* «¿Cuál?» solo cuando se eligió «Otra». Sin JS se ve siempre. */
+  /* Se ven solo los campos del tipo de derivación elegido, y «¿Cuál?» solo
+     con «Otra». La casilla de recepción toma lo que el centro dejó marcado
+     para ese tipo, mientras el médico no la haya tocado. Sin JS se ve todo. */
   const ic = document.querySelector<HTMLFormElement>('[data-interconsulta]');
   if (ic) {
     const lista = ic.querySelector<HTMLSelectElement>('select[name="especialidad"]')!;
-    const otra = ic.querySelector<HTMLElement>('[data-otra]')!;
-    const ver = () => { otra.hidden = lista.value !== '__otra'; };
-    lista.addEventListener('change', ver);
+    const recepcion = ic.querySelector<HTMLInputElement>('input[name="por_recepcion"]');
+    let porDefecto: Record<string, boolean> = {};
+    try { porDefecto = JSON.parse(ic.dataset.recepcion ?? '{}'); } catch { porDefecto = {}; }
+    // Si volvió con un error, la casilla dice lo que el médico había elegido.
+    let tocada = ic.hasAttribute('data-tocada');
+    recepcion?.addEventListener('change', () => { tocada = true; });
+    const ver = () => {
+      const tipo = ic.querySelector<HTMLInputElement>('input[name="tipo_derivacion"]:checked')?.value ?? 'externa';
+      ic.querySelectorAll<HTMLElement>('[data-para-d]').forEach((b) => {
+        b.hidden = b.dataset.paraD !== tipo || (b.hasAttribute('data-otra') && lista.value !== '__otra');
+      });
+      if (recepcion && !tocada) recepcion.checked = Boolean(porDefecto[tipo]);
+    };
+    ic.addEventListener('change', (e) => {
+      const nombre = (e.target as HTMLInputElement).name;
+      if (nombre === 'tipo_derivacion' || nombre === 'especialidad') ver();
+    });
     ver();
   }
 </script>

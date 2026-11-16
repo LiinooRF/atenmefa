@@ -30,7 +30,7 @@ const deLaBarra = (page: Page) =>
 test('al médico le queda el menú plano, sin desplegables', async ({ page }) => {
   await entrar(page, 'medico');
 
-  expect(await deLaBarra(page)).toEqual(['Casos', 'Nueva atención', 'Borradores', 'Pacientes']);
+  expect(await deLaBarra(page)).toEqual(['Casos', 'Nueva atención', 'Borradores', 'Derivaciones', 'Pacientes']);
   /* Sin Laboratorio: el que llega solo a hacerse un examen no es un caso
      suyo. Lo que él pidió en consulta lo ve colgado de esa consulta. */
   /* Ni uno: al médico no le alcanza para completar ningún grupo, así que
@@ -38,24 +38,23 @@ test('al médico le queda el menú plano, sin desplegables', async ({ page }) =>
   await expect(page.locator('.sis__grupo')).toHaveCount(0);
 });
 
-test('administración ve siete entradas en vez de once sueltas', async ({ page }) => {
+test('administración ve ocho entradas en vez de dieciséis sueltas', async ({ page }) => {
   await entrar(page, 'administracion');
 
   expect(await deLaBarra(page)).toEqual([
-    'Casos', 'Borradores', 'Laboratorio', 'Pacientes', 'Cobros', 'Reportes', 'Administración',
+    'Casos', 'Borradores', 'Laboratorio', 'Derivaciones', 'Pacientes', 'Cobros', 'Reportes', 'Administración',
   ]);
 
   const dentro = async (grupo: string) =>
     page.locator('.sis__grupo').filter({ hasText: grupo }).locator('.sis__menu a')
       .evaluateAll((a) => a.map((x) => (x.textContent ?? '').trim()));
 
-  expect(await dentro('Casos')).toEqual(['Casos', 'Interconsultas']);
   expect(await dentro('Cobros')).toEqual([
-    'Cierre del mes', 'Servicios y precios', 'Perfiles del laboratorio', 'Especialistas',
+    'Cierre del mes', 'Servicios y precios', 'Perfiles del laboratorio', 'Especialistas de afuera',
   ]);
   expect(await dentro('Reportes')).toEqual(['Tablero', 'Marketing del sitio']);
   expect(await dentro('Administración')).toEqual([
-    'Cuentas', 'Diagnósticos frecuentes', 'Bitácora de accesos',
+    'Cuentas', 'Diagnósticos frecuentes', 'Bitácora de accesos', 'Ajustes del centro',
   ]);
 });
 

@@ -31,6 +31,7 @@ export async function listarUsuarios() {
       rol: esquema.user.rol,
       colegiatura: esquema.user.colegiatura,
       msds: esquema.user.msds,
+      especialidad: esquema.user.especialidad,
       activo: esquema.user.activo,
       dosFactores: esquema.user.twoFactorEnabled,
       creado: esquema.user.createdAt,
@@ -128,7 +129,7 @@ export async function cambiarRol(usuarioId: string, rol: Rol) {
  */
 export async function corregirUsuario(
   usuarioId: string,
-  datos: { nombre: string; colegiatura: string; msds: string },
+  datos: { nombre: string; colegiatura: string; msds: string; especialidad?: string },
 ) {
   await bd
     .update(esquema.user)
@@ -136,6 +137,11 @@ export async function corregirUsuario(
       name: datos.nombre,
       colegiatura: datos.colegiatura || null,
       msds: datos.msds || null,
+      /* Solo si vino: el formulario la muestra a los médicos, que son a
+         quienes se les deriva. Ver 029-derivaciones.sql. */
+      ...(datos.especialidad !== undefined
+        ? { especialidad: datos.especialidad.replace(/\s+/g, ' ').trim().slice(0, 120) || null }
+        : {}),
     })
     .where(eq(esquema.user.id, usuarioId));
 }

@@ -44,8 +44,6 @@ interface Bloque { texto: string; icono: Icono; entradas: Entrada[] }
 const MENU: Bloque[] = [
   { texto: 'Casos', icono: 'estetoscopio', entradas: [
     { href: '/sistema', texto: 'Casos', permiso: 'ver_casos' },
-    /* Lo que los médicos derivaron a un especialista y hay que contactar. */
-    { href: '/sistema/interconsultas', texto: 'Interconsultas', permiso: 'gestionar_interconsultas' },
   ] },
   { texto: 'Nueva atención', icono: 'mas', entradas: [
     { href: '/sistema/atencion/nueva', texto: 'Nueva atención', permiso: 'escribir_historia' },
@@ -70,6 +68,14 @@ const MENU: Bloque[] = [
     { href: '/sistema/plantillas', texto: 'Valores de referencia', permiso: 'editar_plantillas' },
     { href: '/sistema/formulas', texto: 'Fórmulas', permiso: 'editar_plantillas' },
   ] },
+  /* Entrada propia y no dentro de Casos: con dos entradas, Casos se
+     volvía un desplegable y el médico perdía su menú plano. */
+  { texto: 'Derivaciones', icono: 'estetoscopio', entradas: [
+    /* Lo derivado: administración ve todas, recepción las que pasan por el
+       mesón, cada médico las suyas. */
+    { href: '/sistema/derivaciones', texto: 'Derivaciones',
+      permiso: ['gestionar_interconsultas', 'derivaciones_recepcion', 'pedir_interconsulta'] },
+  ] },
   { texto: 'Pacientes', icono: 'latido', entradas: [
     { href: '/sistema/pacientes', texto: 'Pacientes', permiso: 'ver_pacientes' },
   ] },
@@ -77,7 +83,7 @@ const MENU: Bloque[] = [
     { href: '/sistema/cierre', texto: 'Cierre del mes', permiso: 'ver_cierre' },
     { href: '/sistema/servicios', texto: 'Servicios y precios', permiso: 'editar_catalogo' },
     { href: '/sistema/perfiles', texto: 'Perfiles del laboratorio', permiso: 'editar_catalogo' },
-    { href: '/sistema/especialistas', texto: 'Especialistas', permiso: 'editar_catalogo' },
+    { href: '/sistema/especialistas', texto: 'Especialistas de afuera', permiso: 'editar_catalogo' },
   ] },
   { texto: 'Reportes', icono: 'latido', entradas: [
     { href: '/sistema/tablero', texto: 'Tablero', permiso: 'ver_cierre' },
@@ -89,6 +95,7 @@ const MENU: Bloque[] = [
        tiene nada que ver con la plata. */
     { href: '/sistema/diagnosticos', texto: 'Diagnósticos frecuentes', permiso: 'editar_catalogo' },
     { href: '/sistema/bitacora', texto: 'Bitácora de accesos', permiso: 'ver_bitacora' },
+    { href: '/sistema/ajustes', texto: 'Ajustes del centro', permiso: 'administrar_usuarios' },
   ] },
 ];
 

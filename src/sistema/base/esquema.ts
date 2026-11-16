@@ -228,9 +228,17 @@ export const especialista = pgTable('especialista', {
 export const interconsulta = pgTable('interconsulta', {
   id: uuid('id').primaryKey().defaultRandom(),
   atencionId: uuid('atencion_id').notNull().references(() => atencion.id),
-  especialidad: text('especialidad').notNull(),
+  tipo: text('tipo').notNull().default('externa').$type<'interna' | 'externa' | 'traslado'>(),
+  /** Null en un traslado: va a un lugar, no a un área. */
+  especialidad: text('especialidad'),
   especialidadBusca: text('especialidad_busca').notNull(),
   motivo: text('motivo').notNull().default(''),
+  destinoMedicoId: text('destino_medico_id').references(() => user.id),
+  destinoCentro: text('destino_centro'),
+  ambulancia: boolean('ambulancia'),
+  paramedico: text('paramedico'),
+  porRecepcion: boolean('por_recepcion').notNull().default(false),
+  atencionDestinoId: uuid('atencion_destino_id').references((): AnyPgColumn => atencion.id),
   pedidaPor: text('pedida_por').notNull().references(() => user.id),
   pedida: timestamp('pedida', { withTimezone: true }).notNull().defaultNow(),
   estado: text('estado').notNull().default('pendiente')
@@ -247,6 +255,14 @@ export const interconsulta = pgTable('interconsulta', {
 export const formulaConstante = pgTable('formula_constante', {
   clave: text('clave').primaryKey(),
   valor: numeric('valor', { precision: 10, scale: 4 }).notNull(),
+  cambiadoPor: text('cambiado_por').notNull().references(() => user.id),
+  cambiado: timestamp('cambiado', { withTimezone: true }).notNull().defaultNow(),
+});
+
+/** Configuración del centro. Ver 029-derivaciones.sql y lib/ajustes.ts. */
+export const ajuste = pgTable('ajuste', {
+  clave: text('clave').primaryKey(),
+  valor: text('valor').notNull(),
   cambiadoPor: text('cambiado_por').notNull().references(() => user.id),
   cambiado: timestamp('cambiado', { withTimezone: true }).notNull().defaultNow(),
 });

@@ -51,7 +51,8 @@ export type Permiso =
   | 'cerrar_atencion'      // firmar y cerrar
   | 'agregar_al_caso'      // sumarle notas, diagnósticos o exámenes a una cerrada, sin editarla
   | 'pedir_interconsulta'  // derivar al paciente a un especialista
-  | 'gestionar_interconsultas' // contactar al especialista y llevar la interconsulta
+  | 'gestionar_interconsultas' // llevar todas las derivaciones: contactar, dar por atendida, anular
+  | 'derivaciones_recepcion' // las derivaciones que el médico mandó a pasar por recepción
   | 'anular_atencion'      // dejar sin efecto una cerrada, con motivo
   | 'imprimir_documento'   // el "2 en 1"
   | 'cargar_cobro'         // renglones de una atención
@@ -175,6 +176,9 @@ const TABLA: Record<Rol, readonly Permiso[]> = {
    * es que cada apertura se anote en bitácora, y se anota.
    */
   recepcionista: [
+    /* Solo las que el médico marcó «pasa por recepción»: admitir al
+       paciente para el especialista, cobrar, coordinar la ambulancia. */
+    'derivaciones_recepcion',
     'ver_casos',
     'ver_historia',
     /* Admite el caso y se lo deja escrito al médico. NO escribe la historia:
@@ -345,7 +349,8 @@ export const porQueNo: Record<Permiso, string> = {
   anular_atencion: 'Solo administración puede anular una atención cerrada.',
   agregar_al_caso: 'Solo el personal médico le agrega notas a una atención cerrada.',
   pedir_interconsulta: 'Las interconsultas las pide el médico.',
-  gestionar_interconsultas: 'Las interconsultas las lleva administración.',
+  gestionar_interconsultas: 'Las derivaciones las lleva administración.',
+  derivaciones_recepcion: 'Recepción ve las derivaciones que el médico le mandó.',
   imprimir_documento: 'Su usuario no puede imprimir el documento.',
   cargar_cobro: 'El cobro lo carga administración.',
   editar_catalogo: 'El catálogo de servicios lo maneja administración.',
