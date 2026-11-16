@@ -34,6 +34,7 @@ import { puedeCargarResultados } from '../../../../sistema/lib/permisos';
 import { anotar, atencionPara } from '../../../../sistema/lib/atenciones';
 import {
   examenesPedidos, guardarResultados, leerResultados, plantillasDeExamen, sinNombre,
+  componentesDePerfiles,
 } from '../../../../sistema/lib/laboratorio';
 import type { Resultado } from '../../../../sistema/laboratorio';
 import { SUMAN_CIEN, comoSeLeeAhora, enLlaves } from '../../../../sistema/calculos';
@@ -160,8 +161,36 @@ const SIN_NADA: Fuente = { unidad: '', referencia: '', opciones: '' };
    no se toca nada. */
 const plan: { examen: string; fuente?: Fuente }[] = [];
 const puestos = new Set<string>();
+/* Los perfiles pedidos: lo que trae cada uno, en su orden. */
+const deCadaPerfil = await componentesDePerfiles(
+  pedidos.filter((p) => p.incluye?.length).map((p) => p.servicioId!),
+);
+
 for (const p of pedidos) {
-  const hoja = p.plantilla ? porHoja.get(p.plantilla) : undefined;
+  /* Un perfil abre con los exámenes que le dejaron en la orden —sin el que
+     recepción quitó—, debajo de su nombre. Manda sobre su hoja: la hoja
+     trae todos, y el que se quitó no se hace. */
+  const quedaron = p.incluye?.length ? new Set(p.incluye) : null;
+  const suyos = quedaron ? (deCadaPerfil.get(p.servicioId!) ?? []).filter((c) => quedaron.has(c.id)) : [];
+  const hojaEntera = p.plantilla ? porHoja.get(p.plantilla) : undefined;
+  /* Un perfil sin hoja —el que se arma a mano en Servicios—: su nombre y
+     debajo los exámenes que quedaron. */
+  if (quedaron && !hojaEntera) {
+    plan.push({ examen: p.nombre, fuente: SIN_NADA });
+    for (const c of suyos) {
+      if (puestos.has(c.nombre)) continue;
+      puestos.add(c.nombre);
+      plan.push({ examen: c.nombre });
+    }
+    continue;
+  }
+  /* Con hoja, la hoja manda —con sus subtítulos y la unidad y el rango de
+     cada fila—, pero sin los renglones que recepción quitó. */
+  const mismo = (t: string) => t.trim().toUpperCase();
+  const losQueQuedan = new Set(suyos.map((c) => mismo(c.nombre)));
+  const hoja = hojaEntera && quedaron
+    ? hojaEntera.filter((a) => a.tipo === 'titulo' || losQueQuedan.has(mismo(a.analito)))
+    : hojaEntera;
   if (!hoja) {
     if (!puestos.has(p.nombre)) {
       puestos.add(p.nombre);
@@ -178,7 +207,6 @@ for (const p of pedidos) {
   /* El encabezado, salvo que se llame como uno de sus analitos —«GOTA
      GRUESA» es el examen y es su único renglón—: ahí sería una línea
      repetida que confunde. */
-  const mismo = (t: string) => t.trim().toUpperCase();
   if (!hoja.some((a) => mismo(a.analito) === mismo(p.nombre))) {
     plan.push({ examen: p.nombre, fuente: SIN_NADA });
   }

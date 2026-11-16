@@ -17,6 +17,7 @@ import { exigir } from '../../../../sistema/lib/guardia';
 import { puede, puedeEditarAtencion, puedeEditarOrden } from '../../../../sistema/lib/permisos';
 import {
   catalogoDeExamenes, examenesDelArchivo, examenesPedidos, perfilesConSusExamenes,
+  componentesDePerfiles,
   sincronizarExamenes,
 } from '../../../../sistema/lib/laboratorio';
 import { tasaPara } from '../../../../sistema/lib/tasa';
@@ -63,6 +64,7 @@ if (Astro.request.method === 'POST' && editable) {
   // La orden de laboratorio la cierra el bioanalista, desde sus resultados.
   const cerrar = form.get('accion') === 'cerrar' && !esLab;
   const marcados = form.getAll('examen').map((v) => String(v));
+  const incluye = form.getAll('incluye').map((v) => String(v));
 
   /* Lo enviado reemplaza lo guardado en vez de mezclarse con él: si el
      médico borró un campo tiene que quedar borrado. La fecha y el nombre
@@ -88,7 +90,7 @@ if (Astro.request.method === 'POST' && editable) {
       if (!guardada) {
         error = 'Esta atención dejó de ser un borrador mientras la editaba: vuelva a abrirla para ver cómo quedó.';
       } else {
-        if (esLab) await sincronizarExamenes(caso.id, marcados, datos.aseguradora);
+        if (esLab) await sincronizarExamenes(caso.id, marcados, datos.aseguradora, incluye);
         await anotar(usuario.id, cerrar ? 'cerro' : 'edito', caso.id, {
           numero: guardada.numero,
           faltan: faltantes(datos, caso.tipo).length,
@@ -108,6 +110,11 @@ const faltanAhora = faltantes(datos, caso.tipo);
 const pedidos = esLab && editable ? await examenesPedidos(caso.id) : [];
 const catalogo = esLab && editable ? await catalogoDeExamenes() : [];
 const perfiles = esLab && editable ? await perfilesConSusExamenes() : [];
+const componentes = esLab && editable ? Object.fromEntries(await componentesDePerfiles()) : {};
+/* De los perfiles ya pedidos, qué quedó: así la orden abre como se guardó. */
+const incluidos = Object.fromEntries(
+  pedidos.filter((p) => p.servicioId && p.incluye?.length).map((p) => [p.servicioId!, p.incluye!]),
+);
 const enElArchivo = esLab && editable && catalogo.length === 0
   ? (await examenesDelArchivo()).length : 0;
 const tasaHoy = esLab && editable ? await tasaPara(caso.fecha) : null;
@@ -201,6 +208,8 @@ const fechaLarga = (f: string) =>
               slot="extra"
               catalogo={catalogo}
               perfiles={perfiles}
+              componentes={componentes}
+              incluidos={incluidos}
               marcados={pedidos.map((p) => p.servicioId!).filter(Boolean)}
               tasa={tasaHoy}
               puedeEditarCatalogo={puede(usuario.rol as string, 'editar_catalogo')}

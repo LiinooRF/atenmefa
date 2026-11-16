@@ -82,6 +82,98 @@ export function catalogoDeExamenes() {
 
 export type ExamenDelCatalogo = Awaited<ReturnType<typeof catalogoDeExamenes>>[number];
 
+/** Un examen dentro de un perfil, con su precio suelto si se vende suelto. */
+export interface Componente { id: string; nombre: string; precio: number | null }
+
+/**
+ * Los componentes de cada perfil del catálogo: lo que se despliega al
+ * marcarlo. Un componente puede no venderse suelto —el HDL no se vende
+ * solo—, y entonces no tiene precio y quitarlo no descuenta nada.
+ */
+export async function componentesDePerfiles(soloDe?: readonly string[]): Promise<Map<string, Componente[]>> {
+  const filas = await bd
+    .select({
+      perfil: esquema.servicioComponente.servicioId,
+      id: esquema.servicio.id,
+      nombre: esquema.servicio.nombre,
+      precio: esquema.servicio.precio,
+      activo: esquema.servicio.activo,
+    })
+    .from(esquema.servicioComponente)
+    .innerJoin(esquema.servicio, eq(esquema.servicio.id, esquema.servicioComponente.componenteId))
+    .where(soloDe?.length ? inArray(esquema.servicioComponente.servicioId, [...soloDe]) : undefined)
+    .orderBy(asc(esquema.servicioComponente.orden), asc(esquema.servicio.nombre));
+  const porPerfil = new Map<string, Componente[]>();
+  for (const f of filas) {
+    const p = Number(f.precio);
+    const lista = porPerfil.get(f.perfil) ?? [];
+    lista.push({ id: f.id, nombre: f.nombre, precio: f.activo && p > 0 ? p : null });
+    porPerfil.set(f.perfil, lista);
+  }
+  return porPerfil;
+}
+
+/**
+ * Lo que se cobra por un perfil: su precio menos el precio suelto de lo que
+ * se le quitó. Lo que no se vende suelto no descuenta. Nunca menos de cero.
+ */
+export function precioDelPerfil(precio: number, componentes: readonly Componente[], incluidos: ReadonlySet<string>) {
+  const quitado = componentes
+    .filter((c) => !incluidos.has(c.id) && c.precio !== null)
+    .reduce((t, c) => t + (c.precio ?? 0), 0);
+  return Math.max(0, Math.round((precio - quitado) * 100) / 100);
+}
+
+/**
+ * Todo lo del laboratorio que puede ir adentro de un perfil, se venda
+ * suelto o no: el HDL no se vende solo pero va en el perfil lipídico.
+ */
+export async function examenesParaComponer(excepto: string) {
+  return bd
+    .select({ id: esquema.servicio.id, nombre: esquema.servicio.nombre, activo: esquema.servicio.activo })
+    .from(esquema.servicio)
+    .where(and(eq(esquema.servicio.categoria, CATEGORIA), ne(esquema.servicio.id, excepto)))
+    .orderBy(asc(esquema.servicio.nombre));
+}
+
+/** Deja los componentes de un perfil exactamente como vienen, en ese orden. */
+export async function guardarComponentes(perfilId: string, ids: readonly string[]) {
+  const posibles = new Set((await examenesParaComponer(perfilId)).map((e) => e.id));
+  const validos = [...new Set(ids)].filter((id) => posibles.has(id));
+  await bd.transaction(async (tx) => {
+    await tx.delete(esquema.servicioComponente).where(eq(esquema.servicioComponente.servicioId, perfilId));
+    if (validos.length) {
+      await tx.insert(esquema.servicioComponente).values(
+        validos.map((componenteId, i) => ({ servicioId: perfilId, componenteId, orden: i + 1 })),
+      );
+    }
+  });
+  return validos.length;
+}
+
+/** «Perfil Lípido (sin HDL-COLESTEROL)»: el renglón dice qué se quitó. */
+const descripcionDelPerfil = (nombre: string, componentes: readonly Componente[], incluidos: ReadonlySet<string>) => {
+  const sin = componentes.filter((c) => !incluidos.has(c.id)).map((c) => c.nombre);
+  return sin.length ? `${nombre} (sin ${sin.join(', ')})` : nombre;
+};
+
+/**
+ * Lee las casillas de los componentes: cada una llega como
+ * «idDelPerfil:idDelComponente». Sin ninguna de un perfil, el perfil va
+ * completo —es lo que pasa cuando el formulario se manda sin JavaScript o
+ * desde una pantalla vieja—.
+ */
+export function leerIncluye(crudo: readonly string[]) {
+  const mapa = new Map<string, Set<string>>();
+  for (const v of crudo) {
+    const [padre, hijo] = String(v).split(':');
+    if (!padre || !hijo) continue;
+    if (!mapa.has(padre)) mapa.set(padre, new Set());
+    mapa.get(padre)!.add(hijo);
+  }
+  return mapa;
+}
+
 /**
  * Los exámenes ya pedidos en esta orden: los renglones que salieron del
  * catálogo de laboratorio.
@@ -100,6 +192,8 @@ export async function examenesPedidos(atencionId: string) {
          puso: con ella el informe abre con los renglones de la hoja y no
          con una línea con el nombre del servicio. */
       plantilla: esquema.servicio.plantilla,
+      /* Si es un perfil: los componentes que quedaron. */
+      incluye: esquema.renglon.incluye,
     })
     .from(esquema.renglon)
     .innerJoin(esquema.servicio, eq(esquema.servicio.id, esquema.renglon.servicioId))
@@ -125,10 +219,43 @@ export async function sincronizarExamenes(
   atencionId: string,
   marcados: readonly string[],
   aseguradora?: string | null,
+  /* Las casillas de los componentes de cada perfil («perfil:componente»).
+     Sin esto, un perfil nuevo va completo y uno ya pedido no se toca. */
+  incluyeCrudo?: readonly string[],
 ): Promise<{ agregados: number; quitados: number }> {
   const quiere = new Set(marcados.filter(Boolean));
   const ya = await examenesPedidos(atencionId);
   const tiene = new Set(ya.map((r) => r.servicioId!).filter(Boolean));
+  const elegidos = incluyeCrudo ? leerIncluye(incluyeCrudo) : null;
+  const componentes = await componentesDePerfiles([...quiere]);
+
+  /** Lo que queda de un perfil: lo marcado que de verdad es suyo, o todo. */
+  const incluidosDe = (perfilId: string) => {
+    const suyos = componentes.get(perfilId) ?? [];
+    const marcadosAca = [...(elegidos?.get(perfilId) ?? [])].filter((id) => suyos.some((c) => c.id === id));
+    return new Set(marcadosAca.length ? marcadosAca : suyos.map((c) => c.id));
+  };
+
+  /* Un perfil ya pedido al que le cambiaron lo que trae: se recalcula su
+     precio y su descripción. Solo si llegaron las casillas. */
+  if (elegidos) {
+    for (const r of ya) {
+      const suyos = componentes.get(r.servicioId!);
+      if (!suyos?.length || !quiere.has(r.servicioId!)) continue;
+      const ahora = incluidosDe(r.servicioId!);
+      const antes = new Set(r.incluye ?? suyos.map((c) => c.id));
+      const igual = ahora.size === antes.size && [...ahora].every((id) => antes.has(id));
+      if (igual) continue;
+      const [s] = await bd.select({ nombre: esquema.servicio.nombre, precio: esquema.servicio.precio })
+        .from(esquema.servicio).where(eq(esquema.servicio.id, r.servicioId!)).limit(1);
+      if (!s) continue;
+      await bd.update(esquema.renglon).set({
+        precio: precioDelPerfil(Number(s.precio), suyos, ahora).toFixed(2),
+        descripcion: descripcionDelPerfil(s.nombre, suyos, ahora),
+        incluye: [...ahora],
+      }).where(eq(esquema.renglon.id, r.renglonId));
+    }
+  }
 
   const sobran = ya.filter((r) => !quiere.has(r.servicioId!));
   if (sobran.length) {
@@ -153,15 +280,28 @@ export async function sincronizarExamenes(
 
     if (servicios.length) {
       await bd.insert(esquema.renglon).values(
-        servicios.map((s) => ({
-          atencionId,
-          servicioId: s.id,
-          descripcion: s.nombre,
-          cantidad: '1.00',
-          precio: s.precio,
-          moneda: s.moneda,
-          paga: pagadorSugerido(aseguradora),
-        })),
+        servicios.map((s) => {
+          /* Un perfil entra con lo que se le dejó marcado: su precio menos
+             lo quitado, y la lista de lo que trae para el laboratorio. */
+          const suyos = componentes.get(s.id);
+          if (!suyos?.length) {
+            return {
+              atencionId, servicioId: s.id, descripcion: s.nombre, cantidad: '1.00',
+              precio: s.precio, moneda: s.moneda, paga: pagadorSugerido(aseguradora),
+            };
+          }
+          const incluidos = incluidosDe(s.id);
+          return {
+            atencionId,
+            servicioId: s.id,
+            descripcion: descripcionDelPerfil(s.nombre, suyos, incluidos),
+            cantidad: '1.00',
+            precio: precioDelPerfil(Number(s.precio), suyos, incluidos).toFixed(2),
+            moneda: s.moneda,
+            paga: pagadorSugerido(aseguradora),
+            incluye: [...incluidos],
+          };
+        }),
       );
     }
   }

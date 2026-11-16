@@ -82,3 +82,18 @@ test('en el teléfono el menú muestra todas sus entradas, sin esconder ninguna'
     expect(c.der).toBeLessThanOrEqual(ancho + 1);
   }
 });
+
+test('el conteo por campo se elige de la lista del archivo', async () => {
+  /* La hoja DAT. del archivo trae la lista de «x CMP» para leucocitos y
+     hematíes, y «ESCASAS / MODERADAS / ABUNDANTES x CMP» para bacterias,
+     células y mucina. Ver 032-conteo-por-campo.sql. */
+  const filas = await conBase((sql) => sql`
+    SELECT examen, btrim(analito) AS analito, opciones FROM plantilla_examen
+     WHERE (examen = 'ORINA' AND btrim(analito) IN ('LEUCOCITOS', 'BACTERIAS'))
+        OR (examen = 'HECES' AND btrim(analito) = 'Hematíes:')`);
+  const de = (e: string, a: string) => filas.find((f) => f.examen === e && f.analito === a)!.opciones.split('\n');
+  expect(de('ORINA', 'LEUCOCITOS')).toContain('4 - 6 x CMP');
+  expect(de('ORINA', 'LEUCOCITOS').at(-1)).toBe('MAS DE 100 x CMP');
+  expect(de('HECES', 'Hematíes:')).toContain('0 - 1 x CMP');
+  expect(de('ORINA', 'BACTERIAS')).toEqual(['ESCASAS x CMP', 'MODERADAS x CMP', 'ABUNDANTES x CMP']);
+});

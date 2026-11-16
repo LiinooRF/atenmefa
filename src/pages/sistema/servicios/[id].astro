@@ -13,7 +13,9 @@ import { anotar, esIdentificador } from '../../../sistema/lib/atenciones';
 import {
   CATEGORIAS, MONEDAS, activarServicio, dinero, guardarServicio, rotuloCategoria,
 } from '../../../sistema/lib/cobro';
-import { examenesDelArchivo, nombresDeHojas } from '../../../sistema/lib/laboratorio';
+import {
+  componentesDePerfiles, examenesDelArchivo, examenesParaComponer, guardarComponentes, nombresDeHojas,
+} from '../../../sistema/lib/laboratorio';
 import { eq, sql } from 'drizzle-orm';
 import { exigir } from '../../../sistema/lib/guardia';
 
@@ -40,6 +42,13 @@ if (Astro.request.method === 'POST') {
   const accion = String(form.get('accion') ?? 'guardar');
 
   try {
+    if (accion === 'componentes') {
+      /* Los exámenes que trae un perfil: se marcan solos en la orden y
+         recepción quita el que no va. Ver 031-componentes-de-perfil.sql. */
+      const cuantos = await guardarComponentes(id, form.getAll('componente').map(String));
+      await anotar(usuario.id, 'servicio', undefined, { accion: 'componentes', servicio: id, cuantos });
+      return Astro.redirect(`/sistema/servicios/${id}?componentes=${cuantos}`);
+    }
     if (accion === 'desactivar' || accion === 'reactivar') {
       const cambiado = await activarServicio(id, accion === 'reactivar');
       await anotar(usuario.id, 'servicio', undefined, { accion, servicio: cambiado.nombre });
@@ -90,6 +99,11 @@ const precioVista = tecleado?.precio ?? dinero(servicio.precio);
    alguien la borre deja el informe como estaba, con una línea con su
    nombre. */
 const hojas = await examenesDelArchivo();
+const esDeLaboratorio = servicio.categoria === 'laboratorio';
+const paraComponer = esDeLaboratorio ? await examenesParaComponer(servicio.id) : [];
+const trae = esDeLaboratorio ? (await componentesDePerfiles([servicio.id])).get(servicio.id) ?? [] : [];
+const yaTrae = new Set(trae.map((c) => c.id));
+const avisoComponentes = Astro.url.searchParams.get('componentes');
 const nombreHoja = await nombresDeHojas();
 const plantillaVista = tecleado?.plantilla ?? servicio.plantilla ?? '';
 ---
@@ -192,7 +206,51 @@ const plantillaVista = tecleado?.plantilla ?? servicio.plantilla ?? '';
       </div>
     </div>
   </form>
+
+  {esDeLaboratorio && (
+    <form method="post" class="sis-tarjeta componentes" id="componentes">
+      <input type="hidden" name="accion" value="componentes" />
+      <h2>Si es un perfil: los exámenes que trae</h2>
+      <p class="edita__nota">
+        En la orden, al marcar <strong>{servicio.nombre}</strong> se despliegan estos
+        exámenes ya marcados, y recepción quita el que no va. Se cobra el precio del
+        perfil menos el precio suelto de lo quitado; lo que no se vende suelto no
+        descuenta. Al laboratorio le llegan solo los que quedaron.
+      </p>
+      {avisoComponentes !== null && (
+        <p class="componentes__ok" role="status">Guardado: trae {avisoComponentes} exámenes.</p>
+      )}
+      <div class="sis-campo">
+        <label for="filtro-componentes">Buscar</label>
+        <input id="filtro-componentes" type="search" placeholder="Colesterol, TSH…" autocomplete="off" />
+      </div>
+      <ul class="componentes__lista">
+        {paraComponer.map((e) => (
+          <li data-busca={e.nombre.toLocaleLowerCase('es')}>
+            <label>
+              <input type="checkbox" name="componente" value={e.id} checked={yaTrae.has(e.id)} />
+              <span>{e.nombre}</span>
+              {!e.activo && <small>no se vende suelto</small>}
+            </label>
+          </li>
+        ))}
+      </ul>
+      <button type="submit" class="sis-boton sis-boton--primario">Guardar los exámenes del perfil</button>
+    </form>
+  )}
 </Sistema>
+
+<script>
+  // Filtra la lista larga sin esconder lo marcado.
+  const filtro = document.getElementById('filtro-componentes') as HTMLInputElement | null;
+  filtro?.addEventListener('input', () => {
+    const q = filtro.value.trim().toLocaleLowerCase('es');
+    document.querySelectorAll<HTMLElement>('.componentes__lista li').forEach((li) => {
+      const marcado = li.querySelector<HTMLInputElement>('input')?.checked;
+      li.hidden = Boolean(q) && !marcado && !(li.dataset.busca ?? '').includes(q);
+    });
+  });
+</script>
 
 <style>
   .miga { font-size: var(--u-sm); color: var(--tinta-tenue); margin-bottom: 14px; }
@@ -237,4 +295,14 @@ const plantillaVista = tecleado?.plantilla ?? servicio.plantilla ?? '';
   .edita__nota { font-size: var(--u-sm); color: var(--tinta-tenue); max-width: 46ch; }
   .edita__acciones { display: flex; flex-wrap: wrap; gap: 10px; margin-left: auto; }
   .edita__acciones .sis-boton { min-height: 44px; }
+  .componentes { display: grid; gap: 12px; margin-top: 18px; padding: 18px; }
+  .componentes h2 { font-size: var(--u-md); }
+  .componentes__ok { padding: 10px 13px; border-radius: 8px; background: #e4f2ea; border: 1px solid #a9d5bd; color: #105433; font-size: var(--u-sm); }
+  .componentes__lista { list-style: none; margin: 0; padding: 0; max-height: 420px; overflow-y: auto; border: 1px solid var(--linea-tenue); border-radius: 8px; }
+  .componentes__lista li { border-top: 1px solid var(--linea-tenue); }
+  .componentes__lista li:first-child { border-top: 0; }
+  .componentes__lista li[hidden] { display: none; }
+  .componentes__lista label { display: flex; align-items: center; gap: 10px; min-height: 44px; padding: 0 12px; }
+  .componentes__lista small { margin-left: auto; color: var(--tinta-tenue); font-size: var(--u-xs); }
+  .componentes button { justify-self: start; }
 </style>

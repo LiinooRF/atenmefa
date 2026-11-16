@@ -14,7 +14,7 @@
  * significa nada a la semana siguiente.
  */
 import { dinero } from '../../sistema/lib/cobro';
-import type { ExamenDelCatalogo } from '../../sistema/lib/laboratorio';
+import type { ExamenDelCatalogo, Componente } from '../../sistema/lib/laboratorio';
 import type { Tasa } from '../../sistema/lib/tasa';
 
 
@@ -35,10 +35,20 @@ interface Props {
   puedeEditarCatalogo: boolean;
   /** Cuántos exámenes trae el archivo del laboratorio, para el aviso. */
   cuantosEnElArchivo?: number;
+  /** Lo que trae cada perfil del baremo, por id del perfil. Ver 031. */
+  componentes?: Record<string, Componente[]>;
+  /** De los perfiles ya pedidos, qué componentes quedaron. */
+  incluidos?: Record<string, string[]>;
 }
 const {
   catalogo, perfiles = [], marcados, tasa, puedeEditarCatalogo, cuantosEnElArchivo = 0,
+  componentes = {}, incluidos = {},
 } = Astro.props;
+/* Un componente viene marcado salvo que esta orden ya lo haya quitado. */
+const vieneMarcado = (perfil: string, componente: string) =>
+  !incluidos[perfil] || incluidos[perfil].includes(componente);
+const sueltoDe = (precio: number | null) =>
+  precio !== null ? `−$${dinero(precio.toFixed(2))} si se quita` : 'no se vende suelto';
 const yaEsta = new Set(marcados);
 
 /* Un examen cargado en cero no tiene precio todavía: se puede marcar —queda
@@ -151,7 +161,12 @@ const fechaTasa = tasa
                   data-moneda={e.moneda}
                   data-sin-precio={sinPrecio(e) ? '' : undefined}
                 />
-                <span class="ex__nombre">{e.nombre}</span>
+                <span class="ex__nombre">
+                  {e.nombre}
+                  {componentes[e.id]?.length > 0 && (
+                    <small class="ex__trae">trae {componentes[e.id].length} exámenes</small>
+                  )}
+                </span>
                 {sinPrecio(e) ? (
                   <span class="ex__precio ex__precio--falta">sin precio</span>
                 ) : (
@@ -160,6 +175,25 @@ const fechaTasa = tasa
                   </span>
                 )}
               </label>
+              {/* Un perfil del baremo: al marcarlo se despliegan sus
+                  exámenes, todos marcados, y se quita el que no va. Se
+                  cobra el precio del perfil menos el precio suelto de lo
+                  quitado. */}
+              {componentes[e.id]?.length > 0 && (
+                <ul class="ex__componentes" data-de={e.id} hidden={!yaEsta.has(e.id)}>
+                  {componentes[e.id].map((c) => (
+                    <li>
+                      <label>
+                        <input type="checkbox" name="incluye" value={e.id + ':' + c.id}
+                               checked={vieneMarcado(e.id, c.id)}
+                               data-precio-suelto={c.precio ?? ''} />
+                        <span>{c.nombre}</span>
+                        <small class="ex__suelto">{sueltoDe(c.precio)}</small>
+                      </label>
+                    </li>
+                  ))}
+                </ul>
+              )}
             </li>
           ))}
         </ul>
@@ -219,7 +253,11 @@ const fechaTasa = tasa
       /* Solo se suman los que están en dólares. Un examen cargado en
          bolívares no se puede sumar al mismo total: serían dos monedas en
          un número, que es exactamente lo que el resto del sistema evita. */
-      const suma = marcados.reduce((t, c) => t + (Number(c.dataset.precio) || 0), 0);
+      /* Un perfil cuenta su precio menos lo que se le quitó. */
+      const quitadoDe = (c: HTMLInputElement) => [...caja.querySelectorAll<HTMLInputElement>(
+        '.ex__componentes[data-de="' + c.value + '"] input[name="incluye"]',
+      )].filter((i) => !i.checked).reduce((t, i) => t + (Number(i.dataset.precioSuelto) || 0), 0);
+      const suma = marcados.reduce((t, c) => t + Math.max(0, (Number(c.dataset.precio) || 0) - quitadoDe(c)), 0);
       const enBs = marcados.some((c) => c.dataset.moneda !== 'USD');
       const faltan = marcados.filter((c) => c.dataset.sinPrecio !== undefined).length;
 
@@ -233,7 +271,26 @@ const fechaTasa = tasa
       if (ves && tasa) ves.textContent = plata(suma * tasa);
     };
 
-    casillas.forEach((c) => c.addEventListener('change', () => { recontar(); pintarPerfiles(); }));
+    casillas.forEach((c) => c.addEventListener('change', () => {
+      // Marcar un perfil despliega sus exámenes; desmarcarlo los esconde.
+      const lista = caja.querySelector<HTMLElement>('.ex__componentes[data-de="' + c.value + '"]');
+      if (lista) {
+        lista.hidden = !c.checked;
+        if (c.checked) lista.querySelectorAll<HTMLInputElement>('input').forEach((i) => { i.checked = true; });
+      }
+      recontar(); pintarPerfiles();
+    }));
+
+    /* Quitar un examen del perfil baja el total. Quitarlos todos es no
+       pedir el perfil: se desmarca. */
+    caja.querySelectorAll<HTMLElement>('.ex__componentes').forEach((lista) => {
+      lista.addEventListener('change', () => {
+        const padre = casillas.find((c) => c.value === lista.dataset.de);
+        const quedan = lista.querySelectorAll('input:checked').length;
+        if (padre && quedan === 0) { padre.checked = false; lista.hidden = true; }
+        recontar(); pintarPerfiles();
+      });
+    });
 
     /* ---------- los perfiles ---------- */
 
@@ -475,4 +532,10 @@ const fechaTasa = tasa
   }
   .vacio strong { display: block; color: var(--azul); font-size: var(--u-sm); }
   .vacio p { margin: 7px 0 0; font-size: var(--u-sm); color: var(--tinta-suave); line-height: 1.5; }
+  /* Los exámenes del perfil, colgando debajo de él. */
+  .ex__trae { display: block; font-size: var(--u-xs); color: var(--tinta-tenue); font-weight: 400; }
+  .ex__componentes { list-style: none; margin: 2px 0 8px 30px; padding: 4px 0 4px 12px; border-left: 2px solid var(--azul-tenue); display: grid; gap: 0; }
+  .ex__componentes[hidden] { display: none; }
+  .ex__componentes label { display: flex; align-items: center; gap: 10px; min-height: 44px; font-size: var(--u-sm); }
+  .ex__suelto { margin-left: auto; color: var(--tinta-tenue); font-size: var(--u-xs); white-space: nowrap; }
 </style>

@@ -38,6 +38,7 @@ import { puede } from '../../../sistema/lib/permisos';
 import ExamenesLab from '../../../components/sistema/ExamenesLab.astro';
 import {
   catalogoDeExamenes, examenesDelArchivo, perfilesConSusExamenes, sincronizarExamenes,
+  componentesDePerfiles, leerIncluye,
 } from '../../../sistema/lib/laboratorio';
 import { tasaPara } from '../../../sistema/lib/tasa';
 import { eq, desc, and, ne, sql } from 'drizzle-orm';
@@ -225,6 +226,8 @@ const abrirFormulario = hayPaciente;
    el formulario de laboratorio. */
 const catalogo = esLaboratorio && abrirFormulario ? await catalogoDeExamenes() : [];
 const perfiles = esLaboratorio && abrirFormulario ? await perfilesConSusExamenes() : [];
+/* Lo que trae cada perfil del baremo: se despliega al marcarlo. */
+const componentes = esLaboratorio && abrirFormulario ? Object.fromEntries(await componentesDePerfiles()) : {};
 const tasaHoy = esLaboratorio && abrirFormulario ? await tasaPara(hoyEnVenezuela()) : null;
 /* Para el aviso de cuántos trae el archivo cuando el catálogo está vacío. */
 const enElArchivo = esLaboratorio && abrirFormulario && catalogo.length === 0
@@ -234,6 +237,7 @@ const enElArchivo = esLaboratorio && abrirFormulario && catalogo.length === 0
    rebota con un error, vuelve lo que la persona había tildado y no una
    lista en blanco. */
 let examenesMarcados: string[] = [];
+let incluyeMarcado: string[] | undefined;
 
 /* ----------------------------------------------------------------
    Guardar.
@@ -281,6 +285,8 @@ if (Astro.request.method === 'POST') {
      el formulario de laboratorio, se trata como guardar. */
   const cerrar = form.get('accion') === 'cerrar' && !esLaboratorio;
   examenesMarcados = form.getAll('examen').map((v) => String(v));
+  // Lo que quedó marcado de cada perfil («perfil:componente»).
+  incluyeMarcado = form.getAll('incluye').map((v) => String(v));
   datos = { ...datos, ...limpiarDatos(form) };
 
   /* El guardado automático pudo haber creado ya la atención mientras el
@@ -302,7 +308,7 @@ if (Astro.request.method === 'POST') {
         if (!guardada) {
           error = 'La atención cambió de estado mientras escribía. Ábrala desde los borradores.';
         } else {
-          if (esLaboratorio) await sincronizarExamenes(guardada.id, examenesMarcados, datos.aseguradora);
+          if (esLaboratorio) await sincronizarExamenes(guardada.id, examenesMarcados, datos.aseguradora, incluyeMarcado);
           if (indicacion && origen) await vincularOrden(indicacion.id, origen.id, guardada.id);
           await anotar(usuario.id, cerrar ? 'cerro' : 'edito', guardada.id, { numero: guardada.numero });
           return Astro.redirect(`/sistema/atencion/${guardada.id}`);
@@ -329,7 +335,7 @@ if (Astro.request.method === 'POST') {
           })
           .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
 
-        if (esLaboratorio) await sincronizarExamenes(creada.id, examenesMarcados, datos.aseguradora);
+        if (esLaboratorio) await sincronizarExamenes(creada.id, examenesMarcados, datos.aseguradora, incluyeMarcado);
         if (indicacion && origen) await vincularOrden(indicacion.id, origen.id, creada.id);
         // Cerrada de una: el documento nace acá y necesita su PIN.
         if (cerrar) await asegurarPin(creada.id);
@@ -467,6 +473,8 @@ const fechaLarga = (f: string) =>
             slot="extra"
             catalogo={catalogo}
             perfiles={perfiles}
+            componentes={componentes}
+            incluidos={Object.fromEntries([...leerIncluye(incluyeMarcado ?? [])].map(([k, v]) => [k, [...v]]))}
             marcados={examenesMarcados}
             tasa={tasaHoy}
             puedeEditarCatalogo={puede(usuario.rol as string, 'editar_catalogo')}

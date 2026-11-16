@@ -187,7 +187,16 @@ export const renglon = pgTable('renglon', {
   moneda: text('moneda').notNull().default('USD'),
   paga: pagaQuien('paga').notNull().default('paciente'),
   creado: timestamp('creado', { withTimezone: true }).notNull().defaultNow(),
+  /** Los componentes que quedaron, si el renglón es un perfil. Ver 031. */
+  incluye: uuid('incluye').array(),
 }, (t) => [index('renglon_atencion_idx').on(t.atencionId)]);
+
+/** Los exámenes que trae un perfil del catálogo. Ver 031-componentes-de-perfil.sql. */
+export const servicioComponente = pgTable('servicio_componente', {
+  servicioId: uuid('servicio_id').notNull().references(() => servicio.id, { onDelete: 'cascade' }),
+  componenteId: uuid('componente_id').notNull().references(() => servicio.id),
+  orden: integer('orden').notNull().default(0),
+}, (t) => [primaryKey({ columns: [t.servicioId, t.componenteId] })]);
 
 /**
  * Lo que se le suma a una atención cerrada sin editarla: notas,

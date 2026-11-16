@@ -37,6 +37,7 @@ export const POST: APIRoute = async (ctx) => {
   const id = String(form.get('id') ?? '').trim();
   const datos = { fecha: hoyEnVenezuela(), medico: usuario.name, ...limpiarDatos(form) };
   const marcados = form.getAll('examen').map((v) => String(v));
+  const incluye = form.getAll('incluye').map((v) => String(v));
 
   /* Sin cédula y nombre no hay dónde colgar la atención. No es un error:
      el médico todavía no llegó a escribirlos. */
@@ -102,7 +103,7 @@ export const POST: APIRoute = async (ctx) => {
        casillas marcadas, así que esto corre muchas veces por orden. Es
        idempotente a propósito —ver sincronizarExamenes—; si insertara sin
        comparar, una orden de tres exámenes terminaría cobrada cinco veces. */
-    if (esLab) await sincronizarExamenes(id, marcados, datos.aseguradora);
+    if (esLab) await sincronizarExamenes(id, marcados, datos.aseguradora, incluye);
 
     return Response.json({ guardado: true, id, faltan });
   }
@@ -126,7 +127,7 @@ export const POST: APIRoute = async (ctx) => {
     })
     .returning({ id: esquema.atencion.id, numero: esquema.atencion.numero });
 
-  if (esLab) await sincronizarExamenes(creada.id, marcados, datos.aseguradora);
+  if (esLab) await sincronizarExamenes(creada.id, marcados, datos.aseguradora, incluye);
   await anotar(usuario.id, 'creo', creada.id, { numero: creada.numero, automatico: true });
 
   return Response.json({ guardado: true, id: creada.id, numero: creada.numero, faltan, nueva: true });
