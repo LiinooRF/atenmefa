@@ -56,6 +56,17 @@ const yaEsta = new Set(marcados);
    pensar que es gratis. */
 const sinPrecio = (e: ExamenDelCatalogo) => Number(e.precio) === 0;
 const cuantosSinPrecio = catalogo.filter(sinPrecio).length;
+/* Perfiles a la izquierda y exámenes sueltos a la derecha (16-11): «déjalo
+   como está, está bueno, pero los perfiles a la izquierda y los exámenes
+   individuales a la derecha». Un perfil es lo que trae exámenes adentro. */
+const esPerfil = (e: ExamenDelCatalogo) => (componentes[e.id]?.length ?? 0) > 0;
+const conPerfiles = catalogo.filter(esPerfil);
+const sueltos = catalogo.filter((e) => !esPerfil(e));
+const hayIzquierda = conPerfiles.length > 0 || perfiles.length > 0 || puedeEditarCatalogo;
+const columnas = [
+  { lado: 'perfiles' as const, examenes: conPerfiles },
+  { lado: 'sueltos' as const, examenes: sueltos },
+].filter((c) => c.lado === 'sueltos' || hayIzquierda);
 
 const fechaTasa = tasa
   ? new Date(`${tasa.fecha}T12:00:00`).toLocaleDateString('es-VE', { day: '2-digit', month: '2-digit' })
@@ -103,46 +114,16 @@ const fechaTasa = tasa
     {/* Sin perfiles armados, la columna no aparece para recepción: era un
         bloque de texto que explicaba algo que no había, encima de la lista
         que de verdad se usa. Al que los arma sí se le dice dónde. */}
-    <div class:list={['ex__dos', perfiles.length === 0 && !puedeEditarCatalogo && 'ex__dos--uno']}>
-      {(perfiles.length > 0 || puedeEditarCatalogo) && (
-      <div class="ex__col ex__col--perfiles">
-        <h3 class="ex__rotulo">Perfiles</h3>
-
-        {perfiles.length > 0 ? (
-          <ul class="ex__perfiles" data-perfiles={JSON.stringify(perfiles)}>
-            {perfiles.map((p) => (
-              <li>
-                <button type="button" class="ex__perfil" data-perfil={p.id}>
-                  <span>{p.nombre}</span>
-                  <em>{p.examenes.length}</em>
-                </button>
-              </li>
-            ))}
-          </ul>
-        ) : (
-          <p class="ex__sin-perfiles">
-            Todavía no hay perfiles armados.
-            {puedeEditarCatalogo
-              ? <> Se arman en <a href="/sistema/perfiles">Perfiles</a>.</>
-              : ' Los arma administración.'}
-          </p>
-        )}
-
-        <p class="ex__pista">
-          Un toque marca todos los del perfil. Después se destilda a la
-          derecha lo que no haga falta: se cobra lo que quede marcado.
-        </p>
-      </div>
-      )}
-
-      <div class="ex__col ex__col--lista">
-        <h3 class="ex__rotulo">Todos los exámenes</h3>
+    <div class:list={['ex__dos', !hayIzquierda && 'ex__dos--uno']}>
+      {columnas.map((col) => (
+      <div class:list={['ex__col', col.lado === 'perfiles' ? 'ex__col--perfiles' : 'ex__col--lista']}>
+        <h3 class="ex__rotulo">{col.lado === 'perfiles' ? 'Perfiles' : 'Exámenes'}</h3>
 
         {/* Con ciento cuarenta exámenes la lista no se recorre con el dedo:
             se filtra. Lo marcado NO se esconde al filtrar —ver el script—,
             porque perder de vista lo que uno ya eligió es como se cobra de
-            menos. */}
-        {catalogo.length > 12 && (
+            menos. Los perfiles, que son pocos, quedan siempre a la vista. */}
+        {col.lado === 'sueltos' && catalogo.length > 12 && (
           <div class="ex__filtro">
             <input type="search" id="ex-filtro" placeholder="Filtrar: glicemia, orina, hemo…"
                    aria-label="Filtrar exámenes" autocomplete="off" />
@@ -150,8 +131,9 @@ const fechaTasa = tasa
           </div>
         )}
 
-        <ul class="ex__lista">
-          {catalogo.map((e) => (
+        {col.examenes.length > 0 && (
+        <ul class:list={['ex__lista', col.lado === 'perfiles' && 'ex__lista--perfiles']}>
+          {col.examenes.map((e) => (
             <li data-busca={e.nombre.toLocaleLowerCase('es')}>
               <label>
                 <input
@@ -197,7 +179,43 @@ const fechaTasa = tasa
             </li>
           ))}
         </ul>
+        )}
+
+        {col.lado === 'perfiles' && perfiles.length > 0 && (
+          <>
+            {/* Los combos sin precio propio de la primera versión, donde
+                todavía haya: un toque marca los suyos a la derecha. */}
+            <h3 class="ex__rotulo ex__rotulo--combos">Combos</h3>
+            <ul class="ex__perfiles" data-perfiles={JSON.stringify(perfiles)}>
+              {perfiles.map((p) => (
+                <li>
+                  <button type="button" class="ex__perfil" data-perfil={p.id}>
+                    <span>{p.nombre}</span>
+                    <em>{p.examenes.length}</em>
+                  </button>
+                </li>
+              ))}
+            </ul>
+          </>
+        )}
+
+        {col.lado === 'perfiles' && conPerfiles.length === 0 && perfiles.length === 0 && (
+          <p class="ex__sin-perfiles">
+            Todavía no hay perfiles armados.
+            {puedeEditarCatalogo
+              ? <> Se arman en <a href="/sistema/perfiles">Perfiles</a>.</>
+              : ' Los arma administración.'}
+          </p>
+        )}
+
+        {col.lado === 'perfiles' && conPerfiles.length > 0 && (
+          <p class="ex__pista">
+            Al marcar un perfil se despliegan sus exámenes: se quita el que no
+            va y se descuenta su precio suelto.
+          </p>
+        )}
       </div>
+      ))}
     </div>
 
     <p class="ex__cuenta" id="ex-cuenta" aria-live="polite">
@@ -351,9 +369,11 @@ const fechaTasa = tasa
       const q = (filtro?.value ?? '').trim().toLocaleLowerCase('es')
         .normalize('NFD').replace(/[\u0300-\u036f]/g, '');
       let visibles = 0;
+      let total = 0;
       for (const c of casillas) {
         const li = c.closest('li') as HTMLElement | null;
-        if (!li) continue;
+        if (!li || li.closest('.ex__lista--perfiles')) continue;
+        total++;
         const nombre = (li.dataset.busca ?? '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
         /* Lo marcado se queda siempre a la vista: esconder un examen ya
            elegido porque no calza con el filtro es como se cobra de menos. */
@@ -363,8 +383,8 @@ const fechaTasa = tasa
       }
       if (cuantosFiltrados) {
         cuantosFiltrados.textContent = q
-          ? `${visibles} de ${casillas.length}`
-          : `${casillas.length} exámenes`;
+          ? `${visibles} de ${total}`
+          : `${total} exámenes`;
       }
     };
 
@@ -396,7 +416,7 @@ const fechaTasa = tasa
      los perfiles primero porque son el atajo de todos los días. */
   .ex__dos { display: grid; gap: 18px; }
   @media (min-width: 900px) {
-    .ex__dos { grid-template-columns: minmax(200px, 270px) 1fr; gap: 22px; }
+    .ex__dos { grid-template-columns: minmax(280px, 1fr) 1.35fr; gap: 22px; }
     .ex__dos--uno { grid-template-columns: 1fr; }
     .ex__col--perfiles {
       padding-right: 22px;
@@ -492,6 +512,9 @@ const fechaTasa = tasa
      columna de perfiles al lado, partirla antes dejaba los nombres largos
      cortados a la mitad. */
   @media (min-width: 1180px) { .ex__lista { grid-template-columns: 1fr 1fr; gap: 2px 18px; } }
+  /* Los perfiles, de a uno por renglón: se despliegan con lo que traen. */
+  .ex__lista--perfiles { grid-template-columns: 1fr !important; }
+  .ex__rotulo--combos { margin-top: 16px; }
 
   .ex__lista label {
     display: flex;

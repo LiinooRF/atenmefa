@@ -32,6 +32,7 @@ import Icono from '../../../../components/Icono.astro';
 import { exigir } from '../../../../sistema/lib/guardia';
 import { puedeCargarResultados, puedeCorregir } from '../../../../sistema/lib/permisos';
 import { corregirResultados } from '../../../../sistema/lib/correcciones';
+import { asegurarPin } from '../../../../sistema/lib/verificacion';
 import { anotar, atencionPara } from '../../../../sistema/lib/atenciones';
 import {
   examenesPedidos, guardarResultados, leerResultados, plantillasDeExamen, sinNombre,
@@ -108,6 +109,9 @@ if (Astro.request.method === 'POST' && corrigiendo) {
       error = 'Esta orden cambió de estado mientras la cargaba. Vuelva a abrirla.';
       cargados = mandados;
     } else {
+      /* Al entregarse nace el informe y con él su PIN, como al cerrar una
+         consulta. Sin esto el informe de laboratorio salía sin QR. */
+      if (entregar) await asegurarPin(caso.id);
       await anotar(usuario.id, entregar ? 'cerro' : 'edito', caso.id, {
         numero: guardada.numero,
         resultados: mandados.filter((r) => r.valor).length,

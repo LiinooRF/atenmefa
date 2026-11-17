@@ -74,7 +74,37 @@ const fila = (rotulo: string, valor: string) => `
 
 export function htmlDelInforme(d: DatosDelInforme): string {
   const esLab = d.tipo === 'laboratorio';
-  const conValor = d.resultados.filter((r) => r.valor);
+  /* De laboratorio, el correo NO copia los resultados: lleva al informe de
+     verdad, el mismo que se imprime —media hoja por examen o compacto—,
+     para verlo, imprimirlo o guardarlo en PDF (16-11: «se envía por mail
+     algo que no es exactamente el examen»). Ver lib/informe-publico.ts. */
+  const conValor = esLab ? [] : d.resultados.filter((r) => r.valor);
+  const alInforme = esLab && d.verificacion.pin
+    ? `
+    <p style="margin:24px 0 6px;font-size:15px;line-height:1.6">Sus resultados están listos.</p>
+    <p style="margin:0 0 18px;font-size:13px;line-height:1.7;color:${GRIS}">
+      Es el mismo informe que entrega el laboratorio. Desde ahí lo puede ver,
+      imprimir o guardar en PDF.
+    </p>
+    <table role="presentation" cellpadding="0" cellspacing="0" style="border-collapse:collapse">
+      <tr>
+        <td style="background:#c8102e;border-radius:8px">
+          <a href="${escapar(d.verificacion.url)}"
+             style="display:inline-block;padding:13px 22px;font-size:15px;font-weight:bold;color:#ffffff;text-decoration:none">
+            Ver e imprimir sus resultados
+          </a>
+        </td>
+      </tr>
+    </table>
+    <p style="margin:16px 0 0;font-size:13px;line-height:1.7">
+      Le va a pedir la cédula del paciente y este PIN:
+      <strong style="font-size:16px;letter-spacing:.12em;color:${AZUL}">${escapar(d.verificacion.pin)}</strong>
+    </p>
+    <p style="margin:6px 0 0;font-size:12px;line-height:1.6;color:${GRIS}">
+      Si el botón no abre, copie esta dirección en el navegador:<br />
+      <a href="${escapar(d.verificacion.url)}" style="color:${AZUL};word-break:break-all">${escapar(d.verificacion.url)}</a>
+    </p>`
+    : '';
 
   const tablaResultados = conValor.length
     ? `
@@ -97,7 +127,7 @@ export function htmlDelInforme(d: DatosDelInforme): string {
     </table>`
     : '';
 
-  const listaExamenes = esLab && d.examenes.length
+  const listaExamenes = esLab && d.examenes.length && !alInforme
     ? `
     <h2 style="margin:26px 0 8px;font-size:15px;color:${AZUL}">Exámenes realizados</h2>
     <p style="margin:0;font-size:13px;line-height:1.7">${d.examenes.map(escapar).join('<br />')}</p>`
@@ -125,7 +155,7 @@ export function htmlDelInforme(d: DatosDelInforme): string {
     <p style="margin:0;font-size:13px;line-height:1.7">${parrafo(d.observaciones)}</p>`
     : '';
 
-  const sello = d.verificacion.pin
+  const sello = d.verificacion.pin && !alInforme
     ? `
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"
            style="border-collapse:collapse;margin-top:28px;background:#f4f6fb;border:1px solid ${LINEA};border-radius:8px">
@@ -182,13 +212,14 @@ export function htmlDelInforme(d: DatosDelInforme): string {
               ${!esLab && d.idx ? fila('Diagnóstico', d.idx) : ''}
             </table>
 
+            ${alInforme}
             ${listaExamenes}
             ${tablaResultados}
             ${receta}
             ${agregados}
             ${observa}
 
-            <table role="presentation" cellpadding="0" cellspacing="0"
+            ${alInforme ? '' : `<table role="presentation" cellpadding="0" cellspacing="0"
                    style="border-collapse:collapse;margin-top:34px">
               <tr>
                 <td style="border-top:1px solid #1a1a1a;padding-top:6px;min-width:220px">
@@ -197,7 +228,7 @@ export function htmlDelInforme(d: DatosDelInforme): string {
                   <span style="font-size:11px;color:${GRIS}">${escapar(d.firma.rol)}</span>
                 </td>
               </tr>
-            </table>
+            </table>`}
 
             ${sello}
 
@@ -234,6 +265,21 @@ export function textoDelInforme(d: DatosDelInforme): string {
   if (d.edad) lineas.push(`Edad: ${d.edad} años${d.sexo ? ` · ${d.sexo}` : ''}`);
   if (d.aseguradora) lineas.push(`Seguro: ${d.aseguradora}`);
   if (!esLab && d.idx) lineas.push(`Diagnóstico: ${d.idx}`);
+
+  /* De laboratorio: el enlace al informe de verdad, igual que en el HTML. */
+  if (esLab && d.verificacion.pin) {
+    lineas.push(
+      '',
+      'Sus resultados están listos. Es el mismo informe que entrega el laboratorio:',
+      'lo puede ver, imprimir o guardar en PDF aquí:',
+      d.verificacion.url,
+      `Le va a pedir la cédula del paciente y este PIN: ${d.verificacion.pin}`,
+      '',
+      d.centro.nombre,
+      d.centro.telefono,
+    );
+    return lineas.join('\n');
+  }
 
   if (esLab && d.examenes.length) {
     lineas.push('', 'EXÁMENES REALIZADOS', ...d.examenes.map((e) => `- ${e}`));

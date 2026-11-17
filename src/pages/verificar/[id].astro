@@ -18,6 +18,7 @@ import Verificado from '../../components/Verificado.astro';
 import Aviso from '../../components/AvisoVerificacion.astro';
 import { verificar, type Resultado } from '../../sistema/lib/verificacion';
 import { esIdentificador } from '../../sistema/lib/atenciones';
+import { abrirInforme } from '../../sistema/lib/informe-publico';
 
 export const prerender = false;
 
@@ -32,6 +33,14 @@ if (Astro.request.method === 'POST' && esIdentificador(id ?? '')) {
 }
 
 const ok = resultado?.estado === 'ok' ? resultado.documento : null;
+/* Una orden de laboratorio vigente con resultados: se puede ver el informe
+   completo, el mismo que se imprime (16-11). */
+const informe = ok && ok.firmaDe === 'bioanalista' && !ok.anulada && ok.resultados.length > 0;
+if (informe) {
+  abrirInforme(Astro.cookies, id!, Astro.url.protocol === 'https:');
+  /* Desde el correo (?informe=1) se va directo al informe. */
+  if (Astro.url.searchParams.get('informe') === '1') return Astro.redirect(`/verificar/${id}/informe`);
+}
 ---
 
 <Base
@@ -53,6 +62,12 @@ const ok = resultado?.estado === 'ok' ? resultado.documento : null;
 
       {resultado && <Aviso resultado={resultado} />}
 
+      {informe && (
+        <a class="boton boton--rojo ver__informe" href={`/verificar/${id}/informe`}>
+          <Icono nombre="escudo" tam={18} />
+          Ver e imprimir el informe completo
+        </a>
+      )}
       {ok ? (
         <Verificado doc={ok} />
       ) : (
@@ -99,6 +114,7 @@ const ok = resultado?.estado === 'ok' ? resultado.documento : null;
     letter-spacing: -0.02em;
     color: var(--azul);
   }
+  .ver__informe { margin: 0 0 18px; }
   .ver__guia { margin: 0 0 22px; color: var(--tinta-suave); line-height: 1.6; }
 
   .ver__aviso {

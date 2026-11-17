@@ -43,6 +43,7 @@ import {
   comoSeLee as telefonoComoSeLee, enlaceDeWhatsApp, esCelular, paraWhatsApp,
 } from '../../../../sistema/lib/telefono';
 import { entorno } from '../../../../sistema/lib/entorno';
+import { asegurarPin } from '../../../../sistema/lib/verificacion';
 import { clinica } from '../../../../data/clinica';
 import { avisoDe } from '../../../../sistema/mensajes';
 import type { Resultado } from '../../../../sistema/laboratorio';
@@ -89,6 +90,17 @@ if (!caso) return Astro.redirect('/sistema');
 
 const esLab = caso.tipo === 'laboratorio';
 const d = (caso.datos ?? {}) as Record<string, string>;
+/* Una orden entregada sin PIN —las de antes del 16-11— lo recibe ahora: el
+   correo lleva al informe con la cédula y el PIN. */
+let pin = caso.pin;
+if (esLab && !pin && caso.estado === 'cerrada') {
+  await asegurarPin(caso.id);
+  [{ pin }] = await bd.select({ pin: esquema.atencion.pin }).from(esquema.atencion).where(eq(esquema.atencion.id, caso.id));
+}
+/* De laboratorio se manda el informe de verdad —el enlace al mismo
+   documento que se imprime—, y eso existe cuando los resultados se dieron
+   por listos. Antes no hay informe que mandar. */
+const labSinEntregar = esLab && caso.estado !== 'cerrada';
 const resultados = (caso.resultados ?? []) as Resultado[];
 
 /* Quien firma: en un informe de laboratorio es el bioanalista que cargó los
@@ -108,7 +120,9 @@ const cfg = configDelCorreo();
 /* La dirección donde el sistema REALMENTE vive, igual que en el documento
    impreso: el dominio final todavía sirve la web vieja. */
 const dondeVive = (entorno('URL_BASE') ?? clinica.dominio).replace(/\/$/, '');
-const urlVerificacion = `${dondeVive}/verificar/${caso.id}`;
+/* De laboratorio, con ?informe=1: después de la cédula y el PIN se abre
+   directo el informe completo. */
+const urlVerificacion = `${dondeVive}/verificar/${caso.id}${esLab ? '?informe=1' : ''}`;
 const dominioCorto = dondeVive.replace(/^https?:\/\//, '');
 
 /* El número y el correo salen de la FICHA del paciente y no de `datos` de
@@ -159,7 +173,9 @@ if (Astro.request.method === 'POST') {
     const guardarEnFicha = form.get('guardar') === 'si';
 
     const destino = correoUsable(correoEscrito);
-    if (!destino) {
+    if (labSinEntregar) {
+      error = 'Los resultados todavía no se dieron por listos: el informe se manda cuando el bioanalista los entregue.';
+    } else if (!destino) {
       error = 'Esa dirección de correo no parece válida. Revísela antes de enviar.';
     } else {
       /* Se guarda ANTES de enviar y no después: si el envío falla por algo del
@@ -208,7 +224,7 @@ if (Astro.request.method === 'POST') {
           colegiatura: firmante?.colegiatura ?? caso.colegiatura,
           rol: esLab ? 'Bioanalista' : 'Médico que atiende',
         },
-        verificacion: { url: urlVerificacion, pin: caso.pin, dominioCorto },
+        verificacion: { url: urlVerificacion, pin, dominioCorto },
         centro: {
           nombre: clinica.nombre,
           razon: clinica.razonSocial,
@@ -272,7 +288,7 @@ const fechaLarga = (f: string) =>
       <Icono nombre="escudo" tam={18} />
       <span>
         {esLab
-          ? 'Esta orden todavía no está entregada: si manda el informe ahora, va con los resultados que haya cargados hasta este momento.'
+          ? 'Esta orden todavía no está entregada. El correo lleva al informe completo, y eso existe cuando el bioanalista da los resultados por listos.'
           : 'Esta atención todavía no está cerrada: lo que se mande ahora puede cambiar después.'}
       </span>
     </p>

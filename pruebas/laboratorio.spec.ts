@@ -462,7 +462,8 @@ test('el informe impreso lleva los valores, su referencia y el renglón del bioa
 
   /* El sello va húmedo: el cliente dijo que lo estampa a mano sobre el
      papel. La hoja deja el renglón y no dibuja ninguna imagen de sello. */
-  await expect(page.locator('.firma__linea em')).toContainText('sello y firma');
+  // Una firma por corte en la media hoja, y otra en la hoja completa.
+  await expect(page.locator('.firma__linea em').first()).toContainText('sello y firma');
 });
 
 test('el Excel de los resultados se descarga', async ({ page }) => {

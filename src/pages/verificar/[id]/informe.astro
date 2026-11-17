@@ -1,0 +1,28 @@
+---
+/**
+ * El informe del laboratorio, para el paciente, después de verificar.
+ *
+ * Es el mismo documento que se imprime en el laboratorio —media hoja por
+ * examen o todo compacto—, para verlo, imprimirlo o guardarlo en PDF. Se
+ * llega desde /verificar/[id] con la cédula y el PIN; sin eso, vuelve ahí.
+ * Solo órdenes de laboratorio entregadas: una consulta médica no se
+ * muestra en una página pública. Ver lib/informe-publico.ts.
+ */
+import Documento from '../../../components/sistema/Documento.astro';
+import { esIdentificador } from '../../../sistema/lib/atenciones';
+import { puedeVerInforme } from '../../../sistema/lib/informe-publico';
+import { bd, esquema } from '../../../sistema/lib/base';
+import { and, eq } from 'drizzle-orm';
+
+export const prerender = false;
+
+const { id } = Astro.params;
+if (!id || !esIdentificador(id)) return Astro.redirect('/verificar/');
+if (!puedeVerInforme(Astro.cookies, id)) return Astro.redirect(`/verificar/${id}`);
+const [orden] = await bd.select({ id: esquema.atencion.id }).from(esquema.atencion)
+  .where(and(eq(esquema.atencion.id, id), eq(esquema.atencion.tipo, 'laboratorio'), eq(esquema.atencion.estado, 'cerrada')))
+  .limit(1);
+if (!orden) return Astro.redirect(`/verificar/${id}`);
+---
+
+<Documento id={id} publico />
