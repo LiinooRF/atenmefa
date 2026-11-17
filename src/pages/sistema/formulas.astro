@@ -54,6 +54,12 @@ const cambiado = Astro.url.searchParams.get('cambiado');
       Estos {vigentes.length} analitos se calculan solos al cargar resultados, con las cuentas
       de su propio archivo. Siempre se puede escribir otro valor encima.
     </p>
+    <p class="cab__nota">
+      Si la orden trae los datos de una cuenta y no su resultado, el resultado se agrega
+      solo: con triglicéridos pedidos sueltos aparece el VLDL, y con colesterol total y
+      HDL además, el LDL. La depuración de creatinina se escribe a mano hasta que el
+      laboratorio confirme en qué unidad va el volumen.
+    </p>
   </div>
 
   {cambiado && (

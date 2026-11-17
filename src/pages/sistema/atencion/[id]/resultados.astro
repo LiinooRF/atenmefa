@@ -39,7 +39,7 @@ import {
   componentesDePerfiles,
 } from '../../../../sistema/lib/laboratorio';
 import type { Resultado } from '../../../../sistema/laboratorio';
-import { SUMAN_CIEN, comoSeLeeAhora, enLlaves } from '../../../../sistema/calculos';
+import { SUMAN_CIEN, comoSeLeeAhora, enLlaves, llaveDeAnalito } from '../../../../sistema/calculos';
 import { calculosVigentes } from '../../../../sistema/lib/formulas';
 
 export const prerender = false;
@@ -187,6 +187,8 @@ const SIN_NADA: Fuente = { unidad: '', referencia: '', opciones: '' };
    MACROSCOPICO»—. Se dibuja como título, sin casilla de resultado. */
 const plan: { examen: string; fuente?: Fuente; titulo?: boolean }[] = [];
 const puestos = new Set<string>();
+/* Lo que recepción le quitó a un perfil: no se vuelve a poner solo. */
+const quitados = new Set<string>();
 /* Los perfiles pedidos: lo que trae cada uno, en su orden. */
 const deCadaPerfil = await componentesDePerfiles(
   pedidos.filter((p) => p.incluye?.length).map((p) => p.servicioId!),
@@ -198,6 +200,9 @@ for (const p of pedidos) {
      trae todos, y el que se quitó no se hace. */
   const quedaron = p.incluye?.length ? new Set(p.incluye) : null;
   const suyos = quedaron ? (deCadaPerfil.get(p.servicioId!) ?? []).filter((c) => quedaron.has(c.id)) : [];
+  if (quedaron) {
+    for (const c of deCadaPerfil.get(p.servicioId!) ?? []) if (!quedaron.has(c.id)) quitados.add(llaveDeAnalito(c.nombre));
+  }
   const hojaEntera = p.plantilla ? porHoja.get(p.plantilla) : undefined;
   /* Un perfil sin hoja —el que se arma a mano en Servicios—: su nombre y
      debajo los exámenes que quedaron. */
@@ -258,6 +263,33 @@ for (const escrito of (registro.examenes ?? '').split('\n').map((t) => t.trim())
   if (puestos.has(escrito)) continue;
   puestos.add(escrito);
   plan.push({ examen: escrito });
+}
+
+/* Lo que se calcula con lo pedido, aunque no se haya pedido (17-11).
+
+   «Cálculo de VLDL = triglicéridos ÷ 5, me dijo que faltó.» Con el perfil
+   lipídico el VLDL viene en su hoja; pero el colesterol, el HDL y los
+   triglicéridos también se cobran SUELTOS, y pedidos así el VLDL no tenía
+   renglón donde calcularse. Ahora, si la orden trae todos los datos de una
+   fórmula y no su resultado, el resultado se agrega debajo del último de
+   sus datos y se calcula solo: triglicéridos → VLDL; con colesterol total
+   y HDL además → LDL. Lo mismo con las demás fórmulas. Varias vueltas,
+   porque el LDL necesita el VLDL que se acaba de agregar. Lo que
+   recepción le quitó a un perfil no vuelve. */
+for (let vuelta = 0; vuelta < 3; vuelta++) {
+  let agrego = false;
+  const llavesDelPlan = plan.map((x) => (x.titulo ? '' : llaveDeAnalito(x.examen)));
+  for (const c of CALCULOS) {
+    const resultado = llaveDeAnalito(c.resultado);
+    if (llavesDelPlan.includes(resultado) || quitados.has(resultado)) continue;
+    const donde = c.insumos.map((ins) => llavesDelPlan.lastIndexOf(llaveDeAnalito(ins)));
+    if (donde.some((i) => i < 0)) continue;
+    const despues = Math.max(...donde) + 1;
+    plan.splice(despues, 0, { examen: c.resultado });
+    llavesDelPlan.splice(despues, 0, resultado);
+    agrego = true;
+  }
+  if (!agrego) break;
 }
 
 
