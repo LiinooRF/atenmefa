@@ -18,6 +18,9 @@ export const GET: APIRoute = ({ site }) => {
 
 User-agent: *
 Allow: /
+Disallow: /sistema/
+Disallow: /verificar/
+Disallow: /api/
 
 # Rastreadores de IA: se les deja entrar a propósito.
 # Google-Extended es el que decide si Gemini puede usar este contenido para
