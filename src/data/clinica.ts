@@ -24,6 +24,10 @@ export const clinica = {
   razonSocial: marca.razonSocial,
   rif: marca.rif,
   nombreLargo: `${marca.nombre} — ${marca.bajada}`,
+  /** El nombre del SITIO para Google. Debe ser el nombre solo, sin el
+      rubro: con "Atenmefa — Centro médico…" largo, Google desistía del
+      nombre y mostraba el dominio pelado en los resultados. */
+  nombreSitio: marca.nombre,
   descripcionCorta:
     'Centro médico con laboratorio clínico propio, consultas especializadas, ecosonografías, atención a domicilio y traslados en ambulancia en Ciudad Bolívar.',
   /**
