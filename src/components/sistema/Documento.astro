@@ -62,6 +62,7 @@ const [caso] = await bd
     colegiatura: esquema.user.colegiatura,
     msds: esquema.user.msds,
     firmaMedico: esquema.user.firma,
+    selloMedico: esquema.user.sello,
   })
   .from(esquema.atencion)
   .innerJoin(esquema.paciente, eq(esquema.paciente.id, esquema.atencion.pacienteId))
@@ -245,6 +246,7 @@ const [firmante] = caso.resultadosPor
         nombre: esquema.user.name,
         colegiatura: esquema.user.colegiatura,
         firma: esquema.user.firma,
+        sello: esquema.user.sello,
       })
       .from(esquema.user)
       .where(eq(esquema.user.id, caso.resultadosPor))
@@ -477,6 +479,7 @@ const vitales = [
                     <span>{firmante?.nombre ?? '\u00a0'}</span>
                     <small>{firmante?.colegiatura ?? '\u00a0'}</small>
                     <em>Bioanalista · sello y firma</em>
+                    {firmante?.sello && <img class="sello__imagen" src={firmante.sello} alt="Sello" />}
                   </div>
                 </footer>
                 {qr && (
@@ -538,6 +541,15 @@ const vitales = [
                   <td>{fechaLarga(caso.fecha)}{d.hora_muestra && ` · ${d.hora_muestra}`}{d.ayuno === 'si' && ' · en ayunas'}</td>
                   <th>Seguro</th><td>{caso.aseguradora ?? 'Paga el paciente'}</td>
                 </tr>
+                {/* Lo que los seguros piden para reembolsar (16-11 y 22-11):
+                    póliza y titular, solo cuando hay seguro. Sin seguro, no
+                    estorban. */}
+                {caso.aseguradora && (d.poliza || d.titular) && (
+                  <tr>
+                    <th>Póliza</th><td>{d.poliza || '—'}</td>
+                    <th>Titular</th><td>{d.titular || '—'}</td>
+                  </tr>
+                )}
                 {d.quien_indica && (
                   <tr><th>Indicado por</th><td colspan="3">{d.quien_indica}</td></tr>
                 )}
@@ -725,6 +737,7 @@ const vitales = [
                 <span>{firmante?.nombre ?? '\u00a0'}</span>
                 <small>{firmante?.colegiatura ?? '\u00a0'}</small>
                 <em>Bioanalista · sello y firma</em>
+                {firmante?.sello && <img class="sello__imagen" src={firmante.sello} alt="Sello" />}
               </div>
             </footer>
             {lineaDeCorreccion && <p class="corregido">{lineaDeCorreccion}</p>}
@@ -808,6 +821,7 @@ const vitales = [
           <tr>
             <th>Seguro</th><td>{caso.aseguradora ?? 'Paga el paciente'}</td>
             <th>Póliza</th><td>{caso.poliza ?? '—'}</td>
+            {d.titular && <><th>Titular</th><td>{d.titular}</td></>}
           </tr>
           {(d.hora_inicio || d.hora_fin) && (
             <tr>
@@ -859,6 +873,7 @@ const vitales = [
             {caso.msds && ` · M.S.D.S. ${caso.msds}`}
           </small>
           <em>Médico que atiende</em>
+          {caso.selloMedico && <img class="sello__imagen" src={caso.selloMedico} alt="Sello" />}
         </div>
         <div class="firma__linea">
           <span>&nbsp;</span>
@@ -1060,6 +1075,17 @@ const vitales = [
         max-height: 16mm;
         margin: 0 auto -2mm;
         object-fit: contain;
+      }
+      /* El sello estampado junto a la firma: rotado un pelín, como queda
+         cuando se estampa de verdad (034-sello.sql). */
+      .sello__imagen {
+        display: block;
+        max-width: 34mm;
+        max-height: 34mm;
+        margin: -6mm auto -4mm;
+        object-fit: contain;
+        transform: rotate(-6deg);
+        opacity: 0.92;
       }
       /* Solo para quien lee con un lector de pantalla: la flecha sola no
          dice si el valor está alto o bajo. */

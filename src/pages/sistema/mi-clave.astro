@@ -11,6 +11,7 @@ import { auth } from '../../sistema/lib/auth';
 import { marca } from '../../data/marca';
 import { cambiarClave, claveFloja } from '../../sistema/lib/usuarios';
 import { anotar } from '../../sistema/lib/atenciones';
+import { quitarFondoBlanco, TOPE_SELLO } from '../../sistema/lib/imagenes';
 import { bd, esquema } from '../../sistema/lib/base';
 import { eq } from 'drizzle-orm';
 import QR from 'qrcode';
@@ -22,6 +23,8 @@ let error = '';
 let listo = false;
 let avisoFirma = '';
 let errorFirma = '';
+let avisoSello = '';
+let errorSello = '';
 
 /* El segundo factor. `paso` manda qué se dibuja: nada, el QR esperando el
    código, o los códigos de respaldo recién generados. */
@@ -133,6 +136,31 @@ if (Astro.request.method === 'POST') {
     } else {
       errorFirma = 'Elija una imagen.';
     }
+  } else if (accion === 'sello') {
+    if (form.get('quitar') === 'si') {
+      await bd.update(esquema.user).set({ sello: null }).where(eq(esquema.user.id, yo.id));
+      await anotar(yo.id, 'cambio_sello', undefined, { accion: 'quitado' });
+      avisoSello = 'Se quitó el sello.';
+    } else {
+      const archivo = form.get('sello');
+      if (archivo instanceof File && archivo.size > 0) {
+        try {
+          const { uri } = await quitarFondoBlanco(archivo);
+          if (uri.length > TOPE_SELLO) {
+            errorSello = 'Esa imagen pesa ' + Math.round(uri.length / 1024) + ' KB y el tope son '
+              + Math.round(TOPE_SELLO / 1024) + '. Recórtela al sello solo.';
+          } else {
+            await bd.update(esquema.user).set({ sello: uri }).where(eq(esquema.user.id, yo.id));
+            await anotar(yo.id, 'cambio_sello', undefined, { accion: 'cargado', bytes: uri.length });
+            avisoSello = 'Sello guardado. Sale estampado junto a su firma.';
+          }
+        } catch (e) {
+          errorSello = e instanceof Error ? e.message : 'No se pudo procesar esa imagen.';
+        }
+      } else {
+        errorSello = 'Elija una foto del sello.';
+      }
+    }
   } else {
 
   const actual = String(form.get('actual') ?? '');
@@ -175,6 +203,7 @@ if (Astro.request.method === 'POST') {
 const [miFicha] = await bd
   .select({
     firma: esquema.user.firma,
+    sello: esquema.user.sello,
     colegiatura: esquema.user.colegiatura,
     dosFactores: esquema.user.twoFactorEnabled,
   })
@@ -349,6 +378,46 @@ const [miFicha] = await bd
             )}
           </div>
         </form>
+
+        <h2 class="caja__titulo">Mi sello</h2>
+        <p class="caja__nota">
+          Súmale la foto del sello: el sistema le quita el fondo blanco y sale
+          estampado junto a su firma en cada informe, como en el papel.
+        </p>
+
+        {errorSello && <p class="sis-error"><Icono nombre="escudo" tam={18} />{errorSello}</p>}
+        {avisoSello && <p class="msj--bien"><Icono nombre="escudo" tam={18} />{avisoSello}</p>}
+
+        <form method="post" class="sis-tarjeta formulario" enctype="multipart/form-data">
+          <input type="hidden" name="accion" value="sello" />
+
+          {miFicha?.sello ? (
+            <div class="muestra muestra--sello">
+              <img src={miFicha.sello} alt="Su sello, como va a salir estampado" />
+              <small>Así queda estampado en el papel.</small>
+            </div>
+          ) : (
+            <p class="caja__nota">Todavía no cargó ninguno.</p>
+          )}
+
+          <div class="sis-campo">
+            <label for="sello">Foto del sello</label>
+            <input id="sello" name="sello" type="file" accept="image/png,image/jpeg" />
+            <span class="pista">
+              Fotográfelo sobre una hoja blanca, sin sombra, y el sistema hace
+              el resto: quita el fondo y lo deja listo para estampar.
+            </span>
+          </div>
+
+          <div class="par">
+            <button type="submit" class="sis-boton sis-boton--primario">Guardar el sello</button>
+            {miFicha?.sello && (
+              <button type="submit" name="quitar" value="si" class="sis-boton sis-boton--suave">
+                Quitarlo
+              </button>
+            )}
+          </div>
+        </form>
       </>
     )}
   </div>
@@ -367,6 +436,7 @@ const [miFicha] = await bd
   .hecho .sis-boton { margin-top: 5px; }
 
   .caja__titulo { margin-top: 10px; font-size: var(--u-lg); }
+  .muestra--sello img { max-width: 180px; }
 
   .qr { align-self: center; border: 1px solid var(--linea); border-radius: 10px; background: #fff; }
   .amano summary { cursor: pointer; font-size: var(--u-sm); color: var(--azul); }

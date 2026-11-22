@@ -20,6 +20,9 @@ export const user = pgTable("user", {
    * firma es una imagen chica que además tiene que viajar con el respaldo.
    */
   firma: text("firma"),
+  /** El sello estampado, con el fondo blanco quitado al cargar (034-sello.sql).
+      Sale junto a la firma en el informe. */
+  sello: text("sello"),
   msds: text("msds"),
   /** La especialidad del médico, para derivarle pacientes. Ver 029-derivaciones.sql. */
   especialidad: text("especialidad"),

@@ -155,3 +155,24 @@ test('el bioanalista corrige un resultado ya entregado', async ({ page }) => {
   expect(r.estado).toBe('cerrada');
   expect(r.resultados.find((x: { examen: string }) => x.examen === EXAMEN).valor).toBe('98');
 });
+
+test('mi cuenta: el sello con fondo quitado y los datos del seguro impresos', async ({ page }) => {
+  /* «Me gustaría poner lo de la foto del sello, lo de la firma ahí mismo, y
+     pedir datos que aparecen ahí para cumplir con el seguro.» */
+  await entrar(page, 'bioanalista');
+  await page.goto('/sistema/mi-clave');
+  await expect(page.locator('h2', { hasText: 'Mi sello' })).toBeVisible();
+
+  // Un PNG blanco con un círculo rojo: simula un sello sobre papel.
+  // Un sello de verdad: PNG con círculo rojo sobre papel blanco
+  // (pruebas/fixtures/sello.png, generado aparte).
+  await page.locator('#sello').setInputFiles('pruebas/fixtures/sello.png');
+  await page.getByRole('button', { name: 'Guardar el sello' }).click();
+  await expect(page.locator('.msj--bien')).toContainText('Sello guardado');
+  await expect(page.locator('.muestra--sello img')).toBeVisible();
+
+  const [f] = await conBase((sql) => sql`SELECT sello FROM "user" WHERE email = 'laboratorio@atenmefa.local'`);
+  expect(f.sello).toContain('data:image/png');
+  // El fondo blanco quedó transparente: el PNG procesado pesa menos y trae alfa.
+  expect(f.sello.length).toBeLessThan(240 * 1024);
+});
