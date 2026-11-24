@@ -71,7 +71,7 @@ export type Permiso =
   | 'enviar_documento'     // mandar el informe por WhatsApp o correo
   | 'ver_marketing';       // cómo va el tráfico del sitio público
 
-export const TABLA: Record<Rol, readonly Permiso[]> = {
+const TABLA: Record<Rol, readonly Permiso[]> = {
   /**
    * El médico atiende, firma y anota qué se le hizo al paciente. Lo último
    * no es una concesión: quien sabe que además de la consulta se mandó una
@@ -210,23 +210,9 @@ export const dondeEmpieza = (rol: string | null | undefined) =>
     ? '/sistema/laboratorio'
     : '/sistema';
 
-import { cacheDeDesviaciones, type Rol as RolTrabajo } from './permisos-roles-cache';
-
-export type { RolTrabajo };
-
-/**
- * La única puerta. Paquete base + lo que administración encendió o apagó
- * en Ajustes del centro (permisos-roles.ts). Las desviaciones llegan por
- * una caché que ese módulo llena al arrancar y refresca al guardar; si
- * todavía no llegó —el primer instante de un arranque— vale el paquete.
- *
- * Sincrónica a propósito: 45 lugares la llaman dentro de renders de Astro.
- */
 export function puede(rol: string | null | undefined, permiso: Permiso): boolean {
   if (!rol) return false;
-  const base = (TABLA[rol as Rol] ?? []).includes(permiso);
-  const desviada = cacheDeDesviaciones().get(`${rol}:${permiso}`);
-  return desviada !== undefined ? desviada : base;
+  return (TABLA[rol as Rol] ?? []).includes(permiso);
 }
 
 /**
@@ -280,7 +266,7 @@ export function puedeTomarCaso(
   return atencion.medicoId !== usuario.id;
 }
 
-export const NOMBRES: Record<Rol, string> = {
+const NOMBRES: Record<Rol, string> = {
   medico: 'Médico',
   administracion: 'Administración',
   bioanalista: 'Bioanalista',

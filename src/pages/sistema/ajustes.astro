@@ -5,17 +5,10 @@
  * Lo que cambia de un centro a otro y no se decide en el código: el mismo
  * sistema corre para Atenmefa, para la demo y para el que venga después, y
  * cada uno trabaja a su manera. Ver lib/ajustes.ts.
- *
- * La sección «Permisos de los roles» (22-11): el negocio es familiar y la
- * misma gente rota entre oficios, así que administración enciende y apaga
- * permisos de los tres roles de trabajo. Administración no aparece: sus
- * permisos son fijos. Ver lib/permisos-roles.ts.
  */
 import Sistema from '../../layouts/Sistema.astro';
 import { exigir } from '../../sistema/lib/guardia';
 import { AJUSTES, ajustes, guardarAjustes, type ClaveAjuste } from '../../sistema/lib/ajustes';
-import { NOMBRES, type Rol } from '../../sistema/lib/permisos';
-import { panelPermisos, guardarPermisosRoles, ROTULO, type CajaPermiso } from '../../sistema/lib/permisos-roles';
 
 export const prerender = false;
 
@@ -24,25 +17,13 @@ if (corte) return corte;
 const usuario = Astro.locals.usuario!;
 
 let error = '';
-let permisoError = '';
-let permisoResumen = '';
 if (Astro.request.method === 'POST') {
   const form = await Astro.request.formData();
   try {
-    if (form.get('seccion') === 'permisos') {
-      const prendidos = new Set(form.getAll('rolpermiso').map(String));
-      const r = await guardarPermisosRoles(usuario, prendidos);
-      const n = r.encendidos.length + r.apagados.length;
-      permisoResumen = n === 0
-        ? 'No había nada que cambiar.'
-        : `Guardado: ${r.encendidos.length} ${r.encendidos.length === 1 ? 'permiso encendido' : 'permisos encendidos'} y ${r.apagados.length} ${r.apagados.length === 1 ? 'apagado' : 'apagados'}. Quedó en la bitácora.`;
-    } else {
-      const cambiados = await guardarAjustes(usuario, new Set(form.getAll('ajuste').map(String)));
-      return Astro.redirect(`/sistema/ajustes?guardado=${cambiados.length}`);
-    }
+    const cambiados = await guardarAjustes(usuario, new Set(form.getAll('ajuste').map(String)));
+    return Astro.redirect(`/sistema/ajustes?guardado=${cambiados.length}`);
   } catch (e) {
-    const m = e instanceof Error ? e.message : 'No se pudo guardar.';
-    if (form.get('seccion') === 'permisos') permisoError = m; else error = m;
+    error = e instanceof Error ? e.message : 'No se pudo guardar.';
   }
 }
 
@@ -50,7 +31,6 @@ const vigentes = await ajustes();
 const guardado = Astro.url.searchParams.get('guardado');
 const claves = Object.keys(AJUSTES) as ClaveAjuste[];
 const [principal, ...porTipo] = claves;
-const panel = await panelPermisos();
 ---
 
 <Sistema titulo="Ajustes del centro">
@@ -92,47 +72,6 @@ const panel = await panelPermisos();
 
     <button type="submit" class="sis-boton sis-boton--primario">Guardar</button>
   </form>
-
-  <form method="post" class="sis-tarjeta ajustes perm" data-permisos>
-    <input type="hidden" name="seccion" value="permisos" />
-    <h2>Permisos de los roles</h2>
-    <p class="perm__nota">
-      El paquete de cada rol viene bien de fábrica: encienda solo lo que este
-      centro trabaje distinto. Administración tiene todos los permisos fijos y
-      no se modifica acá.
-    </p>
-
-    {permisoError && <p class="sis-error" role="alert">{permisoError}</p>}
-    {permisoResumen && <p class="msj--bien" role="status">{permisoResumen}</p>}
-
-    {panel.roles.map((r) => (
-      <fieldset class="perm__rol">
-        <legend>{NOMBRES[r.rol as Rol]}</legend>
-        {r.grupos.map((g) => (
-          <div class="perm__grupo">
-            <span class="perm__area">{g.titulo}</span>
-            {g.permisos.map((c: CajaPermiso) => (
-              <label class="perm__caja" data-llave={`${r.rol}:${c.permiso}`}
-                     data-exige={c.exige ? `${r.rol}:${c.exige}` : undefined}>
-                <input type="checkbox" name="rolpermiso" value={`${r.rol}:${c.permiso}`}
-                       checked={c.encendido} data-base={c.base ? '' : undefined} />
-                <span>
-                  <strong>{ROTULO[c.permiso]}</strong>
-                  {c.base && <em class="perm__base">viene con el rol</em>}
-                  {!c.base && !c.encendido && c.advertencia && (
-                    <em class="perm__aviso">si lo enciende: {c.advertencia}</em>
-                  )}
-                  {c.exige && <em class="perm__exige">requiere «{ROTULO[c.exige]}»</em>}
-                </span>
-              </label>
-            ))}
-          </div>
-        ))}
-      </fieldset>
-    ))}
-
-    <button type="submit" class="sis-boton sis-boton--primario">Guardar los permisos</button>
-  </form>
 </Sistema>
 
 <script>
@@ -144,26 +83,6 @@ const panel = await panelPermisos();
   const ver = () => { if (dependen && principal) dependen.toggleAttribute('data-apagado', !principal.checked); };
   principal?.addEventListener('change', ver);
   ver();
-
-  /* Los permisos: las dependencias se muestran al vuelo. Si encienden una
-     casilla cuya exigencia está apagada, la casilla se marca y el mensaje
-     dice qué falta; el servidor no la guarda sin su requisito. */
-  const perm = document.querySelector<HTMLFormElement>('[data-permisos]');
-  if (perm) {
-    const cajas = [...perm.querySelectorAll<HTMLInputElement>('input[name="rolpermiso"]')];
-    const esta = (llave: string | undefined) =>
-      llave ? Boolean(cajas.find((c) => c.value === llave)?.checked) : true;
-    const revisar = () => {
-      for (const c of cajas) {
-        const etiqueta = c.closest('[data-exige]');
-        const exige = etiqueta?.getAttribute('data-exige') ?? undefined;
-        if (c.checked && !esta(exige)) etiqueta?.setAttribute('data-falta', '');
-        else etiqueta?.removeAttribute('data-falta');
-      }
-    };
-    for (const c of cajas) c.addEventListener('change', revisar);
-    revisar();
-  }
 </script>
 
 <style>
@@ -185,31 +104,4 @@ const panel = await panelPermisos();
   .ajustes__tipos[data-apagado] { opacity: 0.45; }
   .ajustes__nota { font-size: var(--u-sm); color: var(--tinta-tenue); }
   .ajustes button { justify-self: start; }
-
-  /* ---------- permisos por rol ---------- */
-  .perm { margin-top: 18px; }
-  .perm h2 { font-size: var(--u-md); }
-  .perm__nota { font-size: var(--u-sm); color: var(--tinta-suave); max-width: 64ch; }
-  .perm__rol { display: grid; gap: 12px; border: 1px solid var(--linea-tenue); border-radius: 10px; padding: 14px; margin: 0; }
-  .perm__rol legend { font-weight: 700; font-size: var(--u-md); padding: 0 6px; }
-  .perm__grupo { display: grid; gap: 8px; }
-  .perm__area {
-    font-size: var(--u-xs); font-weight: 700; text-transform: uppercase; letter-spacing: 0.05em;
-    color: var(--tinta-tenue); margin-top: 4px;
-  }
-  .perm__caja {
-    display: flex; align-items: flex-start; gap: 10px; min-height: 44px;
-    padding: 6px 10px; border-radius: 8px; cursor: pointer;
-  }
-  .perm__caja:hover { background: var(--bruma); }
-  .perm__caja input { margin-top: 3px; width: 20px; height: 20px; flex: none; accent-color: var(--azul); }
-  .perm__caja[data-falta] { outline: 2px solid #d99a00; background: #fffaf0; }
-  .perm__caja span { display: grid; gap: 1px; }
-  .perm__caja strong { font-size: var(--u-sm); font-weight: 600; }
-  .perm__base, .perm__aviso, .perm__exige { font-size: var(--u-xs); font-style: normal; }
-  .perm__base { color: #15663f; }
-  .perm__aviso { color: #8a5200; }
-  .perm__exige { color: var(--tinta-tenue); }
-  .perm__caja[data-falta] .perm__exige { color: #8a5200; font-weight: 600; }
-  .perm button[type='submit'] { justify-self: start; }
 </style>
