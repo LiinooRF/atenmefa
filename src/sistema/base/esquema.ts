@@ -289,6 +289,15 @@ export const ajuste = pgTable('ajuste', {
   cambiado: timestamp('cambiado', { withTimezone: true }).notNull().defaultNow(),
 });
 
+/** Desviaciones de permisos por rol. Ver 035-permisos-roles.sql. */
+export const rolPermiso = pgTable('rol_permiso', {
+  rol: text('rol').notNull(),
+  permiso: text('permiso').notNull(),
+  valor: boolean('valor').notNull(),
+  cambiadoPor: text('cambiado_por').notNull().references(() => user.id),
+  cambiado: timestamp('cambiado', { withTimezone: true }).notNull().defaultNow(),
+}, (t) => [primaryKey({ columns: [t.rol, t.permiso] })]);
+
 /** Cómo se muestra cada hoja de plantillas. Ver 030-nombres-de-hojas.sql. */
 export const hojaNombre = pgTable('hoja_nombre', {
   examen: text('examen').primaryKey(),

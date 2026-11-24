@@ -118,7 +118,7 @@ test('un centro que apaga el paso por recepción no lo ve más', async ({ page }
   await entrar(page, 'administracion');
   await page.goto('/sistema/ajustes');
   await page.locator('input[name="ajuste"][value="recepcion_derivaciones"]').uncheck();
-  await page.getByRole('button', { name: 'Guardar' }).click();
+  await page.getByRole('button', { name: 'Guardar', exact: true }).click();
   await expect(page.locator('.msj--bien')).toContainText('Guardado');
 
   await page.context().clearCookies();
