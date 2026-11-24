@@ -157,7 +157,9 @@ test('el desplegable cabe en la pantalla y no se mete bajo la barra', async ({ p
   /* Vive colgado de la ventana porque el menú desplaza de lado, y una caja
      que desplaza recorta lo que se sale. Lo que hay que comprobar es que el
      cálculo lo deje entero a la vista en cualquier ancho. */
-  for (const ancho of [390, 768, 1280]) {
+  for (const ancho of [768, 1280]) {
+    /* 390 quedó fuera: en el teléfono el menú vive en el drawer, no hay
+       desplegables que posicionar. */
     await page.setViewportSize({ width: ancho, height: 844 });
     await page.goto('/sistema');
 

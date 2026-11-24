@@ -169,6 +169,13 @@ const menu = MENU
                    aria-label="Buscar en el sistema" autocomplete="off" />
           </form>
 
+          {/* El botón y el drawer SOLO viven en el teléfono (< 720 px): el
+              CSS los esconde arriba. La barra de siempre queda intacta. */}
+          <button type="button" class="sis__hamburguesa" data-hamburguesa
+                  aria-label="Abrir el menú" aria-expanded="false" aria-controls="sis-drawer">
+            <Icono nombre="menu" tam={22} />
+          </button>
+
           <nav class="sis__nav" aria-label="Sistema">
             {menu.map((b) => b.sola ? (
               <a
@@ -273,6 +280,39 @@ const menu = MENU
             });
           </script>
 
+          <script>
+            /* El drawer del teléfono. Abrir con la hamburguesa, cerrar con
+               la X, con Escape o tocando el fondo. Sin JavaScript el botón
+               no existe y la barra de siempre queda funcionando. */
+            const boton = document.querySelector('[data-hamburguesa]');
+            const drawer = document.querySelector('[data-drawer]');
+            if (boton && drawer) {
+              const panel = drawer.querySelector('[data-drawer-fondo]');
+              const cerrarBtn = drawer.querySelector('[data-drawer-cerrar]');
+              const abrirDrawer = () => {
+                drawer.hidden = false;
+                boton.setAttribute('aria-expanded', 'true');
+                document.body.style.overflow = 'hidden';
+                cerrarBtn?.focus();
+              };
+              const cerrarDrawer = () => {
+                drawer.hidden = true;
+                boton.setAttribute('aria-expanded', 'false');
+                document.body.style.overflow = '';
+                boton.focus();
+              };
+              boton.addEventListener('click', abrirDrawer);
+              panel?.addEventListener('click', cerrarDrawer);
+              cerrarBtn?.addEventListener('click', cerrarDrawer);
+              document.addEventListener('keydown', (ev) => {
+                if (ev.key === 'Escape' && !drawer.hidden) cerrarDrawer();
+              });
+              /* Al navegar, el drawer se va con la pantalla. */
+              drawer.querySelectorAll('a').forEach((a) =>
+                a.addEventListener('click', () => cerrarDrawer()));
+            }
+          </script>
+
           <div class="sis__quien">
             {/* El título lleva el nombre completo: en la barra se recorta
                 para no empujar el menú. */}
@@ -284,6 +324,54 @@ const menu = MENU
             <form method="post" action="/sistema/salir">
               <button type="submit" class="sis__salir">Salir</button>
             </form>
+          </div>
+        </div>
+
+        {/* El drawer del teléfono: mismo menú, otra presentación. Los
+            grupos van SIEMPRE desplegados (una barra plegable adentro de
+            otra es un laberinto) y Sale y Mi cuenta al final, con su
+            zona de toque grande. */}
+        <div class="sis__drawer" data-drawer id="sis-drawer" hidden>
+          <div class="sis__drawer-fondo" data-drawer-fondo></div>
+          <div class="sis__drawer-panel" role="dialog" aria-modal="true" aria-label="Menú del sistema">
+            <div class="sis__drawer-cab">
+              <span class="sis__drawer-quien">
+                <strong>{usuario.name}</strong>
+                <small>{nombreDelRol(usuario.rol as string)}</small>
+              </span>
+              <button type="button" class="sis__drawer-cerrar" data-drawer-cerrar aria-label="Cerrar el menú">
+                <Icono nombre="cerrar" tam={22} />
+              </button>
+            </div>
+            <nav class="sis__drawer-nav" aria-label="Sistema">
+              {menu.map((b) => (
+                <div class="sis__drawer-grupo">
+                  <span class="sis__drawer-area">{b.texto}</span>
+                  {b.sola ? (
+                    <a href={b.sola.href} aria-current={esLaDeAhora(b.sola.href) ? 'page' : undefined}>
+                      <Icono nombre={b.icono} tam={18} />
+                      {b.sola.texto}
+                    </a>
+                  ) : b.entradas.map((e) => (
+                    <a href={e.href} aria-current={esLaDeAhora(e.href) ? 'page' : undefined}>
+                      {e.texto}
+                    </a>
+                  ))}
+                </div>
+              ))}
+            </nav>
+            <div class="sis__drawer-pie">
+              <a href="/sistema/mi-clave">
+                <Icono nombre="escudo" tam={18} />
+                Mi cuenta
+              </a>
+              <form method="post" action="/sistema/salir">
+                <button type="submit">
+                  <Icono nombre="cerrar" tam={18} />
+                  Salir
+                </button>
+              </form>
+            </div>
           </div>
         </div>
       </header>

@@ -52,6 +52,11 @@
 
 .sis__barra { position: sticky; top: 0; z-index: 50; background: var(--azul-profundo); color: #fff; }
 
+/* ---------- hamburguesa y drawer: SOLO el teléfono (< 720 px).
+   Arriba quedan escondidos y la barra de siempre manda. ---------- */
+.sis__hamburguesa, .sis__drawer { display: none; }
+
+
 .sis__barra-int {
   /* Más ancha que el contenido de las pantallas, que sigue en 1320. La
      barra es chapa: con siete destinos, el buscador y quién entró, el tope
@@ -297,48 +302,152 @@
    tiene 390, así que el nombre quedaba recortado y la página entera se
    arrastraba de lado en todas las vistas. Pasa a dos filas y el menú toma
    la segunda completa, con los tres destinos a la vista. */
-@media (max-width: 560px) {
-  .sis__barra-int { flex-wrap: wrap; gap: 0 12px; padding: 6px 14px; }
+@media (max-width: 719px) {
+  /* La barra de una fila: marca + hamburguesa + Salir. El menú entero va
+     en el drawer: tres filas de menús arriba comían un cuarto de la
+     pantalla y el usuario veía la barra antes que su trabajo. */
+  .sis__barra { position: sticky; }
+  .sis__barra-int {
+    flex-wrap: nowrap;
+    gap: 8px;
+    padding: 8px 14px;
+    min-height: 54px;
+  }
   .sis__marca { margin-right: auto; }
+  .sis__nav, .sis__quien { display: none; }
+  .sis__hamburguesa {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+  }
+  .sis__hamburguesa:active { background: rgba(255, 255, 255, 0.14); }
 
-  /* En el teléfono el desplegable toma el ancho completo aunque el script
-     sepa dónde está el grupo: un menú angosto pegado a un borde se lee peor
-     que uno que ocupa la pantalla. */
+  /* El buscador vuelve en el teléfono como fila propia: era útil y se fue
+     solo porque no cabía; en el drawer no va, así que acá abajo sí cabe.
+     Con los 44 px de la regla de la casa para lo que se toca. */
+  .sis__buscar { display: flex; order: 3; flex: 1 1 100%; margin: 0 0 8px; }
+  .sis__buscar input { min-height: 44px; }
+
+  /* ---------- el drawer ---------- */
+  .sis__drawer[hidden] { display: none; }
+  .sis__drawer {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 70;
+  }
+  .sis__drawer-fondo { position: absolute; inset: 0; background: rgba(8, 11, 48, 0.55); }
+  .sis__drawer-panel {
+    position: absolute;
+    top: 0; bottom: 0; left: 0;
+    width: min(320px, 88vw);
+    display: flex;
+    flex-direction: column;
+    background: var(--azul-profundo);
+    color: #fff;
+    box-shadow: 12px 0 32px rgba(8, 11, 48, 0.35);
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+  .sis__drawer-cab {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 12px 14px;
+    border-bottom: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .sis__drawer-quien { display: grid; gap: 1px; min-width: 0; }
+  .sis__drawer-quien strong { font-size: var(--u-sm); font-weight: 700; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .sis__drawer-quien small { font-size: var(--u-xs); color: rgba(255, 255, 255, 0.56); }
+  .sis__drawer-cerrar {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 44px;
+    height: 44px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.85);
+    cursor: pointer;
+    flex: none;
+  }
+  .sis__drawer-cerrar:active { background: rgba(255, 255, 255, 0.14); }
+
+  .sis__drawer-nav { display: grid; gap: 14px; padding: 16px 10px; }
+  .sis__drawer-grupo { display: grid; gap: 2px; }
+  .sis__drawer-area {
+    font-size: var(--u-xs); font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.06em; color: rgba(255, 255, 255, 0.45);
+    padding: 0 12px 4px;
+  }
+  .sis__drawer-grupo a {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    min-height: 44px;
+    padding: 0 12px;
+    border-radius: 8px;
+    color: rgba(255, 255, 255, 0.85);
+    text-decoration: none;
+    font-size: var(--u-sm);
+    font-weight: 600;
+  }
+  .sis__drawer-grupo a svg { opacity: 0.7; }
+  .sis__drawer-grupo a:active { background: rgba(255, 255, 255, 0.12); color: #fff; }
+  .sis__drawer-grupo a[aria-current='page'] { background: rgba(255, 255, 255, 0.14); color: #fff; }
+
+  .sis__drawer-pie {
+    margin-top: auto;
+    display: grid;
+    gap: 1px;
+    padding: 12px 10px calc(14px + env(safe-area-inset-bottom));
+    border-top: 1px solid rgba(255, 255, 255, 0.12);
+  }
+  .sis__drawer-pie a,
+  .sis__drawer-pie button {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    width: 100%;
+    min-height: 48px;
+    padding: 0 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: rgba(255, 255, 255, 0.85);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-sm);
+    font-weight: 600;
+    text-decoration: none;
+    cursor: pointer;
+    text-align: left;
+  }
+  .sis__drawer-pie button { color: #ffb4b9; }
+  .sis__drawer-pie a:active,
+  .sis__drawer-pie button:active { background: rgba(255, 255, 255, 0.12); }
+}
+
+/* En el teléfono el desplegable toma el ancho completo aunque el script
+   sepa dónde está el grupo: un menú angosto pegado a un borde se lee peor
+   que uno que ocupa la pantalla. (El desplegable solo se usa arriba de
+   720 px, pero la regla no estorba.) */
+@media (max-width: 719px) {
   .sis__grupo[data-x] > .sis__menu {
     left: 10px;
     right: 10px;
     width: auto;
     min-width: 0;
   }
-
-  /* Va al final para caer en la segunda fila: en el HTML está antes de
-     quién entró, que tiene que quedar arriba a la derecha. */
-  /* Las entradas se parten en dos líneas en vez de desplazarse de lado:
-     con ocho destinos (administración), la mitad quedaba escondida a la
-     derecha y no había nada que dijera que estaba ahí. */
-  .sis__nav {
-    order: 3; width: 100%; margin-right: 0; padding-bottom: 6px;
-    flex-wrap: wrap; overflow-x: visible; gap: 2px 4px;
-  }
-  /* Con dos líneas de menú la barra es alta: fija arriba se comía un
-     cuarto de la pantalla. En el teléfono se va con la página. */
-  .sis__barra { position: static; }
-  /* OJO con el alcance: "> a" y "summary", no "a" a secas. Los enlaces de
-     adentro de un desplegable también son .sis__nav a, y con la regla
-     suelta salían centrados y sin su relleno, como si fueran botones de la
-     barra. */
-  .sis__nav > a,
-  .sis__nav summary { justify-content: center; min-height: 44px; padding-inline: 11px; }
-
-  /* Los destinos con icono no entran en 390 px sin partir los rótulos en
-     dos líneas. El icono acompaña, el rótulo es el que nombra: en el
-     teléfono se va el icono y el nombre queda entero. La flecha del grupo
-     se queda: es lo que dice que eso se abre. */
-  .sis__nav > a svg,
-  .sis__nav summary svg:not(.sis__flecha) { display: none; }
-
-  /* En el teléfono es el único control de la barra: le toca el mínimo. */
-  .sis__salir { min-height: 44px; }
 }
 
 .sis__cuerpo { max-width: 1320px; margin-inline: auto; padding: 28px 20px 80px; }
