@@ -145,9 +145,13 @@ test('cada renglón lleva su pagador y la cuenta se reparte', async ({ page }) =
   await expect(cuenta).toContainText('12,50');   // la empresa
 
   const cargado = page.locator('table', { has: page.getByText('Quién paga') });
-  await expect(cargado).toContainText('Lo paga el seguro');
-  await expect(cargado).toContainText('Lo paga el paciente');
-  await expect(cargado).toContainText('Lo paga la empresa');
+  /* El pagador de cada renglón es un selector editable (24-11): se mira su
+     valor elegido y no un texto plano. */
+  const pagadores = cargado.locator('select[name="paga"]');
+  await expect(pagadores).toHaveCount(3);
+  await expect(pagadores.nth(0)).toHaveValue('aseguradora');
+  await expect(pagadores.nth(1)).toHaveValue('paciente');
+  await expect(pagadores.nth(2)).toHaveValue('empresa');
   await expect(cargado.getByText('a mano')).toBeVisible();
 });
 

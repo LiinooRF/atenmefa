@@ -16,6 +16,8 @@
 import { and, asc, eq } from 'drizzle-orm';
 import { bd, esquema } from './base';
 import { esIdentificador } from './atenciones';
+import { anotar } from './atenciones';
+import type { Usuario } from './auth';
 
 export type Pagador = 'paciente' | 'aseguradora' | 'empresa';
 
@@ -331,6 +333,49 @@ interface Carga {
   atencionId: string;
   cantidad: unknown;
   paga: unknown;
+}
+
+/**
+ * Corrige quién paga un renglón ya cargado (24-11).
+ *
+ * «Hay veces que se equivocan… quedó como todo lo paga el seguro menos la
+ * toma de muestra.» El pagador se elige al cargar y ahí quedaba congelado:
+ * la única corrección era quitar el renglón y volverlo a cargar. Ahora el
+ * pagador se cambia en el mismo renglón y el cambio queda en la bitácora
+ * con el antes y el después. El precio y la descripción no se tocan: eso
+ * vive en el catálogo y en lo cargado.
+ */
+export async function cambiarPagador(
+  usuario: Usuario,
+  atencionId: string,
+  renglonId: unknown,
+  paga: unknown,
+) {
+  if (!esIdentificador(String(renglonId ?? ''))) throw new Error('Ese renglón ya no está cargado.');
+  const pagador = String(paga ?? '');
+  if (!esPagador(pagador)) throw new Error('Hay que decir quién paga este renglón.');
+
+  const [actual] = await bd
+    .select({ id: esquema.renglon.id, paga: esquema.renglon.paga })
+    .from(esquema.renglon)
+    .where(and(eq(esquema.renglon.id, String(renglonId)), eq(esquema.renglon.atencionId, atencionId)))
+    .limit(1);
+  if (!actual) throw new Error('Ese renglón ya no está cargado.');
+  if (actual.paga === pagador) return actual;
+
+  const [cambiado] = await bd
+    .update(esquema.renglon)
+    .set({ paga: pagador })
+    .where(and(eq(esquema.renglon.id, String(renglonId)), eq(esquema.renglon.atencionId, atencionId)))
+    .returning({ id: esquema.renglon.id, paga: esquema.renglon.paga });
+
+  await anotar(usuario.id, 'cobro', atencionId, {
+    accion: 'cambio_pagador',
+    renglon: String(renglonId),
+    antes: actual.paga,
+    despues: pagador,
+  });
+  return cambiado;
 }
 
 function revisarCarga(carga: Carga) {

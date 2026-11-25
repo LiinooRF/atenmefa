@@ -334,6 +334,7 @@
      Con los 44 px de la regla de la casa para lo que se toca. */
   .sis__buscar { display: flex; order: 3; flex: 1 1 100%; margin: 0 0 8px; }
   .sis__buscar input { min-height: 44px; }
+  .sis__buscar { min-height: 44px; }
 
   /* ---------- el drawer ---------- */
   .sis__drawer[hidden] { display: none; }

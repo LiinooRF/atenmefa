@@ -17,7 +17,7 @@ import Icono from '../../../../components/Icono.astro';
 import { bd, esquema } from '../../../../sistema/lib/base';
 import { anotar, esIdentificador } from '../../../../sistema/lib/atenciones';
 import {
-  MONEDAS, PAGADORES, cantidadVista, cargarDelCatalogo, cargarLibre, catalogo,
+  MONEDAS, PAGADORES, cantidadVista, cambiarPagador, cargarDelCatalogo, cargarLibre, catalogo,
   dinero, frasePagador, montoRenglon, pagadorSugerido, porCategoria, quitarRenglon,
   renglonesDe, resumir,
 } from '../../../../sistema/lib/cobro';
@@ -63,6 +63,7 @@ const anulada = caso.estado === 'anulada';
 const sugerido = pagadorSugerido(caso.aseguradora);
 
 let error = '';
+let aviso = '';
 /* Lo tecleado vuelve a la pantalla si la carga falla: el cuerpo del pedido
    se lee una sola vez, así que se conserva acá. */
 let libre = { descripcion: '', cantidad: '1', precio: '', moneda: 'USD', paga: sugerido as string };
@@ -73,7 +74,13 @@ if (Astro.request.method === 'POST' && !anulada) {
   const accion = String(form.get('accion') ?? '');
 
   try {
-    if (accion === 'quitar') {
+    if (accion === 'pagador') {
+      /* Corregir quién paga un renglón ya cargado (24-11): el caso del
+         seguro que quedó pagando hasta la toma de muestra. El cambio
+         queda en bitácora dentro de cambiarPagador. */
+      await cambiarPagador(usuario, caso.id, form.get('renglon'), form.get('paga'));
+      aviso = 'Pagador corregido. Quedó en la bitácora.';
+    } else if (accion === 'quitar') {
       const quitado = await quitarRenglon(caso.id, form.get('renglon'));
       // El renglón se borra, pero el rastro de que existió no.
       await anotar(usuario.id, 'cobro', caso.id, {
@@ -122,7 +129,11 @@ if (Astro.request.method === 'POST' && !anulada) {
       });
     }
     // Redirigir después de escribir: recargar no vuelve a cargar el renglón.
-    return Astro.redirect(`/sistema/atencion/${caso.id}/cobro`);
+    // La corrección de pagador es la excepción: no redirige, re-renderiza
+    // acá con el aviso «Pagador corregido» a la vista (24-11).
+    if (accion !== 'pagador') {
+      return Astro.redirect(`/sistema/atencion/${caso.id}/cobro`);
+    }
   } catch (e) {
     error = e instanceof Error ? e.message : 'No se pudo cargar el renglón.';
   }
@@ -190,6 +201,13 @@ const etiqueta = {
     <p class="sis-error aviso">
       <Icono nombre="escudo" tam={18} />
       {error}
+    </p>
+  )}
+
+  {aviso && (
+    <p class="msj--bien aviso" role="status">
+      <Icono nombre="escudo" tam={18} />
+      {aviso}
     </p>
   )}
 
@@ -334,7 +352,27 @@ const etiqueta = {
                       <strong>{r.descripcion}</strong>
                       {!r.servicioId && <span class="fila__mano">a mano</span>}
                     </td>
-                    <td class="fila__paga">{frasePagador(r.paga)}</td>
+                    <td class="fila__paga">
+                      {!anulada ? (
+                        /* El pagador se corrige en el mismo renglón: el caso
+                           del seguro que quedó pagando la toma de muestra
+                           (24-11). El precio no se toca acá. */
+                        <form method="post" class="fila__paga-forma">
+                          <input type="hidden" name="renglon" value={r.id} />
+                          <label class="oculto" for={`paga-${r.id}`}>{`Quién paga ${r.descripcion}`}</label>
+                          <select id={`paga-${r.id}`} name="paga" data-original={frasePagador(r.paga)}>
+                            {PAGADORES.map((p) => (
+                              <option value={p.clave} selected={r.paga === p.clave}>{p.rotulo}</option>
+                            ))}
+                          </select>
+                          <button type="submit" name="accion" value="pagador" class="fila__paga-boton">
+                            Corregir
+                          </button>
+                        </form>
+                      ) : (
+                        frasePagador(r.paga)
+                      )}
+                    </td>
                     <td class="num cifra">{cantidadVista(r.cantidad)}</td>
                     <td class="num cifra">{dinero(r.precio)} <small>{r.moneda}</small></td>
                     <td class="num cifra fila__monto">{dinero(montoRenglon(r.cantidad, r.precio))}</td>
@@ -599,6 +637,36 @@ const etiqueta = {
   tbody td.num small { color: var(--tinta-tenue); font-size: var(--u-xs); }
   .fila__monto { font-weight: 700; color: var(--azul); }
   .fila__paga { font-size: var(--u-sm); color: var(--tinta-suave); }
+  /* Corregir el pagador en el mismo renglón: un select chico y el botón,
+     sin salir de la tabla (24-11). */
+  .fila__paga-forma { display: grid; gap: 5px; justify-items: start; }
+  .fila__paga-forma select {
+    min-height: 44px;
+    padding: 4px 8px;
+    border: 1px solid var(--linea);
+    border-radius: 7px;
+    background: var(--papel);
+    color: var(--tinta);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-xs);
+    max-width: 170px;
+  }
+  .fila__paga-forma select:focus { outline: 2px solid var(--azul-medio); border-color: var(--azul-medio); }
+  .fila__paga-boton {
+    min-height: 44px;
+    padding: 2px 10px;
+    border: 0;
+    border-radius: 7px;
+    background: var(--azul-suave, rgba(17, 22, 99, 0.07));
+    color: var(--azul);
+    font: inherit;
+    font-family: var(--ui);
+    font-size: var(--u-xs);
+    font-weight: 600;
+    cursor: pointer;
+  }
+  .fila__paga-boton:hover { background: rgba(17, 22, 99, 0.12); }
   .fila__mano {
     margin-left: 8px;
     font-size: var(--u-xs);

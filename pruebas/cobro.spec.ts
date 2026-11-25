@@ -14,6 +14,7 @@ import { test, expect } from '@playwright/test';
 import {
   CORRIDA, borrarPacientes, cargarAMano, cedulaDePrueba, crearAtencionCerrada, entrar,
   panelDeLaCuenta, quitarRenglon,
+  conBase,
 } from './apoyo';
 
 test.describe.configure({ mode: 'serial' });
@@ -67,18 +68,23 @@ test('la cuenta suma lo que se cargó', async ({ page }) => {
 
 test('mover un renglón de pagador mueve el subtotal', async ({ page }) => {
   await entrar(page, 'administracion');
+  await page.goto(`/sistema/atencion/${caso}/cobro`);
 
-  // La consulta la cubre el seguro; el material y el oxígeno, el paciente.
-  await quitarRenglon(page, caso, CONSULTA);
-  await cargarAMano(page, caso, { descripcion: CONSULTA, precio: '40,00', paga: 'aseguradora' });
+  /* Antes se corría quitar + volver a cargar; ahora el pagador se corrige
+     en la misma fila (24-11). La consulta estaba «paciente»: pasa a seguro. */
+  const fila = page.locator('tr', { hasText: CONSULTA });
+  await fila.locator('select[name="paga"]').selectOption('aseguradora');
+  await fila.locator('.fila__paga-boton').click();
+  await expect(page.locator('.msj--bien').last()).toContainText('Pagador corregido');
 
   const cuenta = panelDeLaCuenta(page);
   await expect(cuenta.locator('.cuenta__total')).toContainText('122,00');
   await expect(cuenta.locator('li', { hasText: 'La aseguradora' })).toContainText('40,00');
   await expect(cuenta.locator('li', { hasText: 'El paciente' })).toContainText('82,00');
 
-  // La fila lo dice con palabras, no con la clave de la base.
-  await expect(page.locator('tr', { hasText: CONSULTA })).toContainText('Lo paga el seguro');
+  // La fila lo dice con el selector del pagador en su estado nuevo.
+  await expect(page.locator('tr', { hasText: CONSULTA }).locator('select[name="paga"]'))
+    .toHaveValue('aseguradora');
 });
 
 test('los bolívares no se suman con los dólares', async ({ page }) => {
@@ -104,20 +110,40 @@ test('los bolívares no se suman con los dólares', async ({ page }) => {
   await expect(dolares.locator('.cuenta__total')).toContainText('122,00');
 });
 
-/* No existe todavía: la tabla de lo cargado solo ofrece "Quitar", y
-   sistema/lib/cobro.ts no tiene cómo reasignar un renglón ya guardado. Hoy
-   el pagador se corrige quitando el renglón y volviéndolo a cargar, que es
-   lo que hace la prueba de arriba. Cuando se agregue el control, esta
-   prueba es la que lo cubre. */
-test.fixme('el pagador de un renglón ya cargado se cambia desde su fila', async ({ page }) => {
+/* El caso del cliente (24-11): quedó «todo lo paga el seguro menos la
+   toma de muestra» y la corrección era quitar y volver a cargar. Ahora el
+   pagador se corrige en la misma fila, sin quitar nada, y queda en la
+   bitácora. */
+test('el pagador de un renglón ya cargado se cambia desde su fila', async ({ page }) => {
   await entrar(page, 'administracion');
   await page.goto(`/sistema/atencion/${caso}/cobro`);
 
+  /* Autosuficiente: la fila de material la carga el test de arriba (serial),
+     pero si esta prueba corre sola con -g, la carga acá y sigue igual. */
+  if ((await page.locator('tr', { hasText: MATERIAL }).count()) === 0) {
+    await cargarAMano(page, caso, { descripcion: MATERIAL, cantidad: '2', precio: '18,50', paga: 'paciente' });
+  }
   const fila = page.locator('tr', { hasText: MATERIAL });
   await fila.locator('select[name="paga"]').selectOption('empresa');
-  await fila.getByRole('button', { name: 'Guardar' }).click();
+  await fila.locator('.fila__paga-boton').click();
+  await expect(page.locator('.msj--bien').last()).toContainText('Pagador corregido');
 
-  const cuenta = panelDeLaCuenta(page);
-  await expect(cuenta.locator('li', { hasText: 'La empresa' })).toContainText('37,00');
-  await expect(cuenta.locator('li', { hasText: 'El paciente' })).toContainText('45,00');
+
+  // La fila lo dice con el selector en su valor nuevo y la cuenta movió
+  // el renglón de pagador.
+  await expect(page.locator('tr', { hasText: MATERIAL }).locator('select[name="paga"]'))
+    .toHaveValue('empresa');
+  /* La lista de dólares: la de bolívares del cobro por taquilla repite
+     «El paciente» con su propio total. */
+  const dolares = page.locator('.cuenta', { hasText: 'Total USD' });
+  await expect(dolares.locator('li', { hasText: 'La empresa' })).toContainText('37,00');
+  await expect(dolares.locator('li', { hasText: 'El paciente' })).toContainText('45,00');
+
+  // El cambio quedó en la bitácora con el antes y el después.
+  const [b] = await conBase((sql) => sql`
+    SELECT detalle ->> 'antes' AS antes, detalle ->> 'despues' AS despues
+      FROM bitacora WHERE accion = 'cobro' AND atencion_id = ${caso}
+        AND detalle ->> 'accion' = 'cambio_pagador' ORDER BY momento DESC LIMIT 1`);
+  expect(b.antes).toBe('paciente');
+  expect(b.despues).toBe('empresa');
 });
